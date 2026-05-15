@@ -4,6 +4,9 @@ const TERMINAL_BAD_CONCLUSIONS = new Set(["failure", "timed_out", "action_requir
 const EVENT_LIMIT = 200;
 const AVERAGE_LIMIT = 4;
 const RECENT_CLOSED_LIMIT = 8;
+const CLOSED_STATS_HOURS = 24;
+const CLOSED_STATS_PAGE_LIMIT = 10;
+const DEFAULT_CLAWSWEEPER_BOT_LOGINS = ["clawsweeper[bot]", "openclaw-clawsweeper[bot]"];
 const GITHUB_TIMEOUT_MS = 4500;
 const OPTIONAL_SECTION_TIMEOUT_MS = 6000;
 const STALE_CACHE_TTL_SECONDS = 900;
@@ -129,7 +132,7 @@ async function statusSnapshot(env, ctx) {
   const failedRuns = workflowRuns.filter(
     (run) => run.status === "completed" && TERMINAL_BAD_CONCLUSIONS.has(String(run.conclusion)),
   );
-  const [activeJobs, pipeline, automerge, closedItems, events] = await Promise.all([
+  const [activeJobs, pipeline, automerge, closed, events] = await Promise.all([
     estimateActiveCodexJobs(activeRuns),
     withTimeout(
       pipelineItems(env, activeRuns.slice(0, 30)),
@@ -148,12 +151,12 @@ async function statusSnapshot(env, ctx) {
       return { average_ms: null, samples: 0, items: [] };
     }),
     withTimeout(
-      recentClosedItems(env, targetRepos),
+      recentClawsweeperClosed(env, targetRepos),
       OPTIONAL_SECTION_TIMEOUT_MS,
       "recent closed",
     ).catch((error) => {
       errors.push(error.message);
-      return [];
+      return { items: [], stats: emptyClosedStats(generatedAt) };
     }),
     readEvents(env).catch((error) => {
       errors.push(`events: ${error.message}`);
@@ -184,7 +187,8 @@ async function statusSnapshot(env, ctx) {
     pipeline,
     recent: {
       automerge: automerge.items,
-      closed_items: closedItems,
+      closed_items: closed.items,
+      closed_stats: closed.stats,
       events: events.slice(0, 25),
       failed_runs: failedRuns.slice(0, 10).map((run) => workflowRunSummary(run)),
     },
@@ -419,30 +423,97 @@ async function recentAutomerge(env, repo) {
   };
 }
 
-async function recentClosedItems(env, repos) {
+async function recentClawsweeperClosed(env, repos) {
+  const since = new Date(Date.now() - CLOSED_STATS_HOURS * 60 * 60 * 1000).toISOString();
+  const trustedBotLogins = clawsweeperBotLogins(env);
   const rows = await Promise.all(
-    repos.map(async (repo) => {
-      const issues = await githubJson(
-        env,
-        `/repos/${repo}/issues?state=closed&sort=updated&direction=desc&per_page=${RECENT_CLOSED_LIMIT}`,
-      ).catch(() => []);
-      return (Array.isArray(issues) ? issues : [])
-        .filter((item) => item?.closed_at)
-        .map((item) => ({
-          repository: repo,
-          number: item.number,
-          type: item.pull_request ? "PR" : "Issue",
-          title: item.title || "",
-          url: item.html_url,
-          closed_at: item.closed_at,
-          closed_by: item.closed_by?.login || null,
-        }));
-    }),
+    repos.map((repo) => recentClawsweeperClosedForRepo(env, repo, since, trustedBotLogins)),
   );
-  return rows
+  const items = rows
     .flat()
-    .sort((left, right) => Date.parse(right.closed_at || "") - Date.parse(left.closed_at || ""))
-    .slice(0, RECENT_CLOSED_LIMIT);
+    .sort((left, right) => Date.parse(right.closed_at || "") - Date.parse(left.closed_at || ""));
+  return {
+    items: items.slice(0, RECENT_CLOSED_LIMIT),
+    stats: closedStats(items, since),
+  };
+}
+
+async function recentClawsweeperClosedForRepo(env, repo, since, trustedBotLogins) {
+  const items = [];
+  for (let page = 1; page <= CLOSED_STATS_PAGE_LIMIT; page += 1) {
+    const issues = await githubJson(
+      env,
+      `/repos/${repo}/issues?state=closed&sort=updated&direction=desc&since=${encodeURIComponent(
+        since,
+      )}&per_page=100&page=${page}`,
+    ).catch(() => []);
+    const pageItems = Array.isArray(issues) ? issues : [];
+    for (const item of pageItems) {
+      if (!isClawsweeperClosedItem(item, since, trustedBotLogins)) continue;
+      items.push({
+        repository: repo,
+        number: item.number,
+        type: item.pull_request ? "PR" : "Issue",
+        title: item.title || "",
+        url: item.html_url,
+        closed_at: item.closed_at,
+        closed_by: item.closed_by?.login || null,
+      });
+    }
+    if (pageItems.length < 100) break;
+  }
+  return items;
+}
+
+function isClawsweeperClosedItem(item, since, trustedBotLogins) {
+  if (!item?.closed_at) return false;
+  if (!trustedBotLogins.has(String(item.closed_by?.login || ""))) return false;
+  return Date.parse(item.closed_at) >= Date.parse(since);
+}
+
+function clawsweeperBotLogins(env) {
+  const configured = String(env.CLAWSWEEPER_BOT_LOGINS || "")
+    .split(",")
+    .map((login) => login.trim())
+    .filter(Boolean);
+  return new Set(configured.length ? configured : DEFAULT_CLAWSWEEPER_BOT_LOGINS);
+}
+
+function closedStats(items, since) {
+  const byRepo = {};
+  let issues = 0;
+  let prs = 0;
+  for (const item of items) {
+    const repoStats = byRepo[item.repository] || { total: 0, issues: 0, prs: 0 };
+    repoStats.total += 1;
+    if (item.type === "PR") {
+      prs += 1;
+      repoStats.prs += 1;
+    } else {
+      issues += 1;
+      repoStats.issues += 1;
+    }
+    byRepo[item.repository] = repoStats;
+  }
+  return {
+    window_hours: CLOSED_STATS_HOURS,
+    since,
+    total: items.length,
+    issues,
+    prs,
+    by_repository: byRepo,
+  };
+}
+
+function emptyClosedStats(generatedAt) {
+  return {
+    window_hours: CLOSED_STATS_HOURS,
+    since: new Date(Date.parse(generatedAt) - CLOSED_STATS_HOURS * 60 * 60 * 1000).toISOString(),
+    total: 0,
+    issues: 0,
+    prs: 0,
+    by_repository: {},
+  };
 }
 
 function firstAutomergeCommandAt(comments) {
@@ -902,53 +973,127 @@ a:hover { color: #89c8ff; text-decoration: underline; }
   overflow: hidden;
   border-radius: 14px;
 }
-#pipeline { overflow-x: auto; }
-#pipeline table { min-width: 820px; }
-#pipeline table th:nth-child(1) { width: 112px; }
-#pipeline table th:nth-child(2) { width: auto; }
-#pipeline table th:nth-child(3) { width: 100px; }
-#pipeline table th:nth-child(4) { width: 118px; }
-#pipeline table th:nth-child(5) { width: 68px; }
-#pipeline table th:nth-child(6) { width: 50px; }
-#pipeline table td:nth-child(2) {
-  line-height: 1.35;
+.work-list,
+.side-list {
+  display: grid;
+  gap: 8px;
 }
-#pipeline table td:nth-child(3) {
-  white-space: nowrap;
+.work-row,
+.side-row {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
 }
-#pipeline .item-main {
+.work-row {
+  grid-template-columns: minmax(0, 1fr) minmax(210px, 260px) 82px;
+  align-items: center;
+  padding: 12px 14px;
+}
+.side-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  padding: 11px 12px;
+}
+.work-row:hover,
+.side-row:hover {
+  border-color: rgba(103, 183, 255, 0.35);
+  background: rgba(103, 183, 255, 0.03);
+}
+.work-main,
+.side-main {
+  min-width: 0;
+}
+.row-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.item-link {
   display: block;
-  max-width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-weight: 600;
 }
-#pipeline table td:nth-child(2) .muted {
+.work-title,
+.side-title {
   display: -webkit-box;
-  margin-top: 2px;
+  margin-top: 4px;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-#pipeline table td:nth-child(6) a { white-space: nowrap; }
-#automerge table th:nth-child(1) { width: auto; }
-#automerge table th:nth-child(2) { width: 88px; }
-#automerge table th:nth-child(3) { width: 112px; }
-#automerge table td:nth-child(1) .muted {
-  display: -webkit-box;
-  margin-top: 2px;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+.work-state {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
 }
-#closed table th:nth-child(1) { width: auto; }
-#closed table th:nth-child(2) { width: 90px; }
-#closed table td:nth-child(1) .muted {
-  display: -webkit-box;
-  margin-top: 2px;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+.stage-block {
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+  min-width: 74px;
+}
+.run-link {
+  color: var(--blue);
+}
+.timebox {
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+  white-space: nowrap;
+}
+.timebox strong {
+  font-size: 18px;
+  line-height: 1;
+}
+.timebox span,
+.side-meta {
+  color: var(--muted);
+  font-size: 12px;
+}
+.side-meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  white-space: nowrap;
+}
+.closed-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.closed-stat {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 10px 12px;
+  min-width: 0;
+}
+.closed-stat span {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.closed-stat strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 22px;
+  line-height: 1;
 }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 12px; }
 .empty {
@@ -962,8 +1107,8 @@ a:hover { color: #89c8ff; text-decoration: underline; }
 }
 .empty::before { content: "🦀 "; opacity: 0.3; }
 @media (max-width: 1280px) { .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } .split { grid-template-columns: 1fr; } header { align-items: start; flex-direction: column; } }
-@media (max-width: 760px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } #pipeline table { min-width: 760px; } }
-@media (max-width: 560px) { main { width: min(100vw - 20px, 1440px); padding-top: 16px; } .grid { grid-template-columns: 1fr; } th:nth-child(4), td:nth-child(4), th:nth-child(6), td:nth-child(6) { display: none; } }
+@media (max-width: 760px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .work-row { grid-template-columns: 1fr; align-items: start; } .work-state, .stage-block, .timebox { justify-content: start; justify-items: start; } }
+@media (max-width: 560px) { main { width: min(100vw - 20px, 1440px); padding-top: 16px; } .grid, .closed-stats { grid-template-columns: 1fr; } .side-row { grid-template-columns: 1fr; } .side-meta { justify-content: flex-start; } }
 </style>
 </head>
 <body>
@@ -984,7 +1129,8 @@ a:hover { color: #89c8ff; text-decoration: underline; }
     <aside class="side-col">
       <h2>⚡ Automerge Speed</h2>
       <div id="automerge"></div>
-      <h2>✅ Last Closed Issues/PRs</h2>
+      <h2>✅ Closed by ClawSweeper</h2>
+      <div id="closed-stats"></div>
       <div id="closed"></div>
       <h2>📡 Recent Activity</h2>
       <div id="events"></div>
@@ -1014,6 +1160,9 @@ function esc(value) {
 function link(url, label) {
   return url ? '<a href="' + esc(url) + '">' + esc(label || url) + '</a>' : esc(label || "");
 }
+function linkClass(url, label, className) {
+  return url ? '<a class="' + esc(className || "") + '" href="' + esc(url) + '">' + esc(label || url) + '</a>' : esc(label || "");
+}
 function compactText(value) {
   return String(value ?? "")
     .replace(/\b([0-9a-f]{10})[0-9a-f]{22,}\b/gi, "$1")
@@ -1022,9 +1171,9 @@ function compactText(value) {
 }
 function pipelineItemLabel(row) {
   if (row.repository && row.item_number) {
-    return link("https://github.com/" + row.repository + "/pull/" + row.item_number, row.repository + "#" + row.item_number);
+    return linkClass("https://github.com/" + row.repository + "/issues/" + row.item_number, row.repository + "#" + row.item_number, "item-link");
   }
-  return esc(compactText(row.title));
+  return '<span class="item-link">' + esc(compactText(row.title)) + '</span>';
 }
 function pipelineItemDetail(row) {
   if (row.repository && row.item_number) return compactText(row.title);
@@ -1100,6 +1249,7 @@ function renderDashboard(data, note) {
   ].join("");
   renderPipeline(data.pipeline || []);
   renderAutomerge(data.recent.automerge || []);
+  renderClosedStats(data.recent.closed_stats);
   renderClosedItems(data.recent.closed_items || []);
   renderEvents(data.recent.events || []);
 }
@@ -1108,31 +1258,35 @@ function renderPipeline(rows) {
     document.getElementById("pipeline").innerHTML = '<div class="empty">All quiet in the depths... no active sweeps</div>';
     return;
   }
-  document.getElementById("pipeline").innerHTML = '<table><thead><tr><th>Mode</th><th>Item</th><th>Stage</th><th>CI</th><th>Elapsed</th><th>Run</th></tr></thead><tbody>' + rows.map(row => {
+  document.getElementById("pipeline").innerHTML = '<div class="work-list">' + rows.map(row => {
     const detail = pipelineItemDetail(row);
-    return '<tr><td><span class="pill" title="' + esc(row.mode) + '">' + esc(modeLabel(row.mode)) + '</span></td><td><span class="item-main" title="' + esc(compactText(row.title)) + '">' + pipelineItemLabel(row) + '</span>' + (detail ? '<div class="muted">' + esc(detail) + '</div>' : "") + '</td><td>' + esc(row.stage) + '<div class="muted">' + esc(row.status) + '</div></td><td>' + ciBadge(row.ci) + '</td><td>' + elapsed(row.elapsed_ms) + '</td><td>' + link(row.run_url, "run") + '</td></tr>';
-  }).join("") + '</tbody></table>';
+    return '<article class="work-row"><div class="work-main" title="' + esc(compactText(row.title)) + '"><div class="row-top"><span class="pill" title="' + esc(row.mode) + '">' + esc(modeLabel(row.mode)) + '</span>' + pipelineItemLabel(row) + '</div>' + (detail ? '<div class="muted work-title">' + esc(detail) + '</div>' : "") + '</div><div class="work-state"><div class="stage-block"><strong>' + esc(row.stage) + '</strong><span class="muted">' + esc(row.status) + '</span></div>' + ciBadge(row.ci) + linkClass(row.run_url, "run", "pill run-link") + '</div><div class="timebox"><strong>' + elapsed(row.elapsed_ms) + '</strong><span>elapsed</span></div></article>';
+  }).join("") + '</div>';
 }
 function renderAutomerge(rows) {
   if (!rows.length) {
     document.getElementById("automerge").innerHTML = '<div class="empty">No automerge data yet... claws resting</div>';
     return;
   }
-  document.getElementById("automerge").innerHTML = '<table><thead><tr><th>PR</th><th>Duration</th><th>Merged</th></tr></thead><tbody>' + rows.map(row => '<tr><td>' + link(row.url, "#" + row.number) + '<div class="muted">' + esc(row.title) + '</div></td><td>' + (row.duration_ms ? elapsed(row.duration_ms) : "unknown") + '</td><td>' + (row.merged_at ? since(row.merged_at) : "") + '</td></tr>').join("") + '</tbody></table>';
+  document.getElementById("automerge").innerHTML = '<div class="side-list">' + rows.map(row => '<article class="side-row"><div class="side-main">' + linkClass(row.url, "#" + row.number, "item-link") + '<div class="muted side-title">' + esc(row.title) + '</div></div><div class="side-meta"><span class="pill violet">' + (row.duration_ms ? elapsed(row.duration_ms) : "unknown") + '</span><span>' + (row.merged_at ? since(row.merged_at) : "") + '</span></div></article>').join("") + '</div>';
 }
 function renderClosedItems(rows) {
   if (!rows.length) {
-    document.getElementById("closed").innerHTML = '<div class="empty">No recent closes found...</div>';
+    document.getElementById("closed").innerHTML = '<div class="empty">No ClawSweeper closes found...</div>';
     return;
   }
-  document.getElementById("closed").innerHTML = '<table><thead><tr><th>Item</th><th>Closed</th></tr></thead><tbody>' + rows.map(row => '<tr><td><span class="pill">' + esc(row.type) + '</span> ' + link(row.url, row.repository + "#" + row.number) + '<div class="muted">' + esc(row.title) + '</div></td><td>' + since(row.closed_at) + '</td></tr>').join("") + '</tbody></table>';
+  document.getElementById("closed").innerHTML = '<div class="side-list">' + rows.map(row => '<article class="side-row"><div class="side-main"><div class="row-top"><span class="pill">' + esc(row.type) + '</span>' + linkClass(row.url, row.repository + "#" + row.number, "item-link") + '</div><div class="muted side-title">' + esc(row.title) + '</div></div><div class="side-meta">' + since(row.closed_at) + '</div></article>').join("") + '</div>';
+}
+function renderClosedStats(stats) {
+  const safe = stats || { total: 0, issues: 0, prs: 0, window_hours: 24 };
+  document.getElementById("closed-stats").innerHTML = '<div class="closed-stats"><div class="closed-stat"><span>' + esc((safe.window_hours || 24) + "h total") + '</span><strong>' + fmt.format(safe.total || 0) + '</strong></div><div class="closed-stat"><span>Issues</span><strong>' + fmt.format(safe.issues || 0) + '</strong></div><div class="closed-stat"><span>PRs</span><strong>' + fmt.format(safe.prs || 0) + '</strong></div></div>';
 }
 function renderEvents(rows) {
   if (!rows.length) {
     document.getElementById("events").innerHTML = '<div class="empty">Listening for signals from the fleet...</div>';
     return;
   }
-  document.getElementById("events").innerHTML = '<table><thead><tr><th>Stage</th><th>Status</th><th>When</th></tr></thead><tbody>' + rows.map(row => '<tr><td>' + esc(row.mode) + " / " + esc(row.stage) + '<div class="muted">' + (row.item_url ? link(row.item_url, row.title || row.item_url) : esc(row.title || row.event_type)) + '</div></td><td>' + esc(row.status) + '</td><td>' + since(row.received_at) + '</td></tr>').join("") + '</tbody></table>';
+  document.getElementById("events").innerHTML = '<div class="side-list">' + rows.map(row => '<article class="side-row"><div class="side-main"><div class="row-top"><span class="pill">' + esc(row.mode) + '</span><span class="item-link">' + esc(row.stage) + '</span></div><div class="muted side-title">' + (row.item_url ? link(row.item_url, row.title || row.item_url) : esc(row.title || row.event_type)) + '</div></div><div class="side-meta"><span>' + esc(row.status) + '</span><span>' + since(row.received_at) + '</span></div></article>').join("") + '</div>';
 }
 load();
 setInterval(load, 15000);

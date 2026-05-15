@@ -56,6 +56,7 @@ import {
   sameAuthorCounterpartApplyReason,
   sanitizePublicSelfReferences,
   appendFloorBackfillCandidateNumbersForTest,
+  pullRequestFilePathsFromContextForTest,
   selectDueCandidateNumbersForTest,
   shardItemNumbers,
   shouldStopSaturatedPlanScan,
@@ -1474,6 +1475,9 @@ test("duplicate or superseded closes are allowed with evidence and comment", () 
     item: item(),
     decision: closeDecision({
       closeReason: "duplicate_or_superseded",
+      summary: "Close as duplicate: an older open tracker already covers this.",
+      bestSolution:
+        "Keep the design thread on https://github.com/openclaw/openclaw/issues/63829, with https://github.com/openclaw/openclaw/pull/67584 as the active implementation path.",
       evidence: [
         {
           label: "canonical issue",
@@ -1492,6 +1496,63 @@ test("duplicate or superseded closes are allowed with evidence and comment", () 
   assert.equal(action.actionTaken, "proposed_close");
   assert.match(action.closeComment, /duplicate or superseded/);
   assert.match(action.closeComment, /swept through the related work/);
+  assert.match(
+    action.closeComment,
+    /Canonical path: Keep the design thread on https:\/\/github\.com\/openclaw\/openclaw\/issues\/63829, with https:\/\/github\.com\/openclaw\/openclaw\/pull\/67584 as the active implementation path\./,
+  );
+  assert.ok(
+    action.closeComment.indexOf("Canonical path:") <
+      action.closeComment.indexOf("<details>\n<summary>Review details</summary>"),
+  );
+});
+
+test("duplicate or superseded comments surface canonical refs appended to summary text", () => {
+  const action = reviewActionForDecision({
+    item: item(),
+    decision: closeDecision({
+      closeReason: "duplicate_or_superseded",
+      summary: "Close as duplicate: an older tracker already covers this.",
+      bestSolution:
+        "Close as duplicate: an older tracker already covers this in https://github.com/openclaw/openclaw/issues/63829.",
+      evidence: [
+        {
+          label: "canonical issue",
+          detail: "Older tracker exists at https://github.com/openclaw/openclaw/issues/63829.",
+        },
+      ],
+    }),
+    git,
+  });
+
+  assert.equal(action.actionTaken, "proposed_close");
+  assert.match(
+    action.closeComment,
+    /Canonical path: Close as duplicate: an older tracker already covers this in https:\/\/github\.com\/openclaw\/openclaw\/issues\/63829\./,
+  );
+});
+
+test("duplicate or superseded comments prefer canonical refs over generic best solution", () => {
+  const action = reviewActionForDecision({
+    item: item(),
+    decision: closeDecision({
+      closeReason: "duplicate_or_superseded",
+      summary: "Close as duplicate: an older tracker already covers this.",
+      bestSolution: "Keep following the canonical issue.",
+      evidence: [
+        {
+          label: "canonical issue",
+          detail: "Older tracker exists at https://github.com/openclaw/openclaw/issues/63829.",
+        },
+      ],
+    }),
+    git,
+  });
+
+  assert.equal(action.actionTaken, "proposed_close");
+  assert.match(
+    action.closeComment,
+    /Canonical path: Older tracker exists at https:\/\/github\.com\/openclaw\/openclaw\/issues\/63829\./,
+  );
 });
 
 test("apply close reason filters support exact fast-close lanes", () => {
@@ -2121,6 +2182,132 @@ Full review comments:
   assert.match(comment, /\*\*Real behavior proof\*\*\nSufficient \(terminal\):/);
   assert.match(markers, /clawsweeper-verdict:pass/);
   assert.doesNotMatch(markers, /clawsweeper-verdict:needs-human/);
+});
+
+test("docs-only external PRs do not require real behavior proof", () => {
+  const report = `${reportFrontMatter({
+    type: "pull_request",
+    number: "74462",
+    decision: "keep_open",
+    close_reason: "none",
+    review_status: "complete",
+    confidence: "high",
+    author: "contributor",
+    author_association: "CONTRIBUTOR",
+    labels: JSON.stringify(["clawsweeper:automerge"]),
+    work_candidate: "none",
+    pull_head_sha: "abc123def456",
+    pull_files: JSON.stringify(["docs/usage.md", "docs/plugins/building-plugins.md"]),
+    pull_files_truncated: false,
+  })}
+
+## Summary
+
+Keep this docs-only PR open for automerge.
+
+## What This Changes
+
+Clarifies plugin docs.
+
+## Best Possible Solution
+
+Merge after required checks are green.
+
+${realBehaviorProofReportSection({
+  status: "missing",
+  evidenceKind: "none",
+  needsContributorAction: true,
+  summary: "The PR body does not include after-fix evidence from a real setup.",
+})}
+
+## Review Findings
+
+Overall correctness: patch is correct
+
+Overall confidence: 0.9
+
+Full review comments:
+
+- none
+`;
+
+  const comment = renderReviewCommentFromReport(report, "none");
+  const markers = reviewAutomationMarkersFromReport(report);
+
+  assert.match(comment, /\*\*Real behavior proof\*\*\nNot applicable:/);
+  assert.match(comment, /only changes files under docs\//);
+  assert.match(markers, /clawsweeper-verdict:pass/);
+  assert.doesNotMatch(markers, /clawsweeper-verdict:needs-human/);
+});
+
+test("renamed source paths remain part of docs-only proof checks", () => {
+  assert.deepEqual(
+    pullRequestFilePathsFromContextForTest({
+      pullFiles: [
+        {
+          filename: "docs/runtime.md",
+          previous_filename: "src/runtime.ts",
+          status: "renamed",
+        },
+      ],
+    }),
+    ["docs/runtime.md", "src/runtime.ts"],
+  );
+});
+
+test("mixed docs and source external PRs still require real behavior proof", () => {
+  const report = `${reportFrontMatter({
+    type: "pull_request",
+    number: "74463",
+    decision: "keep_open",
+    close_reason: "none",
+    review_status: "complete",
+    confidence: "high",
+    author: "contributor",
+    author_association: "CONTRIBUTOR",
+    labels: JSON.stringify(["clawsweeper:automerge"]),
+    work_candidate: "none",
+    pull_head_sha: "abc123def456",
+    pull_files: JSON.stringify(["docs/usage.md", "src/runtime.ts"]),
+    pull_files_truncated: false,
+  })}
+
+## Summary
+
+Keep this PR open until the contributor proves the fix in a real setup.
+
+## What This Changes
+
+Changes runtime behavior and docs.
+
+## Best Possible Solution
+
+Ask the contributor to add after-fix proof from their real setup.
+
+${realBehaviorProofReportSection({
+  status: "missing",
+  evidenceKind: "none",
+  needsContributorAction: true,
+  summary: "The PR body does not include after-fix evidence from a real setup.",
+})}
+
+## Review Findings
+
+Overall correctness: patch is correct
+
+Overall confidence: 0.9
+
+Full review comments:
+
+- none
+`;
+
+  const comment = renderReviewCommentFromReport(report, "none");
+  const markers = reviewAutomationMarkersFromReport(report);
+
+  assert.match(comment, /Codex review: needs real behavior proof before merge\./);
+  assert.match(markers, /clawsweeper-verdict:needs-human/);
+  assert.doesNotMatch(markers, /clawsweeper-verdict:pass/);
 });
 
 test("screenshot-only browser runtime proof blocks pass markers", () => {
@@ -3305,6 +3492,20 @@ test("github activity workflow coalesces noisy observer runs", () => {
   assert.doesNotMatch(workflow, /github\.event\.issue\.number/);
   assert.doesNotMatch(workflow, /github\.event\.pull_request\.number/);
   assert.doesNotMatch(workflow, /github\.event\.client_payload\.activity\.subject\.number/);
+});
+
+test("spam scanner exact dispatches publish only per-comment audit records", () => {
+  const workflow = readFileSync(".github/workflows/spam-scanner.yml", "utf8");
+
+  assert.match(workflow, /format\('spam-scanner-\{0\}-issue-comment-\{1\}'/);
+  assert.match(workflow, /format\('spam-scanner-\{0\}-review-comment-\{1\}'/);
+  assert.match(workflow, /results\/spam-audit\/\$\{target_slug\}\/issue_comment-\$\{id\}\.json/);
+  assert.match(
+    workflow,
+    /results\/spam-audit\/\$\{target_slug\}\/pull_request_review_comment-\$\{id\}\.json/,
+  );
+  assert.match(workflow, /--path results\/spam-scanner\.json/);
+  assert.match(workflow, /cancel-in-progress: false/);
 });
 
 test("issue implementation workflow lets job intent choose dispatch capacity", () => {
