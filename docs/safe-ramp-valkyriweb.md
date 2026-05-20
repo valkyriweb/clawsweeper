@@ -13,7 +13,7 @@ This fork is deliberately configured for a slow ramp:
 
 Use these before anything larger:
 
-1. `valkyriweb/openclaw-claude` — low-risk docs-ish target.
+1. `valkyriweb/openclaw-claude` — low-risk ops/release hub target for release-risk, docs-state, and workflow triage.
 2. `valkyriweb/clawsweeper` — self-review, but watch recursion/noise.
 3. `valkyriweb/lue-kube` — ops repo; manual exact items only.
 4. `valkyriweb/pi-mono` — larger active fork; only after the first three look sane.
@@ -52,6 +52,9 @@ gh variable set CLAWSWEEPER_AUTO_IMPLEMENT_REPRO_BUGS \
 ## Phase 1 — one exact read-only item
 
 Only enable the main sweep workflow and one runner lane for the duration of the run.
+Pick an `openclaw-claude` item that asks for release-risk triage, docs/state cleanup,
+or workflow review. Good canaries ask ClawSweeper to classify operational risk;
+they should not require code edits or cluster mutations.
 
 ```bash
 gh workflow enable sweep.yml --repo valkyriweb/clawsweeper
@@ -112,7 +115,8 @@ Only after manual exact runs look cheap and useful:
 2. Enable `sweep.yml` only.
 3. Keep `workers.max = 5`.
 4. Let the daily cron run for `valkyriweb/openclaw-claude` first.
-5. Reassess dashboard, runs, and token usage before adding another repo.
+5. Review whether ClawSweeper correctly treats release logs, `docs/releases.md`, `docs/issues.md`, plans, state logs, and methodology TODOs as operational context rather than stale clutter.
+6. Reassess dashboard, runs, and token usage before adding another repo.
 
 ## Scale-up checklist
 
