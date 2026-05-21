@@ -4513,6 +4513,30 @@ test("reviewFailureReasonForSummary classifies success / timeout / other Codex o
     reviewFailureReasonForSummary("Claude review failed: invalid structured output."),
     "other",
   );
+  // Claude Code (CLI) and Pi providers must also classify correctly, otherwise
+  // their failure summaries get treated as `none` (successful review) by
+  // downstream callers like `markdownFor` — a real regression caught during
+  // PR #69 review. Keep these in sync with `reviewProviderLabel`.
+  assert.equal(
+    reviewFailureReasonForSummary("Claude Code review failed: timeout (exit 1)."),
+    "timeout",
+  );
+  assert.equal(
+    reviewFailureReasonForSummary("Claude Code review failed: claude execution failed."),
+    "other",
+  );
+  assert.equal(reviewFailureReasonForSummary("Pi review failed: timeout."), "timeout");
+  assert.equal(
+    reviewFailureReasonForSummary("Pi review failed: pi execution failed (exit 1)."),
+    "other",
+  );
+  // Negative: a non-failure summary that happens to start with a provider
+  // name must NOT classify as a failure (regex anchored on `review failed`).
+  assert.equal(
+    reviewFailureReasonForSummary("Claude Code reviewed this PR and approved it."),
+    "none",
+  );
+  assert.equal(reviewFailureReasonForSummary("Pi reviewed the changes successfully."), "none");
 });
 
 test("codexFailureDecision brands failure summary by provider", () => {

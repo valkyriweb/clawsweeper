@@ -4404,12 +4404,20 @@ export const REVIEW_TIMEOUT_ESCALATED_MS = 1_200_000;
 
 export type ReviewFailureReason = "none" | "timeout" | "other";
 
+// All known provider labels emitted by `reviewProviderLabel`. Kept in sync
+// with that function so `reviewFailureReasonForSummary` classifies failures
+// from every provider — not just the two original ones. Adding a new
+// provider means adding its label here too (see the regression test).
+const REVIEW_FAILURE_PREFIX_RE = /^(Codex|Claude|Claude Code|Pi) review failed\b/;
+const REVIEW_FAILURE_TIMEOUT_RE = /^(Codex|Claude|Claude Code|Pi) review failed: timeout\b/;
+
 export function reviewFailureReasonForSummary(summary: string): ReviewFailureReason {
   // codexFailureDecision builds `${providerLabel} review failed: <reason>...`; the
   // reason string `timeout` comes from codexFailureReason for ETIMEDOUT / 'timed out'.
-  // Match either provider's prefix so this stays correct after the slice-6 claude flip.
-  if (!/^(Codex|Claude) review failed\b/.test(summary)) return "none";
-  if (/^(Codex|Claude) review failed: timeout\b/.test(summary)) return "timeout";
+  // Match every provider's prefix so new providers (claude-code, pi) don't get
+  // misclassified as `none` (i.e. as successful reviews) by this parser.
+  if (!REVIEW_FAILURE_PREFIX_RE.test(summary)) return "none";
+  if (REVIEW_FAILURE_TIMEOUT_RE.test(summary)) return "timeout";
   return "other";
 }
 
