@@ -57,7 +57,9 @@ interface ConfiguredRepositoryProfile {
   includeMaintainerAuthored?: boolean;
 }
 
-const REVIEW_PROVIDER_SET: ReadonlySet<ReviewProvider> = new Set(["codex", "claude-bridge"]);
+// Exported so clawsweeper.ts can use a single source of truth for the
+// supported provider id set (validation in `resolveReviewProvider`).
+export const REVIEW_PROVIDER_SET: ReadonlySet<ReviewProvider> = new Set(["codex", "claude-bridge"]);
 
 interface OpenClawFallbackConfig {
   owner: string;

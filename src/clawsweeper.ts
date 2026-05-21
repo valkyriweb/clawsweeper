@@ -21,6 +21,7 @@ import {
   normalizeRepo,
   repositoryProfileFor,
   repositoryProfileForSlug,
+  REVIEW_PROVIDER_SET,
   type RepositoryProfile,
   type ReviewProvider,
 } from "./repository-profiles.js";
@@ -4633,7 +4634,9 @@ export function runReview(options: RunReviewOptions): Decision {
   }
 }
 
-const REVIEW_PROVIDER_IDS: ReadonlySet<ReviewProvider> = new Set(["codex", "claude-bridge"]);
+// Single source of truth lives in `repository-profiles.ts`; re-exported alias
+// kept for call-site readability inside this module.
+const REVIEW_PROVIDER_IDS = REVIEW_PROVIDER_SET;
 
 // Provider routing precedence:
 //   1. `explicit` — per-target override from the repository profile
