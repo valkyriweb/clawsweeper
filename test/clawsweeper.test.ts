@@ -4806,6 +4806,10 @@ test("runClaude retries once with a higher cap when Claude stops at max_tokens",
   assert.equal(requests.length, 2);
   assert.equal(requests[0]?.max_tokens, 16_384);
   assert.equal(requests[1]?.max_tokens, 32_768);
+  assert.equal(
+    JSON.parse(readFileSync(join(options.workDir, "23.claude-response.json"), "utf8")).id,
+    "msg_retry",
+  );
   const usageEvents = readFileSync(join(options.workDir, "usage-events.jsonl"), "utf8")
     .trim()
     .split("\n")
