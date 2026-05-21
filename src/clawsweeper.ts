@@ -4904,6 +4904,7 @@ export function runClaude(options: RunClaudeOptions): Decision {
 
   const maxTokenAttempts = claudeReviewMaxTokenAttempts();
   const startedAt = Date.now();
+  let retriedAfterMaxTokens = false;
   for (let attemptIndex = 0; attemptIndex < maxTokenAttempts.length; attemptIndex += 1) {
     const maxTokens = maxTokenAttempts[attemptIndex] ?? DEFAULT_CLAUDE_REVIEW_MAX_TOKENS;
     const body: Record<string, unknown> = { ...baseBody, max_tokens: maxTokens };
@@ -4953,7 +4954,10 @@ export function runClaude(options: RunClaudeOptions): Decision {
     const stopReason = (payload as { stop_reason?: string })?.stop_reason ?? "unknown";
     const elapsedMs = Date.now() - startedAt;
     if (stopReason === "max_tokens") {
-      if (attemptIndex < maxTokenAttempts.length - 1) continue;
+      if (attemptIndex < maxTokenAttempts.length - 1) {
+        retriedAfterMaxTokens = true;
+        continue;
+      }
       emitUsage("output_truncated", payload, elapsedMs);
       throw new Error(
         `Claude review failed for #${item.number}: output truncated after max_tokens=${maxTokens} (stop_reason=max_tokens)`,
@@ -4967,6 +4971,12 @@ export function runClaude(options: RunClaudeOptions): Decision {
         )
       : undefined;
     if (!toolUse) {
+      if (retriedAfterMaxTokens) {
+        emitUsage("output_truncated", payload, elapsedMs);
+        throw new Error(
+          `Claude review failed for #${item.number}: output truncated after retry max_tokens=${maxTokens} (previous stop_reason=max_tokens; retry stop_reason=${stopReason}; no submit_decision tool_use)`,
+        );
+      }
       emitUsage("failed", payload, elapsedMs);
       throw new Error(
         `Claude review failed for #${item.number}: no submit_decision tool_use in response (stop_reason=${stopReason})`,
@@ -4978,6 +4988,14 @@ export function runClaude(options: RunClaudeOptions): Decision {
       emitUsage("success", payload, elapsedMs);
       return decision;
     } catch (error) {
+      if (retriedAfterMaxTokens) {
+        emitUsage("output_truncated", payload, elapsedMs);
+        throw new Error(
+          `Claude review failed for #${item.number}: output truncated after retry max_tokens=${maxTokens} (previous stop_reason=max_tokens; invalid submit_decision payload: ${
+            error instanceof Error ? error.message : String(error)
+          })`,
+        );
+      }
       emitUsage("schema_invalid", payload, elapsedMs);
       throw new Error(
         `Claude review failed for #${item.number}: invalid structured output (${

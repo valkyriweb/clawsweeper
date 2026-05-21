@@ -4883,6 +4883,69 @@ test("runClaude reports exhausted max_tokens responses as output truncation", ()
   });
 });
 
+test("runClaude reports max_tokens retry misses as output truncation", () => {
+  const requests: Array<{ max_tokens?: number }> = [];
+  const stubPost: ClaudeBridgePostFn = ({ body }) => {
+    requests.push(body as { max_tokens?: number });
+    if (requests.length === 1) {
+      return {
+        status: 200,
+        body: JSON.stringify({
+          id: "msg_truncated",
+          type: "message",
+          stop_reason: "max_tokens",
+          usage: { input_tokens: 10, output_tokens: 16_384, total_tokens: 16_394 },
+          content: [{ type: "text", text: "partial review" }],
+        }),
+      };
+    }
+    return {
+      status: 200,
+      body: JSON.stringify({
+        id: "msg_retry_without_tool",
+        type: "message",
+        stop_reason: "end_turn",
+        usage: { input_tokens: 10, output_tokens: 20, total_tokens: 30 },
+        content: [{ type: "text", text: "I still cannot fit the decision." }],
+      }),
+    };
+  };
+  const oldFirstCap = process.env.CLAWSWEEPER_CLAUDE_REVIEW_MAX_TOKENS;
+  const oldRetryCap = process.env.CLAWSWEEPER_CLAUDE_REVIEW_RETRY_MAX_TOKENS;
+  delete process.env.CLAWSWEEPER_CLAUDE_REVIEW_MAX_TOKENS;
+  delete process.env.CLAWSWEEPER_CLAUDE_REVIEW_RETRY_MAX_TOKENS;
+  const options = claudeOptionsForTest({ item: { number: 25 } as never, postFn: stubPost });
+  try {
+    assert.throws(
+      () => runClaude(options),
+      /Claude review failed for #25: output truncated after retry max_tokens=32768 .*no submit_decision tool_use/,
+    );
+  } finally {
+    if (oldFirstCap === undefined) delete process.env.CLAWSWEEPER_CLAUDE_REVIEW_MAX_TOKENS;
+    else process.env.CLAWSWEEPER_CLAUDE_REVIEW_MAX_TOKENS = oldFirstCap;
+    if (oldRetryCap === undefined) delete process.env.CLAWSWEEPER_CLAUDE_REVIEW_RETRY_MAX_TOKENS;
+    else process.env.CLAWSWEEPER_CLAUDE_REVIEW_RETRY_MAX_TOKENS = oldRetryCap;
+  }
+
+  assert.equal(requests.length, 2);
+  assert.equal(requests[0]?.max_tokens, 16_384);
+  assert.equal(requests[1]?.max_tokens, 32_768);
+  const usageEvents = readFileSync(join(options.workDir, "usage-events.jsonl"), "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  assert.equal(usageEvents.length, 1);
+  assert.equal(usageEvents[0].status, "output_truncated");
+  assert.deepEqual(usageEvents[0].tokens, {
+    input: 10,
+    cache_read: 0,
+    cache_creation: 0,
+    output: 20,
+    reasoning_output: 0,
+    total: 30,
+  });
+});
+
 test("runClaude throws when the response contains no submit_decision tool_use block", () => {
   const stubPost: ClaudeBridgePostFn = () => ({
     status: 200,
