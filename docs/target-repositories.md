@@ -63,3 +63,25 @@ If a target dispatch reaches ClawSweeper but receiver token creation fails, the
 App is usually not installed on that target repo. If the target workflow skips
 before dispatch, the target repo usually cannot access
 `CLAWSWEEPER_APP_PRIVATE_KEY`.
+
+## Review provider
+
+ClawSweeper supports four review providers. The active provider is resolved
+per run by `resolveReviewProvider()` (see `src/clawsweeper.ts`) with this
+precedence:
+
+1. `profile.review_provider` (per-target override in
+   `config/target-repositories.json`)
+2. `vars.CLAWSWEEPER_REVIEW_PROVIDER` (repo variable, fleet-wide default)
+3. compiled fallback (`codex`)
+
+| id | how it talks to the model | runner prereqs |
+|---|---|---|
+| `codex` | spawns the OpenAI Codex CLI (`codex exec --output-schema ...`) | `setup-codex` action; ChatGPT subscription JWT at `~/.codex/auth.json` |
+| `claude-bridge` | curl POST to `pi-claude-bridge` (`127.0.0.1:9100`) | bridge running on the runner |
+| `claude-code` | spawns Anthropic's Claude Code CLI (`claude -p --output-format json --json-schema ...`) | `setup-claude-code` action; `~/.claude/credentials.json` or macOS keychain entry on self-hosted |
+
+The `claude-code` provider was added alongside `pi` to enable per-item provider
+routing (latency / cost). All providers share the same `Decision` schema
+(`schema/clawsweeper-decision.schema.json`), so downstream observability and
+telemetry do not have to branch on which one ran.

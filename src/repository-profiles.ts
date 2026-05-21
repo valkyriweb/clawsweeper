@@ -14,7 +14,7 @@ export type RepositoryCloseReason =
   | "stale_insufficient_info"
   | "none";
 
-export type ReviewProvider = "codex" | "claude-bridge";
+export type ReviewProvider = "codex" | "claude-bridge" | "claude-code";
 
 export interface RepositoryProfile {
   targetRepo: string;
@@ -59,7 +59,11 @@ interface ConfiguredRepositoryProfile {
 
 // Exported so clawsweeper.ts can use a single source of truth for the
 // supported provider id set (validation in `resolveReviewProvider`).
-export const REVIEW_PROVIDER_SET: ReadonlySet<ReviewProvider> = new Set(["codex", "claude-bridge"]);
+export const REVIEW_PROVIDER_SET: ReadonlySet<ReviewProvider> = new Set([
+  "codex",
+  "claude-bridge",
+  "claude-code",
+]);
 
 interface OpenClawFallbackConfig {
   owner: string;

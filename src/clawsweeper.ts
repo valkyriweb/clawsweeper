@@ -4609,9 +4609,12 @@ export interface RunReviewOptions {
   additionalPrompt?: string;
   proofScratchDir?: string;
   prompt?: string;
-  // claude-bridge only. Ignored for the codex provider.
+  // claude-bridge only. Ignored for other providers.
   bridgeUrl?: string;
   postFn?: ClaudeBridgePostFn;
+  // claude-code / pi only. Ignored for codex and claude-bridge. Lets tests
+  // inject a fake spawnSync without touching real CLIs.
+  spawnFn?: SpawnFn;
 }
 
 // Dispatcher: routes a per-item review call to the configured provider. Both
@@ -4627,6 +4630,8 @@ export function runReview(options: RunReviewOptions): Decision {
       return runCodex(rest);
     case "claude-bridge":
       return runClaude(rest);
+    case "claude-code":
+      return runClaudeCode(rest);
     default: {
       const exhaustive: never = provider;
       throw new Error(`Unknown review provider: ${String(exhaustive)}`);
@@ -5017,6 +5022,267 @@ export function runClaude(options: RunClaudeOptions): Decision {
 
 export function runCodexForTest(options: Parameters<typeof runCodex>[0]): Decision {
   return runCodex(options);
+}
+
+// Default impl of SpawnFn that wraps node:child_process spawnSync and narrows
+// stdio fields to plain strings (the native overload returns string | Buffer
+// depending on encoding, but our providers always pass `encoding: "utf8"`).
+function defaultSpawnFn(
+  command: string,
+  args: readonly string[],
+  opts: {
+    cwd?: string;
+    env?: NodeJS.ProcessEnv;
+    input?: string;
+    encoding: "utf8";
+    maxBuffer?: number;
+    timeout?: number;
+  },
+): ReturnType<SpawnFn> {
+  const raw = spawnSync(command, [...args], opts) as unknown as {
+    status: number | null;
+    stdout: string | Buffer | null;
+    stderr: string | Buffer | null;
+    error?: Error & { code?: string };
+  };
+  const normalized: ReturnType<SpawnFn> = {
+    status: raw.status,
+    stdout: typeof raw.stdout === "string" ? raw.stdout : (raw.stdout?.toString("utf8") ?? ""),
+    stderr: typeof raw.stderr === "string" ? raw.stderr : (raw.stderr?.toString("utf8") ?? ""),
+  };
+  if (raw.error) normalized.error = raw.error;
+  return normalized;
+}
+
+// Spawn seam shared by all CLI-spawning providers (codex, claude-code, pi).
+// Tests inject a fake matching this shape so they don't touch real binaries.
+export type SpawnFn = (
+  command: string,
+  args: readonly string[],
+  options: {
+    cwd?: string;
+    env?: NodeJS.ProcessEnv;
+    input?: string;
+    encoding: "utf8";
+    maxBuffer?: number;
+    timeout?: number;
+  },
+) => {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+  error?: Error & { code?: string };
+};
+
+interface RunCliReviewOptions {
+  item: Item;
+  context: ItemContext;
+  git: GitInfo;
+  model: string;
+  openclawDir: string;
+  reasoningEffort: string;
+  sandboxMode: string;
+  serviceTier: string;
+  timeoutMs: number;
+  workDir: string;
+  additionalPrompt?: string;
+  proofScratchDir?: string;
+  prompt?: string;
+  spawnFn?: SpawnFn;
+}
+
+export type RunClaudeCodeOptions = RunCliReviewOptions;
+
+// Direct Claude Code CLI provider.
+//
+// Runs the locally-installed `claude` CLI with `-p --output-format json
+// --json-schema <schema>` so structured output is enforced by the provider
+// itself (no bridge, no curl, no separate proxy). The envelope shape is
+// `{ type: "result", is_error, result, error? }` where `result` is a
+// JSON-encoded string conforming to the schema — JSON.parse twice.
+//
+// Failure modes use the same Error message contract as runCodex / runClaude:
+//   - timeout → message contains `timed out after ${timeoutMs}ms` so
+//     `isCodexTimeoutError` matches and slice B's escalator still kicks in;
+//   - bad JSON / envelope error → telemetry status `schema_invalid`.
+//
+// Reference impl (CLI flag shapes): clawpatch/src/provider.ts:buildClaudeArgs
+// + parseClaudeEnvelope. Adapted here for clawsweeper's Decision shape.
+export function runClaudeCode(options: RunClaudeCodeOptions): Decision {
+  const item = options.item;
+  const spawn: SpawnFn = options.spawnFn ?? defaultSpawnFn;
+
+  ensureDir(options.workDir);
+  const proofScratchDir =
+    options.proofScratchDir ?? join(options.workDir, "proof-scratch", String(item.number));
+  ensureDir(proofScratchDir);
+
+  const prompt =
+    options.prompt ??
+    buildReviewPrompt(
+      item,
+      options.context,
+      options.git,
+      options.additionalPrompt,
+      { proofScratchDir },
+      // Claude Code path uses the same sibling template as the bridge — strips
+      // tool-loop guidance and omits Runtime Capabilities. The CLI itself owns
+      // the sandbox.
+      { template: reviewClaudePromptTemplate(), includeRuntimeCapabilities: false },
+    ).text;
+
+  const promptPath = join(options.workDir, `${item.number}.claude-code-prompt.md`);
+  const responsePath = join(options.workDir, `${item.number}.claude-code-response.json`);
+  const usageEventsPath = join(options.workDir, "usage-events.jsonl");
+  writeFileSync(promptPath, prompt, "utf8");
+
+  const itemRepo = normalizeRepo((item as { repo?: string }).repo ?? targetRepo());
+  const sessionId = process.env.GITHUB_RUN_ID
+    ? `github:${process.env.GITHUB_REPOSITORY ?? REPORT_REPO}:${process.env.GITHUB_RUN_ID}`
+    : `local:clawsweeper-review:${itemRepo}:${item.number}`;
+  const turnId = `sweep:item-review:${itemRepo}:${item.number}`;
+
+  const model = options.model || DEFAULT_CLAUDE_MODEL;
+  const schema = reviewDecisionSchemaText();
+
+  const args: string[] = [
+    "-p",
+    "--output-format",
+    "json",
+    "--json-schema",
+    schema,
+    "--add-dir",
+    options.openclawDir,
+    "--model",
+    model,
+  ];
+  // Read-only sandbox: restrict to read/grep/glob tools. workspace-write
+  // permission would let the model edit the OpenClaw checkout, which the
+  // review path explicitly forbids (see runCodex's dirty-status check).
+  if (options.sandboxMode === "read-only") {
+    args.push("--allowedTools", "Read Glob Grep");
+  } else {
+    args.push("--dangerously-skip-permissions");
+  }
+
+  const emitUsage = (status: UsageStatus, elapsedMs: number): void => {
+    try {
+      appendUsageEventJsonl(
+        usageEventsPath,
+        buildUsageTelemetryEvent({
+          workflow: "sweep",
+          mode: "review",
+          phase: "item-review",
+          provider: "anthropic",
+          session_id: sessionId,
+          turn_id: turnId,
+          target_repo: itemRepo,
+          item_number: item.number,
+          model,
+          reasoning_effort: options.reasoningEffort,
+          service_tier: options.serviceTier,
+          sandbox: options.sandboxMode,
+          timeout_ms: options.timeoutMs,
+          elapsed_ms: elapsedMs,
+          output_path: relative(options.workDir, responsePath),
+          status,
+          tokens: null,
+        }),
+      );
+    } catch {
+      // Telemetry must never change the review outcome.
+    }
+  };
+
+  const startedAt = Date.now();
+  const result = spawn("claude", args, {
+    cwd: options.openclawDir,
+    encoding: "utf8",
+    env: { ...process.env },
+    input: prompt,
+    maxBuffer: 128 * 1024 * 1024,
+    timeout: options.timeoutMs,
+  });
+  const elapsedMs = Date.now() - startedAt;
+  const stdout = result.stdout ?? "";
+  const stderr = result.stderr ?? "";
+
+  // Persist raw stdout for debug ergonomics (mirrors runClaude's responsePath).
+  try {
+    writeFileSync(responsePath, stdout, "utf8");
+  } catch {
+    // Best-effort.
+  }
+
+  if (result.error) {
+    const timedOut = (result.error as NodeJS.ErrnoException).code === "ETIMEDOUT";
+    emitUsage(timedOut ? "timeout" : "failed", elapsedMs);
+    if (timedOut) {
+      throw new Error(
+        `Claude review failed for #${item.number}: timed out after ${options.timeoutMs}ms`,
+      );
+    }
+    throw new Error(
+      `Claude review failed for #${item.number}: ${result.error.message}\n${
+        safeOutputTail(stderr) || safeOutputTail(stdout) || "No output."
+      }`,
+    );
+  }
+  if (result.status !== 0) {
+    emitUsage("failed", elapsedMs);
+    throw new Error(
+      `Claude review failed for #${item.number} with exit ${
+        result.status ?? "unknown"
+      }.\n${safeOutputTail(stderr) || safeOutputTail(stdout) || "No output."}`,
+    );
+  }
+
+  let envelope: { is_error?: boolean; result?: unknown; error?: string };
+  try {
+    envelope = JSON.parse(stdout.trim()) as typeof envelope;
+  } catch (error) {
+    emitUsage("schema_invalid", elapsedMs);
+    throw new Error(
+      `Claude review failed for #${item.number}: non-JSON envelope (${
+        error instanceof Error ? error.message : String(error)
+      }): ${safeOutputTail(stdout)}`,
+    );
+  }
+  if (envelope.is_error === true) {
+    emitUsage("failed", elapsedMs);
+    throw new Error(
+      `Claude review failed for #${item.number}: ${envelope.error ?? "unknown CLI error"}`,
+    );
+  }
+  const inner = envelope.result;
+  if (inner === undefined || inner === null) {
+    emitUsage("schema_invalid", elapsedMs);
+    throw new Error(`Claude review failed for #${item.number}: envelope.result missing`);
+  }
+  let payload: unknown;
+  try {
+    payload = typeof inner === "string" ? JSON.parse(inner) : inner;
+  } catch (error) {
+    emitUsage("schema_invalid", elapsedMs);
+    throw new Error(
+      `Claude review failed for #${item.number}: envelope.result is not valid JSON (${
+        error instanceof Error ? error.message : String(error)
+      })`,
+    );
+  }
+
+  try {
+    const decision = parseDecision(payload, item);
+    emitUsage("success", elapsedMs);
+    return decision;
+  } catch (error) {
+    emitUsage("schema_invalid", elapsedMs);
+    throw new Error(
+      `Claude review failed for #${item.number}: invalid structured output (${
+        error instanceof Error ? error.message : String(error)
+      })`,
+    );
+  }
 }
 
 function runCodex(options: {
