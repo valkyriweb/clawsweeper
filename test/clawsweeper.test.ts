@@ -4605,6 +4605,51 @@ test("codexFailureDecision brands failure summary by provider", () => {
     ),
     "non-truncation failures must surface claude execution failed reason",
   );
+
+  // Claude Code provider (CLI route) — distinct label + slug so triage
+  // doesn't confuse it with the bridge-direct provider or with codex.
+  const claudeCodeDecision = codexFailureDecision(
+    "claude-code",
+    1,
+    "Claude review failed for #21 with exit 1.\nSessionEnd hook failed.",
+  );
+  assert.equal(
+    claudeCodeDecision.summary,
+    "Claude Code review failed: claude execution failed (exit 1).",
+  );
+  assert.equal(
+    claudeCodeDecision.bestSolution,
+    "Retry the Claude Code review after fixing the execution failure.",
+  );
+  assert.equal(
+    claudeCodeDecision.likelyOwners[0]?.reason,
+    "Claude Code failed before it could trace repository history.",
+  );
+  assert.equal(
+    claudeCodeDecision.securityReview.summary,
+    "Security review did not run because the Claude Code review failed before completion.",
+  );
+  assert.ok(
+    claudeCodeDecision.evidence.some((entry) => entry.label === "claude-code failure detail"),
+    "claude-code failure detail evidence label missing",
+  );
+  assert.ok(
+    claudeCodeDecision.evidence.some((entry) => entry.label === "claude-code stdout"),
+    "claude-code stdout evidence label missing",
+  );
+
+  // Pi provider — distinct label + slug.
+  const piDecision = codexFailureDecision("pi", 1, "pi review failed: bridge timeout");
+  assert.equal(piDecision.summary, "Pi review failed: pi execution failed (exit 1).");
+  assert.equal(piDecision.bestSolution, "Retry the Pi review after fixing the execution failure.");
+  assert.equal(
+    piDecision.likelyOwners[0]?.reason,
+    "Pi failed before it could trace repository history.",
+  );
+  assert.ok(
+    piDecision.evidence.some((entry) => entry.label === "pi failure detail"),
+    "pi failure detail evidence label missing",
+  );
 });
 
 test("shouldEscalateCodexTimeout escalates exactly once after a timeout", () => {

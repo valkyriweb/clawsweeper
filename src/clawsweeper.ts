@@ -4375,7 +4375,17 @@ function codexFailureReason(provider: ReviewProvider, detail: string): string {
   }
   if (detail.includes("ENOBUFS") || detail.includes("maxBuffer")) return "output buffer overflow";
   if (detail.includes("timed out") || detail.includes("ETIMEDOUT")) return "timeout";
-  return provider === "claude-bridge" ? "claude execution failed" : "codex execution failed";
+  switch (provider) {
+    case "claude-bridge":
+      return "claude execution failed";
+    case "claude-code":
+      return "claude execution failed";
+    case "pi":
+      return "pi execution failed";
+    case "codex":
+    default:
+      return "codex execution failed";
+  }
 }
 
 export function isCodexTimeoutError(value: unknown): boolean {
@@ -4473,8 +4483,8 @@ export function codexFailureDecision(
   stderr: string,
   stdout = "",
 ): Decision {
-  const providerLabel = provider === "claude-bridge" ? "Claude" : "Codex";
-  const providerSlug = providerLabel.toLowerCase();
+  const providerLabel = reviewProviderLabel(provider);
+  const providerSlug = reviewProviderSlug(provider);
   const detail = stderr || "No stderr.";
   const reason = codexFailureReason(provider, detail);
   return {
@@ -7200,7 +7210,35 @@ function runtimeReviewTextFromReport(markdown: string): string {
 }
 
 function reviewProviderLabel(provider?: ReviewProvider): string {
-  return provider === "claude-bridge" ? "Claude" : "Codex";
+  switch (provider) {
+    case "claude-bridge":
+      return "Claude";
+    case "claude-code":
+      return "Claude Code";
+    case "pi":
+      return "Pi";
+    case "codex":
+    default:
+      return "Codex";
+  }
+}
+
+// Slug used in failure-evidence labels (e.g. `${slug} failure detail`).
+// Lowercase, single-token form. `claude-bridge` keeps the legacy `claude`
+// slug so historical comment text and snapshot tests stay stable; the
+// newer providers get distinct slugs so triage isn't confused.
+function reviewProviderSlug(provider?: ReviewProvider): string {
+  switch (provider) {
+    case "claude-bridge":
+      return "claude";
+    case "claude-code":
+      return "claude-code";
+    case "pi":
+      return "pi";
+    case "codex":
+    default:
+      return "codex";
+  }
 }
 
 function actualReviewModel(provider: ReviewProvider, requestedModel: string): string {
@@ -8796,7 +8834,7 @@ function reviewCommand(args: Args): void {
       } else {
         codexFailures += 1;
       }
-      const providerLabelForStdout = reviewProvider === "claude-bridge" ? "Claude" : "Codex";
+      const providerLabelForStdout = reviewProviderLabel(reviewProvider);
       decision = codexFailureDecision(
         reviewProvider,
         null,
