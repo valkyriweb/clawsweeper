@@ -4525,10 +4525,7 @@ test("codexFailureDecision brands failure summary by provider", () => {
     "Claude review failed: output truncation.",
     "non-truncation bridge error mentioning max_tokens must not classify as truncation",
   );
-  assert.equal(
-    invalidMaxTokensDecision.summary,
-    "Claude review failed: claude execution failed.",
-  );
+  assert.equal(invalidMaxTokensDecision.summary, "Claude review failed: claude execution failed.");
   assert.ok(
     invalidMaxTokensDecision.evidence.some(
       (entry) => entry.label === "failure reason" && entry.detail === "claude execution failed",
