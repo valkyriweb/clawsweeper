@@ -4358,6 +4358,13 @@ export function buildClaudeReviewPromptForTest(
 function codexFailureReason(provider: ReviewProvider, detail: string): string {
   if (detail.includes("Codex dirtied the OpenClaw checkout")) return "dirty checkout";
   if (detail.includes("did not produce output")) return "missing structured output";
+  if (
+    /\boutput truncated\b/i.test(detail) ||
+    /\bstop_reason=max_tokens\b/i.test(detail) ||
+    /\bmax_tokens\b/i.test(detail)
+  ) {
+    return "output truncation";
+  }
   if (detail.includes("invalid JSON") || detail.includes("invalid structured output")) {
     return "invalid structured output";
   }

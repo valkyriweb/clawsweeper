@@ -4497,6 +4497,19 @@ test("codexFailureDecision brands failure summary by provider", () => {
     claudeDecision.evidence.some((entry) => entry.label === "claude stdout"),
     "claude stdout evidence label missing",
   );
+
+  const truncatedClaudeDecision = codexFailureDecision(
+    "claude-bridge",
+    null,
+    "Claude review failed for #24: output truncated after max_tokens=32768 (stop_reason=max_tokens)",
+  );
+  assert.equal(truncatedClaudeDecision.summary, "Claude review failed: output truncation.");
+  assert.ok(
+    truncatedClaudeDecision.evidence.some(
+      (entry) => entry.label === "failure reason" && entry.detail === "output truncation",
+    ),
+    "output truncation failure reason evidence missing",
+  );
 });
 
 test("shouldEscalateCodexTimeout escalates exactly once after a timeout", () => {
