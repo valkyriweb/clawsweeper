@@ -14,7 +14,7 @@ export type RepositoryCloseReason =
   | "stale_insufficient_info"
   | "none";
 
-export type ReviewProvider = "codex" | "claude-bridge" | "claude-code";
+export type ReviewProvider = "codex" | "claude-bridge" | "claude-code" | "pi";
 
 export interface RepositoryProfile {
   targetRepo: string;
@@ -63,6 +63,7 @@ export const REVIEW_PROVIDER_SET: ReadonlySet<ReviewProvider> = new Set([
   "codex",
   "claude-bridge",
   "claude-code",
+  "pi",
 ]);
 
 interface OpenClawFallbackConfig {

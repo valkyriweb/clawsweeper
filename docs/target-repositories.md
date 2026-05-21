@@ -80,8 +80,14 @@ precedence:
 | `codex` | spawns the OpenAI Codex CLI (`codex exec --output-schema ...`) | `setup-codex` action; ChatGPT subscription JWT at `~/.codex/auth.json` |
 | `claude-bridge` | curl POST to `pi-claude-bridge` (`127.0.0.1:9100`) | bridge running on the runner |
 | `claude-code` | spawns Anthropic's Claude Code CLI (`claude -p --output-format json --json-schema ...`) | `setup-claude-code` action; `~/.claude/credentials.json` or macOS keychain entry on self-hosted |
+| `pi` | spawns the pi-mono-fork coding-agent CLI (`pi -p --mode json --no-session`) | `setup-pi` action; pi binary on PATH; `~/.pi/` initialised |
 
-The `claude-code` provider was added alongside `pi` to enable per-item provider
-routing (latency / cost). All providers share the same `Decision` schema
-(`schema/clawsweeper-decision.schema.json`), so downstream observability and
-telemetry do not have to branch on which one ran.
+The `claude-code` and `pi` providers were added alongside the existing two to
+enable per-item provider routing (latency / cost). All providers share the
+same `Decision` schema (`schema/clawsweeper-decision.schema.json`), so
+downstream observability and telemetry do not have to branch on which one ran.
+
+Pi has no `--json-schema` enforcement — the schema is inlined in the prompt
+and the response is post-validated with the same Zod parser the other
+providers use. Expect a higher `schema_invalid` rate than codex / claude-code,
+so reach for `pi` on items where speed matters more than strict structure.
