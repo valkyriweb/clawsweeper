@@ -4358,10 +4358,14 @@ export function buildClaudeReviewPromptForTest(
 function codexFailureReason(provider: ReviewProvider, detail: string): string {
   if (detail.includes("Codex dirtied the OpenClaw checkout")) return "dirty checkout";
   if (detail.includes("did not produce output")) return "missing structured output";
+  // Tightened predicate: classify as truncation only on explicit truncation
+  // markers. A bare `max_tokens` substring matches provider/bridge config
+  // errors like `Invalid max_tokens: 16384`, which are distinct failure modes
+  // and must not be silently retried as truncation. Accept both KV-form
+  // (`stop_reason=max_tokens`) and JSON-form (`"stop_reason": "max_tokens"`).
   if (
     /\boutput truncated\b/i.test(detail) ||
-    /\bstop_reason=max_tokens\b/i.test(detail) ||
-    /\bmax_tokens\b/i.test(detail)
+    /\bstop_reason\s*[:=]\s*["']?max_tokens\b/i.test(detail)
   ) {
     return "output truncation";
   }

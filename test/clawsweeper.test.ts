@@ -4510,6 +4510,31 @@ test("codexFailureDecision brands failure summary by provider", () => {
     ),
     "output truncation failure reason evidence missing",
   );
+
+  // Negative regression: a non-truncation provider/bridge error that merely
+  // mentions the `max_tokens` field name must not classify as truncation,
+  // otherwise a config validation failure would be silently retried with a
+  // higher cap that the API has already rejected.
+  const invalidMaxTokensDecision = codexFailureDecision(
+    "claude-bridge",
+    null,
+    "Claude review failed for #99: bridge HTTP 400 Invalid max_tokens: 16384 exceeds model maximum",
+  );
+  assert.notEqual(
+    invalidMaxTokensDecision.summary,
+    "Claude review failed: output truncation.",
+    "non-truncation bridge error mentioning max_tokens must not classify as truncation",
+  );
+  assert.equal(
+    invalidMaxTokensDecision.summary,
+    "Claude review failed: claude execution failed.",
+  );
+  assert.ok(
+    invalidMaxTokensDecision.evidence.some(
+      (entry) => entry.label === "failure reason" && entry.detail === "claude execution failed",
+    ),
+    "non-truncation failures must surface claude execution failed reason",
+  );
 });
 
 test("shouldEscalateCodexTimeout escalates exactly once after a timeout", () => {
