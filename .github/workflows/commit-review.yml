@@ -3,8 +3,8 @@ name: ClawSweeper Commit Review
 run-name: Commit review ${{ github.event.inputs.target_repo || github.event.client_payload.target_repo || 'openclaw/openclaw' }}@${{ github.event.inputs.commit_sha || github.event.client_payload.after_sha || github.event.client_payload.commit_sha || '?' }}
 
 on:
-  repository_dispatch:
-    types: [clawsweeper_commit_review]
+  # Manual only. Target-repo push dispatches are intentionally ignored so
+  # ClawSweeper commit review cannot burn Codex quota on every main push.
   workflow_dispatch:
     inputs:
       enabled:
