@@ -60,6 +60,19 @@ test("commit finding PR titles follow Conventional Commits format", () => {
   }
 });
 
+test("commit finding PR titles truncate summaries that would exceed the 72-char cap", () => {
+  assert.equal(CLAWSWEEPER_GENERATED_PR_TITLE_MAX_LENGTH, 72);
+  const longSummary =
+    "Found a regression where the provider reconnect path drops persisted session state across restarts";
+  const title = commitFindingPrTitle(longSummary);
+  assert.equal(
+    title.length <= CLAWSWEEPER_GENERATED_PR_TITLE_MAX_LENGTH,
+    true,
+    `title must be ≤${CLAWSWEEPER_GENERATED_PR_TITLE_MAX_LENGTH} chars: ${title} (${title.length})`,
+  );
+  assert.match(title, /^fix(\(.+\))?:/, `title must keep its prefix after truncation: ${title}`);
+});
+
 test("commit finding PR body template has required sections in order", () => {
   // Inline the expected template structure — commit-finding-intake is a script
   // and cannot be imported safely in tests. This validates the *shape* of the
