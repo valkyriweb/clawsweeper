@@ -208,12 +208,12 @@ Current defaults:
 - normal active floor: 2 shards for `openclaw/openclaw` scheduled runs and
   workflow-dispatch continuations; stale current-review backfill is eligible
   after 6 hours
-- manual normal backfill: defaults to 3 shards, batch size 3, scans up to 250
+- manual normal backfill: defaults to 5 shards, batch size 3, scans up to 250
   GitHub pages unless overridden, and stops early once scanned due candidates
   fill planned capacity
 
-The hard planner cap is 5 shards. The workflow clamps invalid or larger
-`shard_count` inputs to 5.
+The hard planner cap is 8 shards. The workflow clamps invalid or larger
+`shard_count` inputs to 8.
 
 Broad background review also clamps manual `shard_count` input to the current
 lane allowance from `worker-limit`. Pending or planning background sweeps reserve
@@ -255,7 +255,8 @@ allowance. Planning, publish, queued, and not-yet-expanded background runs
 reserve one worker slot instead of a whole quiet-system lane. If
 repair/automerge is busy, background sweep dispatches fewer shards and leaves
 capacity for the specific work that is closest to a merge or maintainer request.
-Background lanes also subtract a 20-worker expansion reserve so independently
+Background lanes also subtract the expansion reserve
+(`workers.expansion_reserve`, currently 2 workers) so independently
 planned exact-item and commit-review runs have room to start without pushing the
 live Codex count past the global budget.
 
