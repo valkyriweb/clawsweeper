@@ -1,0 +1,43 @@
+name: telemetry egress check
+
+# Probes the telemetry egress path end-to-end (collector + downstream Opik/SigNoz
+# OTLP endpoints) and fails when any backend is unreachable. A failed run flows to
+# the existing OpenClaw notify pipeline via `github-activity.yml`'s `workflow_run`
+# trigger (this workflow's name is listed there).
+#
+# Why this exists: the runner-side emitter POSTs spans to a local collector that
+# returns 2xx the instant it accepts them, so a downstream backend outage (the
+# 2026-06-16 Opik/SigNoz blackout) drops every span with zero signal. Nothing
+# probed the backends; this does.
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: telemetry-egress-check
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: [self-hosted, macOS, ARM64, mac-mini]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          filter: blob:none
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-pnpm
+
+      - name: Probe telemetry egress
+        env:
+          CLAWSWEEPER_USAGE_OTLP_ENDPOINT: ${{ vars.CLAWSWEEPER_USAGE_OTLP_ENDPOINT }}
+          CLAWSWEEPER_USAGE_EGRESS_TARGETS: ${{ vars.CLAWSWEEPER_USAGE_EGRESS_TARGETS }}
+          CLAWSWEEPER_USAGE_SERVICE_NAME: ${{ vars.CLAWSWEEPER_USAGE_SERVICE_NAME || 'clawsweeper-runner' }}
+          CLAWSWEEPER_USAGE_EGRESS_TIMEOUT_MS: ${{ vars.CLAWSWEEPER_USAGE_EGRESS_TIMEOUT_MS || '8000' }}
+        run: pnpm run check:telemetry-egress
