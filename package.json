@@ -9,6 +9,7 @@
     "build:repair": "tsgo -p tsconfig.repair.json",
     "build:dashboard": "tsgo -p tsconfig.dashboard.json",
     "build:all": "pnpm run build && pnpm run build:repair && pnpm run build:dashboard",
+    "typecheck:scripts": "tsgo -p tsconfig.scripts.json",
     "plan": "node dist/clawsweeper.js plan",
     "review": "node dist/clawsweeper.js review",
     "apply-artifacts": "node dist/clawsweeper.js apply-artifacts",
@@ -74,11 +75,11 @@
     "lint:repair": "oxlint src/repair --tsconfig tsconfig.repair.json --deny-warnings --report-unused-disable-directives -D correctness",
     "lint:scripts": "oxlint scripts test --deny-warnings --report-unused-disable-directives -D correctness",
     "lint:dashboard": "oxlint dashboard --tsconfig tsconfig.dashboard.json --deny-warnings --report-unused-disable-directives -D correctness",
-    "format": "oxfmt --write src scripts test dashboard package.json tsconfig.json tsconfig.repair.json tsconfig.dashboard.json .oxfmtrc.json config schema .github/actions .github/workflows",
-    "format:check": "oxfmt --check src scripts test dashboard package.json tsconfig.json tsconfig.repair.json tsconfig.dashboard.json .oxfmtrc.json config schema .github/actions .github/workflows",
+    "format": "oxfmt --write src scripts test dashboard package.json tsconfig.json tsconfig.repair.json tsconfig.dashboard.json tsconfig.scripts.json .oxfmtrc.json config schema .github/actions .github/workflows",
+    "format:check": "oxfmt --check src scripts test dashboard package.json tsconfig.json tsconfig.repair.json tsconfig.dashboard.json tsconfig.scripts.json .oxfmtrc.json config schema .github/actions .github/workflows",
     "oxformat": "pnpm run format",
     "oxformat:check": "pnpm run format:check",
-    "check": "pnpm run check:active-surface && pnpm run check:limits && pnpm run build:all && pnpm run lint && pnpm run test:unit && pnpm run test:repair && pnpm run test:coverage:changed && pnpm run test:coverage && pnpm run format:check"
+    "check": "pnpm run check:active-surface && pnpm run check:limits && pnpm run build:all && pnpm run typecheck:scripts && pnpm run lint && pnpm run test:unit && pnpm run test:repair && pnpm run test:coverage:changed && pnpm run test:coverage && pnpm run format:check"
   },
   "devDependencies": {
     "@types/node": "^25.6.0",

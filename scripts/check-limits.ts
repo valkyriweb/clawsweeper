@@ -128,7 +128,7 @@ function flattenLimits(value: unknown, prefix = ""): Record<string, number> {
   if (!isRecord(value)) return out;
   for (const [key, child] of Object.entries(value)) {
     const childPath = prefix ? `${prefix}.${key}` : key;
-    if (Number.isInteger(child)) {
+    if (typeof child === "number" && Number.isInteger(child)) {
       out[childPath] = child;
     } else {
       Object.assign(out, flattenLimits(child, childPath));
