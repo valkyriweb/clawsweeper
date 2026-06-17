@@ -14,5 +14,6 @@
     "skipLibCheck": true,
     "allowImportingTsExtensions": true
   },
-  "include": ["dashboard/**/*.ts"]
+  "include": ["dashboard/**/*.ts"],
+  "exclude": ["dashboard/app"]
 }

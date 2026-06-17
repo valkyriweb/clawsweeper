@@ -231,6 +231,17 @@ export default {
       if (gate instanceof Response) return gate;
       return prProofTriageJson(request, env, ctx);
     }
+    if (url.pathname === "/v2" || url.pathname.startsWith("/v2/")) {
+      const assets = (env as { ASSETS?: { fetch: (req: Request) => Promise<Response> } }).ASSETS;
+      if (!assets) return json({ error: "assets_unavailable" }, 503);
+      if (url.pathname.startsWith("/v2/assets/")) return assets.fetch(request);
+      const gate = await requireDashboardAuth(request, env, "redirect");
+      if (gate instanceof Response) return gate;
+      const indexUrl = new URL(request.url);
+      indexUrl.pathname = "/v2/index.html";
+      indexUrl.search = "";
+      return assets.fetch(new Request(indexUrl.toString(), { headers: request.headers }));
+    }
     if (url.pathname === "/" || url.pathname === "/index.html") {
       const gate = await requireDashboardAuth(request, env, "redirect");
       if (gate instanceof Response) return gate;

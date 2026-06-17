@@ -16,7 +16,11 @@
 Build a real ClawSweeper ops dashboard instead of extending the current inline HTML Worker page:
 
 - **Frontend**: Vite + React + TanStack Router + TanStack Query.
-- **Live state**: Convex for status snapshots, events, runner-mode audit, and live subscriptions.
+- **Live state**: Convex for status snapshots, events, runner-mode audit.
+
+### Live-data revision (2026-06-17, supersedes "live subscriptions")
+
+Convex is now **self-hosted on lue-kube, tailnet-only**, with only a narrow **mutation** ingest bridge exposed publicly. The browser therefore **cannot** open a public Convex sync WebSocket, so in-browser `useQuery` live subscriptions are out. Decision: the v2 React app reads via the **Worker `/api/*` JSON API using TanStack Query polling (~10s)** — no public Convex read/sync surface. Convex stays write-only from the public edge (snapshots/events/audit), and any history/read views are served by the Worker reading server-side (a Convex read path can be added to the bridge later if needed).
 - **Auth**: Google OAuth gated to Luke's allowed email(s), implemented in the ClawSweeper Worker.
 - **Effect**: adopt incrementally at external boundaries: config parsing, Google OAuth/session, GitHub API, Convex writes/reads, retries/timeouts.
 

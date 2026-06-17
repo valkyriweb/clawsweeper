@@ -341,3 +341,64 @@ test("runner-mode response survives Convex audit write failures and sends sessio
     globalThis.fetch = originalFetch;
   }
 });
+
+test("Worker redirects /v2 to login when unauthenticated", async () => {
+  const env = { ...AUTH_ENV, ASSETS: { fetch: async () => new Response("x") } };
+  const response = await worker.fetch(new Request("https://example.test/v2"), env);
+
+  assert.equal(response.status, 302);
+  assert.equal(response.headers.get("location"), "https://example.test/login?returnTo=%2Fv2");
+});
+
+test("Worker returns 503 for /v2 when the ASSETS binding is missing", async () => {
+  const response = await worker.fetch(new Request("https://example.test/v2"), AUTH_ENV);
+
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { error: "assets_unavailable" });
+});
+
+test("Worker serves /v2 static assets without an auth gate", async () => {
+  const seen: string[] = [];
+  const env = {
+    ...AUTH_ENV,
+    ASSETS: {
+      fetch: async (req: Request) => {
+        seen.push(new URL(req.url).pathname);
+        return new Response("asset-body", {
+          headers: { "content-type": "application/javascript" },
+        });
+      },
+    },
+  };
+  const response = await worker.fetch(
+    new Request("https://example.test/v2/assets/index-abc.js"),
+    env,
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(await response.text(), "asset-body");
+  assert.deepEqual(seen, ["/v2/assets/index-abc.js"]);
+});
+
+test("Worker serves the v2 SPA index for authenticated app routes", async () => {
+  const config = parseDashboardConfig(AUTH_ENV).auth;
+  const cookie = await createSessionCookie(config, { email: "luke@bermont.digital" });
+  const seen: string[] = [];
+  const env = {
+    ...AUTH_ENV,
+    ASSETS: {
+      fetch: async (req: Request) => {
+        seen.push(new URL(req.url).pathname);
+        return new Response("<!doctype html>", { headers: { "content-type": "text/html" } });
+      },
+    },
+  };
+  const response = await worker.fetch(
+    new Request("https://example.test/v2/runs", { headers: { cookie } }),
+    env,
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(await response.text(), "<!doctype html>");
+  assert.deepEqual(seen, ["/v2/index.html"]);
+});
