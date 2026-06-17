@@ -1289,3 +1289,65 @@ function jsonResponse(value: unknown) {
     },
   });
 }
+
+test("runner-mode 401s when no admin token is configured", async () => {
+  const env = { INGEST_TOKEN: "ingest-secret", STATUS_STORE: new MemoryKv() };
+  const response = await worker.fetch(
+    new Request("https://clawsweeper.openclaw.ai/api/runner-mode", {
+      method: "POST",
+      headers: { Authorization: "Bearer ingest-secret", "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: "paused" }),
+    }),
+    env,
+    { waitUntil: () => undefined },
+  );
+  assert.equal(response.status, 401);
+});
+
+test("runner-mode rejects a wrong admin token", async () => {
+  const env = { DASHBOARD_ADMIN_TOKEN: "admin-secret", STATUS_STORE: new MemoryKv() };
+  const response = await worker.fetch(
+    new Request("https://clawsweeper.openclaw.ai/api/runner-mode", {
+      method: "POST",
+      headers: { Authorization: "Bearer nope", "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: "paused" }),
+    }),
+    env,
+    { waitUntil: () => undefined },
+  );
+  assert.equal(response.status, 401);
+});
+
+test("runner-mode accepts the admin token then validates the mode", async () => {
+  const env = { DASHBOARD_ADMIN_TOKEN: "admin-secret", STATUS_STORE: new MemoryKv() };
+  const response = await worker.fetch(
+    new Request("https://clawsweeper.openclaw.ai/api/runner-mode", {
+      method: "POST",
+      headers: { Authorization: "Bearer admin-secret", "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: "definitely-not-a-mode" }),
+    }),
+    env,
+    { waitUntil: () => undefined },
+  );
+  // Auth passed (constant-time compare matched); rejected only on invalid mode.
+  assert.equal(response.status, 400);
+});
+
+test("runner-mode rejects the ingest token even when both tokens are set", async () => {
+  const env = {
+    INGEST_TOKEN: "ingest-secret",
+    DASHBOARD_ADMIN_TOKEN: "admin-secret",
+    STATUS_STORE: new MemoryKv(),
+  };
+  const response = await worker.fetch(
+    new Request("https://clawsweeper.openclaw.ai/api/runner-mode", {
+      method: "POST",
+      headers: { Authorization: "Bearer ingest-secret", "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: "paused" }),
+    }),
+    env,
+    { waitUntil: () => undefined },
+  );
+  // The ingest token must NOT grant runner control even when it is configured.
+  assert.equal(response.status, 401);
+});

@@ -17,6 +17,10 @@ WORKER_BUDGET = "80"
 CACHE_TTL_SECONDS = "20"
 INCLUDE_CI_STATUS = "1"
 
+# Secrets (set via `wrangler secret put`, never committed):
+#   INGEST_TOKEN          - auth for POST /api/events (telemetry ingest)
+#   DASHBOARD_ADMIN_TOKEN - REQUIRED for POST /api/runner-mode (runner kill-switch); no INGEST_TOKEN fallback
+
 [[kv_namespaces]]
 binding = "STATUS_STORE"
 id = "2aa09e8c521d4b3b8acf6b7e5e3541ba"
