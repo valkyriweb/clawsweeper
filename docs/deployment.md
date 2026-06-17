@@ -47,10 +47,20 @@ ssh <host> 'sudo ln -sf /usr/bin/gh /usr/local/bin/gh-native'   # Linux w/ apt g
 
 `GH_BIN` defaults to `/usr/local/bin/gh-native`. To trial ghx again, first install
 a ghx build that forwards the client environment to daemon-executed `gh` calls
-(the valkyriweb ghx fork's env-forwarding fix), then set the repo/org variable:
+(the valkyriweb ghx fork's env-forwarding fix). Then choose **one** safe rollout
+shape:
+
+1. install the fixed ghx at the same path on every runner/image that can run
+   `sweep.yml`, then set `CLAWSWEEPER_GH_BIN` to that fleet-wide path; or
+2. pin the trial workflow/run to runner labels where the fixed ghx path exists.
+
+Do not set a repo-wide `CLAWSWEEPER_GH_BIN` to a host-specific path such as
+`/opt/homebrew/bin/ghx` while Linux/ARC runners are eligible; those jobs will fail
+before the private-target smoke proves the token fix.
 
 ```bash
-gh variable set CLAWSWEEPER_GH_BIN --repo valkyriweb/clawsweeper --body /opt/homebrew/bin/ghx
+# example only after the path exists on every eligible runner
+gh variable set CLAWSWEEPER_GH_BIN --repo valkyriweb/clawsweeper --body /usr/local/bin/ghx
 # rollback
 gh variable delete CLAWSWEEPER_GH_BIN --repo valkyriweb/clawsweeper
 ```
