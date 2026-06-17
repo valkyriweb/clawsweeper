@@ -20,7 +20,7 @@ was not changed while authoring them.
 | 006 | Unified control plane: typed config + per-repo enable + dashboard | P2 | L | 002 | **DEFERRED (STOP)** — control plane is two-tier: static workflow-env snapshot (~10 `=== "1"` sites) *and* a live GitHub-repo-variable tier (`readGateValue`/`openGate`/`setGate`). A single env reader only partially unifies; touches security gates; warrants a reviewed re-plan. |
 | 007 | Deflake `runCodex` total-timeout test under parallel-build load | — | S | — | **DONE** — PR #104 (bonus: root-caused intermittent `pnpm check` failure; widened the startup/total margins while preserving startup-watchdog cancellation coverage) |
 
-Status values: TODO | IN PROGRESS | DONE | BLOCKED (one-line reason) | REJECTED (one-line rationale).
+Status values: TODO | IN PROGRESS | DONE | BLOCKED (one-line reason) | DEFERRED (STOP) | REJECTED (one-line rationale).
 
 **Execution outcome (2026-06-17):** Plans 001–004 plus a bonus deflake (007) shipped as CI-green PRs #101–#105 on `valkyriweb/clawsweeper`; 005 and 006 were deferred after hitting their own STOP conditions — both are more entangled with security-critical token/gate code than the audit assumed (see their Status rows). The audit's *findings* hold; only the *prescribed refactors* for 005/006 need a reviewed re-plan.
 
