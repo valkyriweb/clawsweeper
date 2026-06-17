@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const root = process.cwd();
 const activeRoots: string[] = [
   ".github/workflows",
   "config",
@@ -41,7 +41,7 @@ const textExtensions = new Set<string>([
   ".yml",
 ]);
 
-const retiredPatterns: { label: string; pattern: RegExp }[] = [
+export const retiredPatterns: { label: string; pattern: RegExp }[] = [
   { label: "Clownfish product name", pattern: /\bclownfish\b/i },
   { label: "ProjectClownfish name", pattern: /\bProjectClownFish\b|\bProjectClownfish\b/i },
   { label: "old Clownfish env prefix", pattern: /\bCLAWSWEEPER_CLOWNFISH\b/ },
@@ -54,7 +54,7 @@ const retiredPatterns: { label: string; pattern: RegExp }[] = [
   { label: "unsupported gh run list workflow flag", pattern: /\bgh run list\b.*--workflow\b/ },
 ];
 
-type Finding = {
+export type Finding = {
   file: string;
   line: number;
   column: number;
@@ -62,44 +62,19 @@ type Finding = {
   match: string;
 };
 
-const findings: Finding[] = [];
-
-for (const entry of activeRoots) {
-  const absolute = path.join(root, entry);
-  if (!fs.existsSync(absolute)) continue;
-  scan(absolute);
-}
-
-if (findings.length > 0) {
-  console.error("Active-surface guard failed:");
-  for (const finding of findings) {
-    console.error(
-      `- ${finding.file}:${finding.line}:${finding.column} ${finding.label}: ${finding.match}`,
-    );
-  }
-  process.exit(1);
-}
-
-function scan(absolute: string): void {
-  const stat = fs.statSync(absolute);
-  const name = path.basename(absolute);
-  if (stat.isDirectory()) {
-    if (ignoredDirs.has(name)) return;
-    for (const child of fs.readdirSync(absolute)) scan(path.join(absolute, child));
-    return;
-  }
-  if (!stat.isFile() || !isTextFile(absolute)) return;
-  const relative = path.relative(root, absolute);
-  const canonicalRelative = relative.split(path.sep).join("/");
-  if (canonicalRelative === "scripts/check-active-surface.ts") return;
-  const text = fs.readFileSync(absolute, "utf8");
+export function findRetiredInText(
+  text: string,
+  file: string,
+  patterns: { label: string; pattern: RegExp }[] = retiredPatterns,
+): Finding[] {
+  const out: Finding[] = [];
   const lines = text.split(/\r?\n/);
   lines.forEach((line, index) => {
-    for (const retired of retiredPatterns) {
+    for (const retired of patterns) {
       const match = retired.pattern.exec(line);
       if (!match) continue;
-      findings.push({
-        file: canonicalRelative,
+      out.push({
+        file,
         line: index + 1,
         column: match.index + 1,
         label: retired.label,
@@ -107,11 +82,56 @@ function scan(absolute: string): void {
       });
     }
   });
+  return out;
 }
 
-function isTextFile(file: string): boolean {
+function scan(absolute: string, rootDir: string, findings: Finding[]): void {
+  const stat = fs.statSync(absolute);
+  const name = path.basename(absolute);
+  if (stat.isDirectory()) {
+    if (ignoredDirs.has(name)) return;
+    for (const child of fs.readdirSync(absolute))
+      scan(path.join(absolute, child), rootDir, findings);
+    return;
+  }
+  if (!stat.isFile() || !isTextFile(absolute)) return;
+  const relative = path.relative(rootDir, absolute);
+  const canonicalRelative = relative.split(path.sep).join("/");
+  if (canonicalRelative === "scripts/check-active-surface.ts") return;
+  const text = fs.readFileSync(absolute, "utf8");
+  findings.push(...findRetiredInText(text, canonicalRelative));
+}
+
+export function collectActiveSurfaceFindings(rootDir: string = process.cwd()): Finding[] {
+  const findings: Finding[] = [];
+  for (const entry of activeRoots) {
+    const absolute = path.join(rootDir, entry);
+    if (!fs.existsSync(absolute)) continue;
+    scan(absolute, rootDir, findings);
+  }
+  return findings;
+}
+
+export function isTextFile(file: string): boolean {
   const basename = path.basename(file);
   if (basename === "package.json") return true;
   if (basename.startsWith("tsconfig") && basename.endsWith(".json")) return true;
   return textExtensions.has(path.extname(file));
+}
+
+const isMain = process.argv[1]
+  ? path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+  : false;
+
+if (isMain) {
+  const findings = collectActiveSurfaceFindings();
+  if (findings.length > 0) {
+    console.error("Active-surface guard failed:");
+    for (const finding of findings) {
+      console.error(
+        `- ${finding.file}:${finding.line}:${finding.column} ${finding.label}: ${finding.match}`,
+      );
+    }
+    process.exit(1);
+  }
 }
