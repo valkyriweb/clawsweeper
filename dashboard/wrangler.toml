@@ -16,6 +16,7 @@ TARGET_REPOS = "valkyriweb/pi-mono,bermont-digital/multica,valkyriweb/lue-kube,v
 WORKER_BUDGET = "80"
 CACHE_TTL_SECONDS = "20"
 INCLUDE_CI_STATUS = "1"
+CONVEX_INGEST_URL = "https://clawsweeper-convex-ingest.myhorizon.co.za/api/mutation"
 
 # Optional Google OAuth dashboard gate (disabled unless DASHBOARD_AUTH_ENABLED is set):
 #   DASHBOARD_AUTH_ENABLED = "1"
