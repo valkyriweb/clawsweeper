@@ -5,6 +5,7 @@ import {
   type FetchLike,
   canaryOtlpBody,
   classifyStatus,
+  hasConfiguredEgressTargets,
   probeTarget,
   resolveEgressTargets,
 } from "../scripts/check-telemetry-egress.ts";
@@ -20,6 +21,20 @@ test("classifyStatus treats 5xx as DOWN and everything below 500 as reachable", 
     assert.equal(result.ok, false, `expected ${status} DOWN`);
     assert.equal(result.detail, `http_${status}`);
   }
+});
+
+test("hasConfiguredEgressTargets requires an explicit downstream target list", () => {
+  assert.equal(hasConfiguredEgressTargets({} as NodeJS.ProcessEnv), false);
+  assert.equal(
+    hasConfiguredEgressTargets({ CLAWSWEEPER_USAGE_EGRESS_TARGETS: " , " } as NodeJS.ProcessEnv),
+    false,
+  );
+  assert.equal(
+    hasConfiguredEgressTargets({
+      CLAWSWEEPER_USAGE_EGRESS_TARGETS: "opik=https://opik.example",
+    } as NodeJS.ProcessEnv),
+    true,
+  );
 });
 
 test("resolveEgressTargets combines the OTLP endpoint with the extra target list", () => {

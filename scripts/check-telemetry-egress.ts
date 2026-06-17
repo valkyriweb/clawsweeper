@@ -55,6 +55,12 @@ function hostnameOf(url: string): string {
   }
 }
 
+export function hasConfiguredEgressTargets(env: NodeJS.ProcessEnv = process.env): boolean {
+  return String(env.CLAWSWEEPER_USAGE_EGRESS_TARGETS ?? "")
+    .split(",")
+    .some((part) => part.trim().length > 0);
+}
+
 /**
  * Resolve egress targets from the environment: the primary OTLP endpoint (same
  * precedence the emitter uses) plus an optional `CLAWSWEEPER_USAGE_EGRESS_TARGETS`
@@ -164,12 +170,19 @@ export async function probeTarget(
 
 async function main(): Promise<void> {
   const env = process.env;
+  if (!hasConfiguredEgressTargets(env)) {
+    console.error(
+      "telemetry-egress: CLAWSWEEPER_USAGE_EGRESS_TARGETS is required " +
+        "(configure downstream Opik/SigNoz targets so the guard cannot pass by probing only the collector).",
+    );
+    process.exitCode = 1;
+    return;
+  }
+
   const targets = resolveEgressTargets(env);
   if (targets.length === 0) {
-    console.log(
-      "telemetry-egress: no targets configured " +
-        "(set CLAWSWEEPER_USAGE_OTLP_ENDPOINT and/or CLAWSWEEPER_USAGE_EGRESS_TARGETS); nothing to check.",
-    );
+    console.error("telemetry-egress: no targets resolved from telemetry egress configuration.");
+    process.exitCode = 1;
     return;
   }
 
