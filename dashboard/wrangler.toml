@@ -36,3 +36,9 @@ CONVEX_INGEST_URL = "https://clawsweeper-convex-ingest.myhorizon.co.za/api/mutat
 [[kv_namespaces]]
 binding = "STATUS_STORE"
 id = "2aa09e8c521d4b3b8acf6b7e5e3541ba"
+
+# v2 React dashboard static assets (served by the Worker at /v2; build with `pnpm --dir dashboard/app run build`)
+[assets]
+directory = "app/dist"
+binding = "ASSETS"
+run_worker_first = ["/v2", "/v2/*"]
