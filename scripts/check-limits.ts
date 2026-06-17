@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-type WorkerConfig = {
+export type WorkerConfig = {
   workers: {
     max: number;
     reserve_for_interactive: number;
@@ -11,7 +12,7 @@ type WorkerConfig = {
   };
 };
 
-type AutomationLimits = {
+export type AutomationLimits = {
   review_shards: {
     normal_default: number;
     normal_active_floor: number;
@@ -34,110 +35,13 @@ type AutomationLimits = {
   };
 };
 
-const root = process.cwd();
-const config = JSON.parse(
-  fs.readFileSync(path.join(root, "config", "automation-limits.json"), "utf8"),
-) as WorkerConfig;
-const limits = deriveAutomationLimits(config);
+export type LimitExpectation = { file: string; label: string; pattern: RegExp };
 
-const expectations: { file: string; label: string; pattern: RegExp }[] = [
-  {
-    file: ".github/workflows/sweep.yml",
-    label: "manual workflow_dispatch shard_count default",
-    pattern: new RegExp(
-      `shard_count:[\\s\\S]{0,180}default: "${limits.review_shards.normal_default}"`,
-    ),
-  },
-  {
-    file: "README.md",
-    label: "manual plan shard-count example",
-    pattern: new RegExp(`--shard-count ${limits.review_shards.normal_default}\\b`),
-  },
-  {
-    file: "docs/commit-dispatcher.md",
-    label: "commit review page size env example",
-    pattern: new RegExp(
-      `CLAWSWEEPER_COMMIT_REVIEW_PAGE_SIZE=${limits.commit_review.page_size_default}\\b`,
-    ),
-  },
-  {
-    file: "docs/commit-sweeper.md",
-    label: "commit review page size default",
-    pattern: new RegExp(`defaults to ${limits.commit_review.page_size_default}\\b`),
-  },
-  {
-    file: "docs/repair/README.md",
-    label: "repair live run default",
-    pattern: new RegExp(`CLAWSWEEPER_MAX_LIVE_WORKERS=${limits.repair_live_runs.default}\\b`),
-  },
-  {
-    file: "docs/scheduler.md",
-    label: "normal review shard default",
-    pattern: new RegExp(`${limits.review_shards.normal_default} concurrent Codex\\s+review shards`),
-  },
-  {
-    file: "docs/scheduler.md",
-    label: "normal active shard floor",
-    pattern: new RegExp(`fewer than ${limits.review_shards.normal_active_floor} items are due`),
-  },
-  {
-    file: "docs/scheduler.md",
-    label: "hot intake shard default",
-    pattern: new RegExp(
-      `broad hot intake: up to ${limits.review_shards.hot_intake_default} shards`,
-    ),
-  },
-  {
-    file: "docs/limits.md",
-    label: "limits documentation references source file",
-    pattern: /config\/automation-limits\.json/,
-  },
-];
-
-for (const [limitPath, value] of Object.entries(flattenLimits(limits))) {
-  expectations.push({
-    file: "docs/limits.md",
-    label: `${limitPath} documented current value`,
-    pattern: new RegExp(`\\| \`${escapeRegExp(limitPath)}\` \\| ${value} \\|`),
-  });
-}
-for (const [limitPath, value] of Object.entries(flattenLimits(config))) {
-  expectations.push({
-    file: "docs/limits.md",
-    label: `${limitPath} documented worker config value`,
-    pattern: new RegExp(`\\| \`${escapeRegExp(limitPath)}\` \\| ${value} \\|`),
-  });
+export function percent(max: number, value: number): number {
+  return Math.max(1, Math.floor((max * value) / 100));
 }
 
-const missing: string[] = [];
-for (const expectation of expectations) {
-  const text = fs.readFileSync(path.join(root, expectation.file), "utf8");
-  if (!expectation.pattern.test(text)) {
-    missing.push(`${expectation.file}: ${expectation.label}`);
-  }
-}
-
-if (missing.length > 0) {
-  console.error("Automation limits drift check failed:");
-  for (const item of missing) console.error(`- ${item}`);
-  process.exit(1);
-}
-
-function flattenLimits(value: unknown, prefix = ""): Record<string, number> {
-  const out: Record<string, number> = {};
-  if (!isRecord(value)) return out;
-  for (const [key, child] of Object.entries(value)) {
-    const childPath = prefix ? `${prefix}.${key}` : key;
-    if (typeof child === "number" && Number.isInteger(child)) {
-      out[childPath] = child;
-    } else {
-      Object.assign(out, flattenLimits(child, childPath));
-    }
-  }
-  return out;
-}
-
-function deriveAutomationLimits(workerConfig: WorkerConfig): AutomationLimits {
+export function deriveAutomationLimits(workerConfig: WorkerConfig): AutomationLimits {
   const max = workerConfig.workers.max;
   return {
     review_shards: {
@@ -163,14 +67,129 @@ function deriveAutomationLimits(workerConfig: WorkerConfig): AutomationLimits {
   };
 }
 
-function percent(max: number, value: number): number {
-  return Math.max(1, Math.floor((max * value) / 100));
+export function flattenLimits(value: unknown, prefix = ""): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (!isRecord(value)) return out;
+  for (const [key, child] of Object.entries(value)) {
+    const childPath = prefix ? `${prefix}.${key}` : key;
+    if (typeof child === "number" && Number.isInteger(child)) {
+      out[childPath] = child;
+    } else {
+      Object.assign(out, flattenLimits(child, childPath));
+    }
+  }
+  return out;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function escapeRegExp(value: string): string {
+export function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+export function buildExpectations(
+  limits: AutomationLimits,
+  config: WorkerConfig,
+): LimitExpectation[] {
+  const expectations: LimitExpectation[] = [
+    {
+      file: ".github/workflows/sweep.yml",
+      label: "manual workflow_dispatch shard_count default",
+      pattern: new RegExp(
+        `shard_count:[\\s\\S]{0,180}default: "${limits.review_shards.normal_default}"`,
+      ),
+    },
+    {
+      file: "README.md",
+      label: "manual plan shard-count example",
+      pattern: new RegExp(`--shard-count ${limits.review_shards.normal_default}\\b`),
+    },
+    {
+      file: "docs/commit-dispatcher.md",
+      label: "commit review page size env example",
+      pattern: new RegExp(
+        `CLAWSWEEPER_COMMIT_REVIEW_PAGE_SIZE=${limits.commit_review.page_size_default}\\b`,
+      ),
+    },
+    {
+      file: "docs/commit-sweeper.md",
+      label: "commit review page size default",
+      pattern: new RegExp(`defaults to ${limits.commit_review.page_size_default}\\b`),
+    },
+    {
+      file: "docs/repair/README.md",
+      label: "repair live run default",
+      pattern: new RegExp(`CLAWSWEEPER_MAX_LIVE_WORKERS=${limits.repair_live_runs.default}\\b`),
+    },
+    {
+      file: "docs/scheduler.md",
+      label: "normal review shard default",
+      pattern: new RegExp(
+        `${limits.review_shards.normal_default} concurrent Codex\\s+review shards`,
+      ),
+    },
+    {
+      file: "docs/scheduler.md",
+      label: "normal active shard floor",
+      pattern: new RegExp(`fewer than ${limits.review_shards.normal_active_floor} items are due`),
+    },
+    {
+      file: "docs/scheduler.md",
+      label: "hot intake shard default",
+      pattern: new RegExp(
+        `broad hot intake: up to ${limits.review_shards.hot_intake_default} shards`,
+      ),
+    },
+    {
+      file: "docs/limits.md",
+      label: "limits documentation references source file",
+      pattern: /config\/automation-limits\.json/,
+    },
+  ];
+  for (const [limitPath, value] of Object.entries(flattenLimits(limits))) {
+    expectations.push({
+      file: "docs/limits.md",
+      label: `${limitPath} documented current value`,
+      pattern: new RegExp(`\\| \`${escapeRegExp(limitPath)}\` \\| ${value} \\|`),
+    });
+  }
+  for (const [limitPath, value] of Object.entries(flattenLimits(config))) {
+    expectations.push({
+      file: "docs/limits.md",
+      label: `${limitPath} documented worker config value`,
+      pattern: new RegExp(`\\| \`${escapeRegExp(limitPath)}\` \\| ${value} \\|`),
+    });
+  }
+  return expectations;
+}
+
+export function runDriftCheck(rootDir: string = process.cwd()): string[] {
+  const config = JSON.parse(
+    fs.readFileSync(path.join(rootDir, "config", "automation-limits.json"), "utf8"),
+  ) as WorkerConfig;
+  const limits = deriveAutomationLimits(config);
+  const expectations = buildExpectations(limits, config);
+  const missing: string[] = [];
+  for (const expectation of expectations) {
+    const text = fs.readFileSync(path.join(rootDir, expectation.file), "utf8");
+    if (!expectation.pattern.test(text)) {
+      missing.push(`${expectation.file}: ${expectation.label}`);
+    }
+  }
+  return missing;
+}
+
+const isMain = process.argv[1]
+  ? path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+  : false;
+
+if (isMain) {
+  const missing = runDriftCheck();
+  if (missing.length > 0) {
+    console.error("Automation limits drift check failed:");
+    for (const item of missing) console.error(`- ${item}`);
+    process.exit(1);
+  }
 }
