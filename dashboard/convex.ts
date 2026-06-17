@@ -84,7 +84,7 @@ function writeConvexMutation(
   return Effect.runPromise(
     Effect.tryPromise({
       try: async () => {
-        await postConvexMutation(config.url, config.key, path, args);
+        await postConvexMutation(config.url, config.key, config.authScheme, path, args);
       },
       catch: (cause) => new ConvexWriteError(path, cause),
     }).pipe(Effect.catchAll(() => Effect.succeed(undefined))),
@@ -94,13 +94,14 @@ function writeConvexMutation(
 async function postConvexMutation(
   url: string,
   key: string,
+  authScheme: "convex" | "bearer",
   path: ConvexMutationPath,
   args: JsonObject,
 ): Promise<void> {
-  const response = await fetch(`${trimTrailingSlash(url)}/api/mutation`, {
+  const response = await fetch(convexMutationEndpoint(url), {
     method: "POST",
     headers: {
-      authorization: `Convex ${key}`,
+      authorization: `${authScheme === "convex" ? "Convex" : "Bearer"} ${key}`,
       "content-type": "application/json",
     },
     body: JSON.stringify({ path, args, format: "json" }),
@@ -141,6 +142,11 @@ function eventIdempotencyKey(
     ) ?? stringFrom(event.id, crypto.randomUUID());
 
   return [source, eventType, repository ?? "none", itemNumber ?? "none", externalId].join(":");
+}
+
+function convexMutationEndpoint(url: string): string {
+  const trimmed = trimTrailingSlash(url);
+  return trimmed.endsWith("/api/mutation") ? trimmed : `${trimmed}/api/mutation`;
 }
 
 function trimTrailingSlash(value: string): string {

@@ -1330,8 +1330,8 @@ test("status responses survive Convex snapshot write failures", async () => {
         TARGET_REPOS: "openclaw/openclaw",
         CACHE_TTL_SECONDS: "0",
         STATUS_STORE: new MemoryKv(),
-        CONVEX_URL: "https://demo.convex.cloud",
-        CONVEX_WRITE_KEY: "convex-write-key",
+        CONVEX_INGEST_URL: "https://demo.convex.cloud/api/mutation",
+        CONVEX_INGEST_TOKEN: "convex-ingest-token",
       },
       {
         waitUntil(promise: Promise<unknown>) {
@@ -1394,8 +1394,8 @@ test("partial status responses still write through to Convex", async () => {
         TARGET_REPOS: "openclaw/openclaw",
         CACHE_TTL_SECONDS: "0",
         STATUS_STORE: new MemoryKv(),
-        CONVEX_URL: "https://demo.convex.cloud",
-        CONVEX_WRITE_KEY: "convex-write-key",
+        CONVEX_INGEST_URL: "https://demo.convex.cloud/api/mutation",
+        CONVEX_INGEST_TOKEN: "convex-ingest-token",
       },
       {
         waitUntil(promise: Promise<unknown>) {
@@ -1473,8 +1473,8 @@ test("events write through to Convex with a stable idempotency key", async () =>
       {
         INGEST_TOKEN: "test-token",
         STATUS_STORE: new MemoryKv(),
-        CONVEX_URL: "https://demo.convex.cloud",
-        CONVEX_WRITE_KEY: "convex-write-key",
+        CONVEX_INGEST_URL: "https://demo.convex.cloud/api/mutation",
+        CONVEX_INGEST_TOKEN: "convex-ingest-token",
       },
       {
         waitUntil(promise: Promise<unknown>) {
@@ -1487,7 +1487,7 @@ test("events write through to Convex with a stable idempotency key", async () =>
     await Promise.all(waitUntilPromises);
     assert.equal(convexWrites.length, 1);
     assert.equal(convexWrites[0].url, "https://demo.convex.cloud/api/mutation");
-    assert.equal(convexWrites[0].authorization, "Convex convex-write-key");
+    assert.equal(convexWrites[0].authorization, "Bearer convex-ingest-token");
     assert.equal(convexWrites[0].contentType, "application/json");
     assert.equal(convexWrites[0].body.path, "events:record");
     assert.equal(convexWrites[0].body.format, "json");
@@ -1634,8 +1634,8 @@ test("runner-mode admin token writes legacy-token audit source", async () => {
         GITHUB_TOKEN: "gh-token",
         CLAWSWEEPER_REPO: "openclaw/clawsweeper",
         STATUS_STORE: new MemoryKv(),
-        CONVEX_URL: "https://demo.convex.cloud",
-        CONVEX_WRITE_KEY: "convex-write-key",
+        CONVEX_INGEST_URL: "https://demo.convex.cloud/api/mutation",
+        CONVEX_INGEST_TOKEN: "convex-ingest-token",
       },
       {
         waitUntil(promise: Promise<unknown>) {

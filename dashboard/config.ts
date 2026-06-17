@@ -30,6 +30,7 @@ export type AuthConfig = AuthConfigDisabled | AuthConfigEnabled;
 export type ConvexConfig = {
   url: string | null;
   key: string | null;
+  authScheme: "convex" | "bearer";
   enabled: boolean;
 };
 
@@ -89,9 +90,20 @@ export function parseDashboardConfig(env: DashboardEnv): DashboardConfig {
 }
 
 export function parseConvexConfig(env: DashboardEnv): ConvexConfig {
+  const ingestUrl = optionalString(env.CONVEX_INGEST_URL);
+  const ingestToken = optionalString(env.CONVEX_INGEST_TOKEN);
+  if (ingestUrl || ingestToken) {
+    return {
+      url: ingestUrl,
+      key: ingestToken,
+      authScheme: "bearer",
+      enabled: Boolean(ingestUrl && ingestToken),
+    };
+  }
+
   const url = optionalString(env.CONVEX_URL);
   const key = optionalString(env.CONVEX_WRITE_KEY) ?? optionalString(env.CONVEX_DEPLOY_KEY);
-  return { url, key, enabled: Boolean(url && key) };
+  return { url, key, authScheme: "convex", enabled: Boolean(url && key) };
 }
 
 export function isAllowedEmail(email: string, allowedEmails: readonly string[]): boolean {

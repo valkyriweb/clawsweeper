@@ -20,13 +20,14 @@ test("parseDashboardConfig leaves auth disabled by default", () => {
   const config = parseDashboardConfig({});
 
   assert.deepEqual(config.auth, { enabled: false });
-  assert.deepEqual(config.convex, { url: null, key: null, enabled: false });
+  assert.deepEqual(config.convex, { url: null, key: null, authScheme: "convex", enabled: false });
 });
 
-test("parseDashboardConfig enables Convex only with URL and write key", () => {
+test("parseDashboardConfig enables Convex direct or bridge writes only with URL and key", () => {
   assert.deepEqual(parseDashboardConfig({ CONVEX_URL: "https://demo.convex.cloud" }).convex, {
     url: "https://demo.convex.cloud",
     key: null,
+    authScheme: "convex",
     enabled: false,
   });
   assert.deepEqual(
@@ -34,7 +35,19 @@ test("parseDashboardConfig enables Convex only with URL and write key", () => {
       CONVEX_URL: "https://demo.convex.cloud",
       CONVEX_WRITE_KEY: "write-key",
     }).convex,
-    { url: "https://demo.convex.cloud", key: "write-key", enabled: true },
+    { url: "https://demo.convex.cloud", key: "write-key", authScheme: "convex", enabled: true },
+  );
+  assert.deepEqual(
+    parseDashboardConfig({
+      CONVEX_INGEST_URL: "https://clawsweeper-convex-ingest.myhorizon.co.za/api/mutation",
+      CONVEX_INGEST_TOKEN: "ingest-token",
+    }).convex,
+    {
+      url: "https://clawsweeper-convex-ingest.myhorizon.co.za/api/mutation",
+      key: "ingest-token",
+      authScheme: "bearer",
+      enabled: true,
+    },
   );
 });
 
@@ -264,8 +277,8 @@ test("runner-mode response survives Convex audit write failures and sends sessio
     ...AUTH_ENV,
     CLAWSWEEPER_REPO: "valkyriweb/clawsweeper",
     GITHUB_TOKEN: "gh-token",
-    CONVEX_URL: "https://demo.convex.cloud",
-    CONVEX_WRITE_KEY: "convex-write-key",
+    CONVEX_INGEST_URL: "https://demo.convex.cloud/api/mutation",
+    CONVEX_INGEST_TOKEN: "convex-ingest-token",
     STATUS_STORE: {
       async get(key: string) {
         if (key === "runner-mode") return JSON.stringify({ mode: "macbook" });
