@@ -41,7 +41,7 @@ Repair lane: `pnpm run repair:*` (see `package.json`). Package manager: **pnpm**
 
 ## Hard rules
 
-- **clawsweeper MUST use native gh, never ghx.** ghx ignores the scoped `GH_TOKEN` → private targets 404. `sweep.yml` sets `GH_BIN=/usr/local/bin/gh-native`. See deployment.md → "gh vs ghx".
+- **Default to native gh; ghx only after the env-forwarding fork fix is installed.** Old ghx ignored scoped per-call `GH_TOKEN` → private targets 404. `sweep.yml` defaults `GH_BIN=/usr/local/bin/gh-native`; trial fixed ghx with `CLAWSWEEPER_GH_BIN` and keep native as rollback. See deployment.md → "gh vs ghx".
 - **Keep heavy load off cluster nodes.** x99 + old-mbp are lue-kube cluster workers; Codex review shards are pinned to mac-mini via `CLAWSWEEPER_REVIEW_RUNNER`. Don't route review to Linux boxes.
 - **Cost discipline.** Sweeps are a token sink. Ramp one notch at a time (safe-ramp doc); never enable all repos/mutations at once.
 - **Upstream:** `origin` = valkyriweb fork, `upstream` = openclaw. Don't auto-merge upstream; cherry-pick deliberately. Upstream uses native gh (no ghx).

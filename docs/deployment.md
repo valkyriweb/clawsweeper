@@ -23,31 +23,40 @@ Check live app installs:
 gh api repos/valkyriweb/clawsweeper/actions/secrets --jq '.secrets[].name'  # confirms APP_PRIVATE_KEY secret is set
 ```
 
-## gh vs ghx — clawsweeper MUST use native gh
+## gh vs ghx — default native gh, ghx only after env-forwarding fix
 
-Luke's self-hosted runners shim `gh` → **ghx** (a gh cache proxy) for openclaw.
-**ghx is incompatible with clawsweeper** and must be bypassed:
+Luke's self-hosted runners may shim `gh` → **ghx** (a gh cache proxy) for openclaw.
+ClawSweeper historically bypassed ghx because older ghx daemons inherited one
+startup identity and ignored per-call `GH_TOKEN`:
 
-> ghx serves cached GETs through one persistent per-user daemon that adopts a single
-> identity at spawn and **ignores the per-call `GH_TOKEN`**. clawsweeper passes a
-> *scoped per-target* token, so via ghx a CI user with no stored gh auth hits GitHub
-> **unauthenticated** → public targets 200, **private targets 404** (the
-> `valkyriweb/lue-kube` "Not Found" failures, 2026-05-29).
+> ClawSweeper passes a *scoped per-target* token. Old ghx executed daemon-side
+> `gh` subprocesses with the daemon's startup environment, so private targets could
+> resolve as unauthenticated and return **404** (for example the
+> `valkyriweb/lue-kube` failures on 2026-05-29).
 
-Fix: `sweep.yml` sets `GH_BIN` to a real gh (upstream-supported override — see
-`src/command.ts`, `src/clawsweeper.ts`). Each runner host has a stable
+Safe baseline: `sweep.yml` sets `GH_BIN` to a real gh (upstream-supported override
+— see `src/command.ts`, `src/clawsweeper.ts`). Each runner host has a stable
 `/usr/local/bin/gh-native` symlink → real gh:
 
 ```bash
-# verify the bypass on a host (must print a gh version, not the ghx shim)
+# verify the native baseline on a host (must print real gh, not the ghx shim)
 ssh <host> '/usr/local/bin/gh-native --version; readlink /usr/local/bin/gh-native'
 # create it if missing (target = the host's real gh: apt /usr/bin/gh, or ghx's ~/.ghx/bin/gh)
 ssh <host> 'sudo ln -sf /usr/bin/gh /usr/local/bin/gh-native'   # Linux w/ apt gh
 ```
 
-`GH_BIN` defaults to `/usr/local/bin/gh-native`; override per-repo with the
-`CLAWSWEEPER_GH_BIN` variable if a host needs a different path. ghx stays untouched
-for openclaw.
+`GH_BIN` defaults to `/usr/local/bin/gh-native`. To trial ghx again, first install
+a ghx build that forwards the client environment to daemon-executed `gh` calls
+(the valkyriweb ghx fork's env-forwarding fix), then set the repo/org variable:
+
+```bash
+gh variable set CLAWSWEEPER_GH_BIN --repo valkyriweb/clawsweeper --body /opt/homebrew/bin/ghx
+# rollback
+gh variable delete CLAWSWEEPER_GH_BIN --repo valkyriweb/clawsweeper
+```
+
+Do **not** point ClawSweeper at old ghx builds. Verify with a private target smoke
+run before broad rollout; native gh remains the rollback/default.
 
 ## Runner fleet & job distribution
 
@@ -119,8 +128,9 @@ the x99 + old-mbp workers.
   See that app's `README.md`.
 - Auth: GitHub App `valkyriweb-clawsweeper` (sealed secret), not a PAT.
 - Runner image: the cluster's `github-ai-runner` (already `FROM ghcr.io/actions/actions-runner`
-  + codex/pi/gh, native gh). clawsweeper's `GH_BIN=/usr/local/bin/gh-native` resolves in-pod
-  via a baked symlink — same bypass model as the host runners, no ghx in-container.
+  + codex/pi/gh, native gh). ClawSweeper defaults `GH_BIN=/usr/local/bin/gh-native` in-pod
+  via a baked symlink. If ghx is trialed again, the image/host must include the env-forwarding
+  ghx fork release and `CLAWSWEEPER_GH_BIN` must point at that binary.
 - **Codex-free pool**: ARC pods take light jobs (plan/apply/audit) only. Heavy Codex review
   stays pinned to the mac-mini (`CLAWSWEEPER_REVIEW_RUNNER`) because review needs the
   mac-mini's ChatGPT-subscription `~/.codex/auth.json`, which ephemeral pods don't have.
