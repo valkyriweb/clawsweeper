@@ -29,6 +29,7 @@ import {
   buildRepairSquashMergeMessage,
   writeRepairSquashMergeBody,
 } from "./repair-merge-message.js";
+import { validateClosePolicy, validateMergePolicy } from "./merge-close-policy.js";
 
 const MAINTAINER_AUTHOR_ASSOCIATIONS = new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
 const CLOSE_ACTIONS = new Set([
@@ -544,23 +545,6 @@ function applyMergeAction({
   };
 }
 
-function validateClosePolicy({ job, actionName }: LooseRecord) {
-  if (!job.frontmatter.allowed_actions.includes("close")) return "job does not allow close";
-  if (!job.frontmatter.allowed_actions.includes("comment"))
-    return "job does not allow close comments";
-  if ((job.frontmatter.blocked_actions ?? []).includes("close"))
-    return "close is blocked by job frontmatter";
-  if ((job.frontmatter.blocked_actions ?? []).includes("comment"))
-    return "comment is blocked by job frontmatter";
-  if (
-    !["close_low_signal", "post_merge_close"].includes(actionName) &&
-    job.frontmatter.allow_instant_close !== true
-  ) {
-    return "instant close requires allow_instant_close: true";
-  }
-  return "";
-}
-
 function validateFixFirstClose({
   job,
   result,
@@ -607,17 +591,6 @@ function isMergedCandidateFix(repo: string, candidateFix: LooseRecord) {
   }
 }
 
-function validateMergePolicy({ job, action }: LooseRecord) {
-  if (!job.frontmatter.allowed_actions.includes("merge")) return "job does not allow merge";
-  if ((job.frontmatter.blocked_actions ?? []).includes("merge"))
-    return "merge is blocked by job frontmatter";
-  if (job.frontmatter.allow_merge !== true) return "merge requires allow_merge: true";
-  if (!["merge_candidate", "merge_canonical"].includes(String(action.action ?? ""))) {
-    return "unsupported merge action";
-  }
-  return "";
-}
-
 function labelForClawSweeperReview(repo: string, target: LooseRecord) {
   ensureLabel(repo, CLAWSWEEPER_LABEL, CLAWSWEEPER_LABEL_COLOR, CLAWSWEEPER_LABEL_DESCRIPTION);
   ghBestEffort(["issue", "edit", String(target), "--repo", repo, "--add-label", CLAWSWEEPER_LABEL]);
@@ -631,7 +604,8 @@ function ensureLabel(repo: string, name: string, color: JsonValue, description: 
     );
   } catch (error) {
     const detail = ghErrorText(error);
-    if (!/already exists/i.test(detail)) return;
+    if (/already exists/i.test(detail)) return;
+    console.warn(`ensureLabel: could not create label "${name}" in ${repo}: ${detail}`);
   }
 }
 
