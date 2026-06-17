@@ -1,3 +1,21 @@
+import { Effect } from "effect";
+
+import { type AuthConfigEnabled, loadDashboardConfig } from "./config.ts";
+import {
+  exchangeGoogleCode,
+  fetchGoogleUser,
+  googleAuthUrl,
+  requireAllowedGoogleUser,
+} from "./google-oauth.ts";
+import {
+  clearSessionCookie,
+  clearStateCookie,
+  createSessionCookie,
+  createStateCookie,
+  randomState,
+  readSession,
+} from "./session.ts";
+
 const ACTIVE_RUN_STATUSES = new Set(["queued", "in_progress", "waiting", "requested", "pending"]);
 type DashboardEnv = Record<string, unknown>;
 type DashboardContext = { waitUntil?: (promise: Promise<unknown>) => void };
@@ -182,19 +200,158 @@ export default {
     if (url.pathname === "/api/health") return json({ ok: true, service: "clawsweeper-status" });
     if (url.pathname === "/api/events" && request.method === "POST")
       return ingestEvent(request, env);
+    if (url.pathname === "/api/session") return sessionJson(request, env);
+    if (url.pathname === "/auth/google") return startGoogleLogin(request, env);
+    if (url.pathname === "/auth/google/callback") return finishGoogleLogin(request, env);
+    if (url.pathname === "/logout") return logout(request, env);
+    if (url.pathname === "/login") return loginPage(request, env);
     if (url.pathname === "/api/runner-mode" && request.method === "POST")
       return setRunnerMode(request, env, ctx);
-    if (url.pathname === "/api/status") return statusJson(request, env, ctx);
-    if (url.pathname === "/api/triage") return triageJson(request, env, ctx);
-    if (url.pathname === "/api/pr-proof-triage") return prProofTriageJson(request, env, ctx);
-    if (url.pathname === "/" || url.pathname === "/index.html") return html(dashboardHtml());
-    if (url.pathname === "/triage" || url.pathname === "/triage.html")
+    if (url.pathname === "/api/status") {
+      const gate = await requireDashboardAuth(request, env, "json");
+      if (gate instanceof Response) return gate;
+      return statusJson(request, env, ctx);
+    }
+    if (url.pathname === "/api/triage") {
+      const gate = await requireDashboardAuth(request, env, "json");
+      if (gate instanceof Response) return gate;
+      return triageJson(request, env, ctx);
+    }
+    if (url.pathname === "/api/pr-proof-triage") {
+      const gate = await requireDashboardAuth(request, env, "json");
+      if (gate instanceof Response) return gate;
+      return prProofTriageJson(request, env, ctx);
+    }
+    if (url.pathname === "/" || url.pathname === "/index.html") {
+      const gate = await requireDashboardAuth(request, env, "redirect");
+      if (gate instanceof Response) return gate;
+      return html(dashboardHtml());
+    }
+    if (url.pathname === "/triage" || url.pathname === "/triage.html") {
+      const gate = await requireDashboardAuth(request, env, "redirect");
+      if (gate instanceof Response) return gate;
       return html(triageHtml(issueTriagePageConfig()));
-    if (url.pathname === "/pr-proof-triage" || url.pathname === "/pr-proof-triage.html")
+    }
+    if (url.pathname === "/pr-proof-triage" || url.pathname === "/pr-proof-triage.html") {
+      const gate = await requireDashboardAuth(request, env, "redirect");
+      if (gate instanceof Response) return gate;
       return html(triageHtml(prProofTriagePageConfig()));
+    }
     return json({ error: "not_found" }, 404);
   },
 };
+
+function dashboardConfig(env: DashboardEnv) {
+  return Effect.runSync(loadDashboardConfig(env));
+}
+
+async function requireDashboardAuth(
+  request: Request,
+  env: DashboardEnv,
+  mode: "json" | "redirect",
+) {
+  const config = dashboardConfig(env);
+  if (!config.auth.enabled) return { config, user: null };
+  const user = await readSession(request, config.auth);
+  if (user) return { config, user };
+  if (mode === "json") return json({ error: "unauthorized" }, 401);
+  const loginUrl = new URL("/login", request.url);
+  const current = new URL(request.url);
+  loginUrl.searchParams.set("returnTo", current.pathname + current.search);
+  return redirect(loginUrl.toString(), 302);
+}
+
+async function sessionJson(request: Request, env: DashboardEnv) {
+  const config = dashboardConfig(env);
+  if (!config.auth.enabled) return json({ authenticated: false, authEnabled: false });
+  const user = await readSession(request, config.auth);
+  return json({ authenticated: Boolean(user), authEnabled: true, user });
+}
+
+async function loginPage(request: Request, env: DashboardEnv) {
+  const config = dashboardConfig(env);
+  if (!config.auth.enabled) return redirect(new URL("/", request.url).toString(), 302);
+  const user = await readSession(request, config.auth);
+  const returnTo = safeReturnTo(new URL(request.url).searchParams.get("returnTo"));
+  if (user) return redirect(new URL(returnTo, request.url).toString(), 302);
+  const authUrl = new URL("/auth/google", request.url);
+  authUrl.searchParams.set("returnTo", returnTo);
+  return html(loginHtml(authUrl.toString()));
+}
+
+async function startGoogleLogin(request: Request, env: DashboardEnv) {
+  const config = dashboardConfig(env);
+  if (!config.auth.enabled) return redirect(new URL("/", request.url).toString(), 302);
+  const state = randomState();
+  const returnTo = safeReturnTo(new URL(request.url).searchParams.get("returnTo"));
+  const statePayload = `${state}:${encodeURIComponent(returnTo)}`;
+  return redirect(googleAuthUrl(config.auth, state), 302, {
+    "set-cookie": createStateCookie(config.auth, statePayload),
+  });
+}
+
+async function finishGoogleLogin(request: Request, env: DashboardEnv) {
+  const config = dashboardConfig(env);
+  if (!config.auth.enabled) return redirect(new URL("/", request.url).toString(), 302);
+  const url = new URL(request.url);
+  const state = url.searchParams.get("state");
+  const stateCookie = getStateCookieValue(request, config.auth);
+  const [expectedState, encodedReturnTo = "%2F"] = stateCookie?.split(":") ?? [];
+  if (!expectedState || expectedState !== state) {
+    return authError("Invalid or expired Google login state", 400, config.auth);
+  }
+  const code = url.searchParams.get("code");
+  if (!code) return authError("Missing Google OAuth code", 400, config.auth);
+  try {
+    const accessToken = await exchangeGoogleCode(config.auth, code);
+    const user = requireAllowedGoogleUser(await fetchGoogleUser(accessToken), config.auth);
+    const returnTo = safeReturnTo(decodeURIComponent(encodedReturnTo));
+    return redirect(new URL(returnTo, request.url).toString(), 302, {
+      "set-cookie": [await createSessionCookie(config.auth, user), clearStateCookie(config.auth)],
+    });
+  } catch (error) {
+    return authError(error instanceof Error ? error.message : String(error), 403, config.auth);
+  }
+}
+
+async function logout(request: Request, env: DashboardEnv) {
+  const config = dashboardConfig(env);
+  if (!config.auth.enabled) return redirect(new URL("/", request.url).toString(), 302);
+  return redirect(new URL("/login", request.url).toString(), 302, {
+    "set-cookie": clearSessionCookie(config.auth),
+  });
+}
+
+async function authError(message: string, status: number, config: AuthConfigEnabled) {
+  return html(
+    `<main class="login-card"><h1>ClawSweeper login failed</h1><p>${escapeHtml(message)}</p><p><a href="/login">Try again</a></p></main>`,
+    {
+      status,
+      headers: { "set-cookie": clearStateCookie(config) },
+    },
+  );
+}
+
+function getStateCookieValue(request: Request, config: AuthConfigEnabled): string | null {
+  const header = request.headers.get("cookie");
+  if (!header) return null;
+  const prefix = `${config.stateCookieName}=`;
+  for (const part of header.split(";")) {
+    const trimmed = part.trim();
+    if (trimmed.startsWith(prefix)) return trimmed.slice(prefix.length);
+  }
+  return null;
+}
+
+function safeReturnTo(value: string | null | undefined): string {
+  if (!value) return "/";
+  if (!value.startsWith("/") || value.startsWith("//")) return "/";
+  return value;
+}
+
+function loginHtml(authUrl: string) {
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ClawSweeper Login</title><style>:root{color-scheme:dark}body{min-height:100vh;margin:0;display:grid;place-items:center;background:#05070d;color:#e5eefc;font-family:Inter,ui-sans-serif,system-ui,sans-serif}.login-card{width:min(440px,calc(100vw - 32px));padding:32px;border:1px solid #1f2a44;border-radius:24px;background:linear-gradient(135deg,#0d1426,#111827);box-shadow:0 24px 80px #0008}.eyebrow{margin:0 0 12px;color:#93c5fd;text-transform:uppercase;letter-spacing:.12em;font-size:12px}h1{margin:0 0 12px;font-size:32px}p{line-height:1.6;color:#b8c5dc}.button{display:inline-flex;align-items:center;justify-content:center;margin-top:16px;padding:12px 16px;border-radius:999px;background:#38bdf8;color:#03111f;text-decoration:none;font-weight:800}</style></head><body><main class="login-card"><p class="eyebrow">ClawSweeper Dashboard</p><h1>Sign in</h1><p>Use your allowed Google account to manage runner lanes and view live status.</p><p><a class="button" href="${escapeHtml(authUrl)}">Continue with Google</a></p></main></body></html>`;
+}
 
 async function statusJson(request, env, ctx) {
   const ttl = numberFrom(env.CACHE_TTL_SECONDS, 20);
@@ -385,13 +542,13 @@ async function timingSafeEqualStr(a, b) {
 }
 
 async function setRunnerMode(request, env, ctx) {
-  const token = bearerToken(request);
   // Admin control plane uses its own token; do NOT fall back to INGEST_TOKEN
   // (that token is handed to every telemetry emitter and must not grant runner
-  // control).
-  const adminToken = env.DASHBOARD_ADMIN_TOKEN;
-  if (!adminToken || !token || !(await timingSafeEqualStr(token, adminToken)))
-    return json({ error: "unauthorized" }, 401);
+  // control). When dashboard auth is enabled, a valid Google session can also
+  // authorize browser-originated lane changes so Luke does not need to paste the
+  // admin token into localStorage.
+  const authorized = await isRunnerModeAuthorized(request, env);
+  if (!authorized) return json({ error: "unauthorized" }, 401);
   const body = await request.json().catch(() => null);
   const mode = String(body?.mode || "").trim();
   const labels = RUNNER_MODES[mode];
@@ -405,6 +562,17 @@ async function setRunnerMode(request, env, ctx) {
   const result = { ok: true, mode, labels };
   ctx?.waitUntil?.(writeStoredJson(env, "runner-mode", result));
   return json(result);
+}
+
+async function isRunnerModeAuthorized(request: Request, env: DashboardEnv): Promise<boolean> {
+  const token = bearerToken(request);
+  const adminToken = env.DASHBOARD_ADMIN_TOKEN;
+  if (typeof adminToken === "string" && token && (await timingSafeEqualStr(token, adminToken))) {
+    return true;
+  }
+  const config = dashboardConfig(env);
+  if (!config.auth.enabled) return false;
+  return Boolean(await readSession(request, config.auth));
 }
 
 async function ingestEvent(request, env) {
@@ -2362,13 +2530,43 @@ function json(value, status = 200) {
   );
 }
 
-function html(value) {
+type HeaderValue = string | readonly string[];
+
+type HtmlInit = {
+  status?: number;
+  headers?: Record<string, HeaderValue>;
+};
+
+function html(value, init: HtmlInit = {}) {
   return new Response(value, {
-    headers: {
-      "content-type": "text/html; charset=utf-8",
-      "cache-control": "no-store",
-    },
+    status: init.status || 200,
+    headers: mergeHeaders(
+      {
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": "no-store",
+      },
+      init.headers,
+    ),
   });
+}
+
+function redirect(location, status = 302, headers: Record<string, HeaderValue> = {}) {
+  return new Response(null, {
+    status,
+    headers: mergeHeaders({ location }, headers),
+  });
+}
+
+function mergeHeaders(base: Record<string, HeaderValue>, extra: Record<string, HeaderValue> = {}) {
+  const headers = new Headers(base as Record<string, string>);
+  for (const [name, value] of Object.entries(extra)) {
+    if (Array.isArray(value)) {
+      for (const item of value) headers.append(name, item);
+    } else if (value !== undefined) {
+      headers.set(name, String(value));
+    }
+  }
+  return headers;
 }
 
 function cors(response) {
@@ -3685,23 +3883,29 @@ function renderRunnerControl(config, runners) {
     .filter(runner => runner.labels && runner.labels.includes("self-hosted"))
     .map(runner => '<div class="runner-row"><span>' + esc(runner.name) + '<div class="muted mono">' + esc((runner.labels || []).join(", ")) + '</div></span><span class="pill ' + (runner.status === "online" ? "green" : "red") + '">' + esc(runner.status) + (runner.busy ? " · busy" : "") + '</span></div>')
     .join("");
-  document.getElementById("runnerControl").innerHTML = '<div class="control-card"><div>Mode: <span class="pill">' + esc(mode) + '</span></div><div class="muted mono">' + esc(JSON.stringify(labels)) + '</div><div class="runner-buttons">' + ["paused", "mac-mini", "macbook", "both"].map(name => '<button class="' + (name === mode ? "active" : "") + '" onclick="setRunnerMode(&apos;' + name + '&apos;)">' + esc(name) + '</button>').join("") + '</div><div class="muted">Requires dashboard admin token. Paused mode points jobs at a non-matching runner label. Both mode uses common labels so either registered Mac can take jobs.</div><div class="runner-list">' + (rows || '<div class="empty">No self-hosted runners returned</div>') + '</div></div>';
+  document.getElementById("runnerControl").innerHTML = '<div class="control-card"><div>Mode: <span class="pill">' + esc(mode) + '</span></div><div class="muted mono">' + esc(JSON.stringify(labels)) + '</div><div class="runner-buttons">' + ["paused", "mac-mini", "macbook", "both"].map(name => '<button class="' + (name === mode ? "active" : "") + '" onclick="setRunnerMode(&apos;' + name + '&apos;)">' + esc(name) + '</button>').join("") + '</div><div class="muted">Signed-in dashboard sessions can change lanes. The legacy admin token remains as fallback. Paused mode points jobs at a non-matching runner label. Both mode uses common labels so either registered Mac can take jobs.</div><div class="runner-list">' + (rows || '<div class="empty">No self-hosted runners returned</div>') + '</div></div>';
 }
 async function setRunnerMode(mode) {
   let token = localStorage.getItem("clawsweeper:admin-token") || "";
-  if (!token) {
+  async function requestWithToken(value) {
+    const headers = { "content-type": "application/json" };
+    if (value) headers.authorization = "Bearer " + value;
+    return fetch("/api/runner-mode", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ mode })
+    });
+  }
+  let response = await requestWithToken(token);
+  if (response.status === 401 && !token) {
     token = prompt("Dashboard admin token");
     if (!token) return;
     localStorage.setItem("clawsweeper:admin-token", token);
+    response = await requestWithToken(token);
   }
-  const response = await fetch("/api/runner-mode", {
-    method: "POST",
-    headers: { "content-type": "application/json", authorization: "Bearer " + token },
-    body: JSON.stringify({ mode })
-  });
   if (response.status === 401) {
     localStorage.removeItem("clawsweeper:admin-token");
-    alert("Unauthorized runner toggle token");
+    alert("Unauthorized runner toggle token or session");
     return;
   }
   if (!response.ok) {

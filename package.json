@@ -82,6 +82,9 @@
     "oxformat:check": "pnpm run format:check",
     "check": "pnpm run check:active-surface && pnpm run check:limits && pnpm run build:all && pnpm run typecheck:scripts && pnpm run lint && pnpm run test:unit && pnpm run test:repair && pnpm run test:coverage:changed && pnpm run test:coverage && pnpm run format:check"
   },
+  "dependencies": {
+    "effect": "3.21.3"
+  },
   "devDependencies": {
     "@types/node": "^25.6.0",
     "@typescript/native-preview": "7.0.0-dev.20260503.1",

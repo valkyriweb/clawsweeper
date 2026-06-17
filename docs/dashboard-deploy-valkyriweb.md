@@ -87,7 +87,40 @@ pnpm dlx wrangler@4.90.0 secret put DASHBOARD_ADMIN_TOKEN \
   --config dashboard/wrangler.toml
 ```
 
-If `DASHBOARD_ADMIN_TOKEN` is unset, `POST /api/runner-mode` returns 401 and the runner-lane buttons will not work.
+If `DASHBOARD_ADMIN_TOKEN` is unset, `POST /api/runner-mode` returns 401 unless Google OAuth session auth is enabled and the browser has a valid dashboard session.
+
+### Optional — Google OAuth dashboard gate
+
+The dashboard can be gated with Google OAuth so Luke signs in with an allowed Google account instead of pasting the admin token into the browser. This is disabled unless `DASHBOARD_AUTH_ENABLED` is set.
+
+Google Console setup:
+
+1. Use the same Google Cloud project/client style as Horizon (`~/Projects/work/horizon-bermont` uses Laravel Socialite), or create a dedicated OAuth client named `ClawSweeper Dashboard`.
+2. Add the exact authorized redirect URI:
+   `https://clawsweeper.myhorizon.co.za/auth/google/callback`.
+3. Use scopes `openid email profile`.
+
+Non-secret Worker vars (commit in `dashboard/wrangler.toml` or set via Wrangler env if preferred):
+
+```toml
+DASHBOARD_AUTH_ENABLED = "1"
+GOOGLE_CLIENT_ID = "<google-oauth-client-id>"
+GOOGLE_REDIRECT_URI = "https://clawsweeper.myhorizon.co.za/auth/google/callback"
+CLAW_SWEEPER_ALLOWED_EMAILS = "luke@bermont.digital,blacklotussa@gmail.com"
+DASHBOARD_SESSION_TTL_HOURS = "12"
+```
+
+Secrets:
+
+```bash
+pnpm dlx wrangler@4.90.0 secret put GOOGLE_CLIENT_SECRET \
+  --config dashboard/wrangler.toml
+
+openssl rand -hex 32 | pnpm dlx wrangler@4.90.0 secret put DASHBOARD_SESSION_SECRET \
+  --config dashboard/wrangler.toml
+```
+
+When OAuth is enabled, dashboard pages and status JSON require a signed session cookie. `POST /api/runner-mode` accepts either a valid dashboard session or the legacy `DASHBOARD_ADMIN_TOKEN` bearer token.
 
 ## Step 5 — build and deploy
 
@@ -115,14 +148,19 @@ First load may take 5–10s while it warms the GitHub API cache. Subsequent load
 
 ## Step 7 — wire the runner-lane buttons (smoke test)
 
-On the live page, the Runner Lane card shows three buttons (`mac-mini`, `macbook`, `both`). Click `both`. Browser prompts for admin token — paste the `DASHBOARD_ADMIN_TOKEN` (the runner-lane buttons require it; the ingest token is rejected). On success:
+On the live page, the Runner Lane card shows four buttons (`paused`, `mac-mini`, `macbook`, `both`). Click `both`.
+
+- With Google OAuth enabled and a valid session: no token prompt; the session cookie authorizes the change.
+- Without Google OAuth: the browser prompts for `DASHBOARD_ADMIN_TOKEN`; the ingest token is rejected.
+
+On success:
 
 ```bash
 # Confirm the variable flipped
 gh variable list --repo valkyriweb/clawsweeper | grep CLAWSWEEPER_RUNNER_LABELS
 ```
 
-Should now read `["self-hosted","macOS","ARM64"]`. If you get a 403, the App is missing `Variables: write` — see prereqs.
+Should now read `["self-hosted","macOS","ARM64"]`. If you get a 403, the App is missing `Variables: write` — see prereqs. If you get a 401, either sign in with an allowed Google account or paste the `DASHBOARD_ADMIN_TOKEN` fallback.
 
 ## Step 8 (optional) — feed live event data
 
@@ -132,7 +170,7 @@ That's a separate plumbing change in the sweep workflow / repair scripts — not
 
 ## Reference
 
-- Env vars the worker reads: `CACHE_TTL_SECONDS`, `STALE_CACHE_TTL_SECONDS`, `CLAWSWEEPER_REPO`, `TARGET_REPOS`, `WORKER_BUDGET`, `INCLUDE_CI_STATUS`, `TRIAGE_TARGET_REPOS`, `PR_PROOF_TARGET_REPOS`, `TRIAGE_ITEMS_PER_VIEW`, `PR_PROOF_ITEMS_PER_VIEW`, `CLAWSWEEPER_BOT_LOGINS`, `STORE_CACHE_TTL_SECONDS`, `CI_STATUS_TTL_SECONDS`
-- Secrets: `CLAWSWEEPER_APP_PRIVATE_KEY`, `CLAWSWEEPER_APP_INSTALLATION_ID`, `INGEST_TOKEN` (ingest only), `DASHBOARD_ADMIN_TOKEN` (required for `/api/runner-mode`), or fallback `GITHUB_TOKEN` (PAT instead of App auth)
+- Env vars the worker reads: `CACHE_TTL_SECONDS`, `STALE_CACHE_TTL_SECONDS`, `CLAWSWEEPER_REPO`, `TARGET_REPOS`, `WORKER_BUDGET`, `INCLUDE_CI_STATUS`, `TRIAGE_TARGET_REPOS`, `PR_PROOF_TARGET_REPOS`, `TRIAGE_ITEMS_PER_VIEW`, `PR_PROOF_ITEMS_PER_VIEW`, `CLAWSWEEPER_BOT_LOGINS`, `STORE_CACHE_TTL_SECONDS`, `CI_STATUS_TTL_SECONDS`, `DASHBOARD_AUTH_ENABLED`, `GOOGLE_CLIENT_ID`, `GOOGLE_REDIRECT_URI`, `CLAW_SWEEPER_ALLOWED_EMAILS`, `DASHBOARD_SESSION_TTL_HOURS`, `CONVEX_URL`
+- Secrets: `CLAWSWEEPER_APP_PRIVATE_KEY`, `CLAWSWEEPER_APP_INSTALLATION_ID`, `INGEST_TOKEN` (ingest only), `DASHBOARD_ADMIN_TOKEN` (legacy `/api/runner-mode` fallback), `GOOGLE_CLIENT_SECRET`, `DASHBOARD_SESSION_SECRET`, or fallback `GITHUB_TOKEN` (PAT instead of App auth)
 - Bindings: `STATUS_STORE` (KV namespace)
 - Deploy commands: `pnpm run dashboard:deploy`, `pnpm run dashboard:dev` (local), `pnpm run dashboard:smoke`
