@@ -12,14 +12,17 @@ was not changed while authoring them.
 
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
-| 001 | Type-check `scripts/` in the `check` gate | P1 | S | — | TODO |
-| 002 | Separate dashboard admin token from ingest token (constant-time auth) | P1 | S | — | TODO |
-| 003 | Characterize merge/close safety gates; fix silent label-error swallow | P1 | M | — | TODO |
-| 004 | Idempotent issue comments (no duplicate on transient retry) | P2 | M | — | TODO |
-| 005 | Extract GitHub client/auth out of `dashboard/worker.ts` | P2 | M | 002 | TODO |
-| 006 | Unified control plane: typed config + per-repo enable + dashboard | P2 | L | 002 | TODO |
+| 001 | Type-check `scripts/` in the `check` gate | P1 | S | — | **DONE** — PR #101 (caught + fixed a latent `unknown`-typed bug in `check-limits.ts`; wired the new tsconfig into CI sparse-checkout) |
+| 002 | Separate dashboard admin token from ingest token (constant-time auth) | P1 | S | — | **DONE** — PR #102 (frontier reviewer REQUEST-CHANGES → all fixed; docs/config realigned to the new boundary) |
+| 003 | Characterize merge/close safety gates; fix silent label-error swallow | P1 | M | — | **DONE** — PR #103 (extracted import-safe `merge-close-policy.ts` + 13 characterization tests) |
+| 004 | Idempotent issue comments (no duplicate on transient retry) | P2 | M | — | **DONE** — PR #105 (extracted import-safe `comment-match.ts`; re-check before retry) |
+| 005 | Extract GitHub client/auth out of `dashboard/worker.ts` | P2 | M | 002 | **DEFERRED (STOP)** — cluster not self-contained: `githubAuthToken` closes over module-scoped `githubAppTokenCache`; helpers scattered (lines 4–2196); runner fns interleaved. Needs a shared-module split or circular import on token-minting code — not a pure move. |
+| 006 | Unified control plane: typed config + per-repo enable + dashboard | P2 | L | 002 | **DEFERRED (STOP)** — control plane is two-tier: static workflow-env snapshot (~10 `=== "1"` sites) *and* a live GitHub-repo-variable tier (`readGateValue`/`openGate`/`setGate`). A single env reader only partially unifies; touches security gates; warrants a reviewed re-plan. |
+| 007 | Deflake `runCodex` total-timeout test under parallel-build load | — | S | — | **DONE** — PR #104 (bonus: root-caused intermittent `pnpm check` failure; bumped the startup-watchdog margin so spawn latency can't trip it) |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (one-line reason) | REJECTED (one-line rationale).
+
+**Execution outcome (2026-06-17):** Plans 001–004 plus a bonus deflake (007) shipped as CI-green PRs #101–#105 on `valkyriweb/clawsweeper`; 005 and 006 were deferred after hitting their own STOP conditions — both are more entangled with security-critical token/gate code than the audit assumed (see their Status rows). The audit's *findings* hold; only the *prescribed refactors* for 005/006 need a reviewed re-plan.
 
 ## Recommended sequencing
 
