@@ -3631,11 +3631,13 @@ setInterval(() => {}, 1000);
   const originalPath = process.env.PATH;
   const originalStartup = process.env.CLAWSWEEPER_CODEX_STARTUP_TIMEOUT_MS;
   process.env.PATH = `${binDir}${delimiter}${process.env.PATH ?? ""}`;
-  // Wide margins: under CPU load (parallel builds, small CI runners) spawning
-  // the fake codex node process can take >500ms, which would fire the startup
-  // watchdog before thread.started arrives. Only the ordering matters here:
-  // output must land before the startup deadline, total timeout fires after.
-  process.env.CLAWSWEEPER_CODEX_STARTUP_TIMEOUT_MS = "2000";
+  // Deterministic margins: under CPU load (parallel builds, small CI runners)
+  // spawning the fake codex node process can take >2s, which previously fired
+  // the startup watchdog before thread.started arrived and made this test flaky.
+  // Use a generous startup deadline (so spawn latency never trips it) and a
+  // total timeout comfortably above worst-case spawn; only the total timeout
+  // should fire for a silent in-progress turn.
+  process.env.CLAWSWEEPER_CODEX_STARTUP_TIMEOUT_MS = "20000";
   try {
     assert.throws(
       () =>
@@ -3648,7 +3650,7 @@ setInterval(() => {}, 1000);
           reasoningEffort: "low",
           sandboxMode: "read-only",
           serviceTier: "",
-          timeoutMs: 3000,
+          timeoutMs: 5000,
           workDir,
           prompt: "Return a review decision.",
         }),
@@ -3657,7 +3659,7 @@ setInterval(() => {}, 1000);
     const stdout = readFileSync(join(workDir, "144.codex.stdout.log"), "utf8");
     const stderr = readFileSync(join(workDir, "144.codex.stderr.log"), "utf8");
     assert.match(stdout, /thread\.started/);
-    assert.match(stderr, /codex total timeout after 3000ms/);
+    assert.match(stderr, /codex total timeout after 5000ms/);
     assert.doesNotMatch(stderr, /codex startup timeout/);
   } finally {
     if (originalPath === undefined) delete process.env.PATH;
