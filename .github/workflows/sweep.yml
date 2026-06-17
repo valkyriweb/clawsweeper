@@ -125,12 +125,10 @@ defaults:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-  # Bypass the ghx gh-cache shim on self-hosted runners. ghx proxies gh through one
-  # persistent per-user daemon that adopts a single identity at spawn, so it ignores
-  # clawsweeper's per-target scoped GH_TOKEN and 404s on private targets (e.g.
-  # valkyriweb/lue-kube). Upstream uses native gh; GH_BIN is the supported override
-  # (src/command.ts, src/clawsweeper.ts). gh-native is a symlink to real gh on each
-  # clawsweeper host. ghx stays for openclaw. See docs/deployment.md.
+  # Default to native gh so scoped per-target GH_TOKENs stay isolated. Old ghx builds
+  # inherited the daemon's startup identity and 404ed on private targets. A ghx build
+  # with per-request client-env forwarding may be trialed by setting CLAWSWEEPER_GH_BIN;
+  # gh-native remains the rollback/default. See docs/deployment.md.
   GH_BIN: ${{ vars.CLAWSWEEPER_GH_BIN || '/usr/local/bin/gh-native' }}
   CLAWSWEEPER_APP_CLIENT_ID: Iv23lirdjmVqYd1gwY26
   CLAWSWEEPER_USAGE_TELEMETRY: "1"
