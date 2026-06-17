@@ -18,7 +18,9 @@ import {
   ghJsonWithRetry as ghJson,
   ghPagedWithRetry as ghPaged,
   ghTextWithRetry as ghWithRetry,
+  shouldRetryGh,
 } from "./github-cli.js";
+import { commentMatchesExisting } from "./comment-match.js";
 import { issueNumberFromRef } from "./github-ref.js";
 import {
   CLAWSWEEPER_LABEL,
@@ -376,7 +378,7 @@ function applyCloseAction({
   }
 
   if (!existingComment) {
-    postIssueComment(result.repo, target, body);
+    postIssueComment(result.repo, target, body, marker);
   }
   closeIssueOrPullRequest(result.repo, target, kind, classification);
 
@@ -961,23 +963,34 @@ function fetchPullRequestView(repo: string, number: JsonValue) {
   ]);
 }
 
-function findExistingComment(repo: string, number: JsonValue, marker: LooseRecord, body: string) {
+function findExistingComment(repo: string, number: JsonValue, marker: string, body: string) {
   const comments = ghPaged(`repos/${repo}/issues/${number}/comments`);
-  return comments.find(
-    (comment: JsonValue) => comment.body?.includes(marker) || comment.body === body,
+  return comments.find((comment: JsonValue) =>
+    commentMatchesExisting(comment.body as string | undefined, marker, body),
   );
 }
 
-function postIssueComment(repo: string, number: JsonValue, body: string) {
+function postIssueComment(repo: string, number: JsonValue, body: string, marker = "") {
   const payloadPath = writePayload(`comment-${number}`, { body });
-  ghWithRetry([
+  const args = [
     "api",
     `repos/${repo}/issues/${number}/comments`,
     "--method",
     "POST",
     "--input",
     payloadPath,
-  ]);
+  ];
+  try {
+    ghWithRetry(args, { attempts: 1 });
+  } catch (error) {
+    if (!shouldRetryGh(error)) throw error;
+    // Transient failure: the POST may already have landed (e.g. a gateway timeout
+    // after the write). Re-check for the comment before retrying so the retry can't
+    // duplicate it. (Preserving the full 6-attempt backoff would require exporting
+    // sleepMs from github-cli.ts, which is out of scope for this fix.)
+    if (findExistingComment(repo, number, marker, body)) return;
+    ghWithRetry(args, { attempts: 1 });
+  }
 }
 
 function closeIssueOrPullRequest(
