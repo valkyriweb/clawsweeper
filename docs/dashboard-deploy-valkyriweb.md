@@ -72,7 +72,7 @@ pnpm dlx wrangler@4.90.0 secret put CLAWSWEEPER_APP_PRIVATE_KEY \
 pnpm dlx wrangler@4.90.0 secret put CLAWSWEEPER_APP_INSTALLATION_ID \
   --config dashboard/wrangler.toml
 
-# Auth token for the /api/events ingest endpoint AND /api/runner-mode.
+# Auth token for the /api/events ingest endpoint.
 # Generate one: openssl rand -hex 32
 pnpm dlx wrangler@4.90.0 secret put INGEST_TOKEN \
   --config dashboard/wrangler.toml
@@ -80,14 +80,14 @@ pnpm dlx wrangler@4.90.0 secret put INGEST_TOKEN \
 
 `CLAWSWEEPER_APP_ID` (`3711554`) and `CLAWSWEEPER_APP_CLIENT_ID` (`Iv23lirdjmVqYd1gwY26`) are already in `[vars]` of `wrangler.toml`; the numeric App ID is preferred as the GitHub JWT issuer.
 
-**Optional fourth secret** — separate the dashboard admin from the ingest token. If you want a distinct token for the runner-lane buttons:
+**Fourth secret (required for the runner-lane kill-switch)** — the dashboard admin token is separate from the ingest token. `POST /api/runner-mode` (the runner-lane buttons) requires `DASHBOARD_ADMIN_TOKEN` and does **not** fall back to `INGEST_TOKEN` (that token is distributed to every telemetry emitter, so it must not grant runner control). Generate one: `openssl rand -hex 32`.
 
 ```bash
 pnpm dlx wrangler@4.90.0 secret put DASHBOARD_ADMIN_TOKEN \
   --config dashboard/wrangler.toml
 ```
 
-If unset, `setRunnerMode` falls back to `INGEST_TOKEN`.
+If `DASHBOARD_ADMIN_TOKEN` is unset, `POST /api/runner-mode` returns 401 and the runner-lane buttons will not work.
 
 ## Step 5 — build and deploy
 
@@ -115,7 +115,7 @@ First load may take 5–10s while it warms the GitHub API cache. Subsequent load
 
 ## Step 7 — wire the runner-lane buttons (smoke test)
 
-On the live page, the Runner Lane card shows three buttons (`mac-mini`, `macbook`, `both`). Click `both`. Browser prompts for admin token — paste the `INGEST_TOKEN` (or `DASHBOARD_ADMIN_TOKEN` if you set step-4-optional). On success:
+On the live page, the Runner Lane card shows three buttons (`mac-mini`, `macbook`, `both`). Click `both`. Browser prompts for admin token — paste the `DASHBOARD_ADMIN_TOKEN` (the runner-lane buttons require it; the ingest token is rejected). On success:
 
 ```bash
 # Confirm the variable flipped
@@ -133,6 +133,6 @@ That's a separate plumbing change in the sweep workflow / repair scripts — not
 ## Reference
 
 - Env vars the worker reads: `CACHE_TTL_SECONDS`, `STALE_CACHE_TTL_SECONDS`, `CLAWSWEEPER_REPO`, `TARGET_REPOS`, `WORKER_BUDGET`, `INCLUDE_CI_STATUS`, `TRIAGE_TARGET_REPOS`, `PR_PROOF_TARGET_REPOS`, `TRIAGE_ITEMS_PER_VIEW`, `PR_PROOF_ITEMS_PER_VIEW`, `CLAWSWEEPER_BOT_LOGINS`, `STORE_CACHE_TTL_SECONDS`, `CI_STATUS_TTL_SECONDS`
-- Secrets: `CLAWSWEEPER_APP_PRIVATE_KEY`, `CLAWSWEEPER_APP_INSTALLATION_ID`, `INGEST_TOKEN`, optionally `DASHBOARD_ADMIN_TOKEN`, or fallback `GITHUB_TOKEN` (PAT instead of App auth)
+- Secrets: `CLAWSWEEPER_APP_PRIVATE_KEY`, `CLAWSWEEPER_APP_INSTALLATION_ID`, `INGEST_TOKEN` (ingest only), `DASHBOARD_ADMIN_TOKEN` (required for `/api/runner-mode`), or fallback `GITHUB_TOKEN` (PAT instead of App auth)
 - Bindings: `STATUS_STORE` (KV namespace)
 - Deploy commands: `pnpm run dashboard:deploy`, `pnpm run dashboard:dev` (local), `pnpm run dashboard:smoke`

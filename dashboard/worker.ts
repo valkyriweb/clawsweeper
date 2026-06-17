@@ -363,10 +363,35 @@ function prProofTriageCacheRequest(request, bucket) {
   });
 }
 
+// Constant-time string comparison for bearer tokens. HMACs both inputs with a
+// random per-call key so the compare is length-independent and timing-safe, and
+// uses only Web Crypto (available in the Worker runtime; Node's
+// crypto.timingSafeEqual is not).
+async function timingSafeEqualStr(a, b) {
+  const enc = new TextEncoder();
+  const key = crypto.getRandomValues(new Uint8Array(32));
+  const mac = await crypto.subtle.importKey("raw", key, { name: "HMAC", hash: "SHA-256" }, false, [
+    "sign",
+  ]);
+  const [ha, hb] = await Promise.all([
+    crypto.subtle.sign("HMAC", mac, enc.encode(a)),
+    crypto.subtle.sign("HMAC", mac, enc.encode(b)),
+  ]);
+  const va = new Uint8Array(ha);
+  const vb = new Uint8Array(hb);
+  let diff = 0;
+  for (let i = 0; i < va.length; i++) diff |= va[i] ^ vb[i];
+  return diff === 0;
+}
+
 async function setRunnerMode(request, env, ctx) {
   const token = bearerToken(request);
-  const adminToken = env.DASHBOARD_ADMIN_TOKEN || env.INGEST_TOKEN;
-  if (!adminToken || token !== adminToken) return json({ error: "unauthorized" }, 401);
+  // Admin control plane uses its own token; do NOT fall back to INGEST_TOKEN
+  // (that token is handed to every telemetry emitter and must not grant runner
+  // control).
+  const adminToken = env.DASHBOARD_ADMIN_TOKEN;
+  if (!adminToken || !token || !(await timingSafeEqualStr(token, adminToken)))
+    return json({ error: "unauthorized" }, 401);
   const body = await request.json().catch(() => null);
   const mode = String(body?.mode || "").trim();
   const labels = RUNNER_MODES[mode];
@@ -384,7 +409,8 @@ async function setRunnerMode(request, env, ctx) {
 
 async function ingestEvent(request, env) {
   const token = bearerToken(request);
-  if (!env.INGEST_TOKEN || token !== env.INGEST_TOKEN) return json({ error: "unauthorized" }, 401);
+  if (!env.INGEST_TOKEN || !token || !(await timingSafeEqualStr(token, env.INGEST_TOKEN)))
+    return json({ error: "unauthorized" }, 401);
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== "object") return json({ error: "invalid_json" }, 400);
   const event = normalizeEvent(body);

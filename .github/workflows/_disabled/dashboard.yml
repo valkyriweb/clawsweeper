@@ -44,6 +44,9 @@ jobs:
           test -n "$CLAWSWEEPER_STATUS_INGEST_TOKEN"
           cp dashboard/wrangler.toml dashboard/wrangler.deploy.toml
           printf 'INGEST_TOKEN = "%s"\n' "$CLAWSWEEPER_STATUS_INGEST_TOKEN" >> dashboard/wrangler.deploy.toml
+          # NOTE: POST /api/runner-mode requires DASHBOARD_ADMIN_TOKEN (no INGEST_TOKEN
+          # fallback). Add a CLAWSWEEPER_STATUS_ADMIN_TOKEN secret and append it here
+          # before re-enabling, or the runner kill-switch will return 401.
           echo "config=dashboard/wrangler.deploy.toml" >> "$GITHUB_OUTPUT"
 
       - name: Deploy Worker
