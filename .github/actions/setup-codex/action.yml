@@ -64,7 +64,12 @@ runs:
         if [[ -n "${{ inputs['codex-home'] }}" ]]; then
           codex_home="${{ inputs['codex-home'] }}"
         else
-          codex_home="$HOME/.clawsweeper-repair/codex-home/${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
+          # Include the runner identity so concurrent jobs from the same run
+          # (e.g. parallel review shards) on a shared self-hosted host do not
+          # share one CODEX_HOME and race on auth.json. RUNNER_NAME is unique
+          # per registered runner; sanitize for path safety.
+          runner_slug="$(printf '%s' "${RUNNER_NAME:-runner}" | tr -c '[:alnum:]._-' '_')"
+          codex_home="$HOME/.clawsweeper-repair/codex-home/${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}-${runner_slug}"
         fi
         mkdir -p "$codex_home"
         chmod 700 "$codex_home"
@@ -136,7 +141,11 @@ runs:
           echo "::error::~/.codex/auth.json is $size bytes — looks like an API-key entry (expected ChatGPT JWT, ~4–5 kB). Re-login with \`codex logout && codex login\` and pick \"Sign in with ChatGPT\"." >&2
           exit 1
         fi
-        ln -sf "$HOME/.codex/auth.json" "$CODEX_HOME/auth.json"
+        # Atomic symlink swap so a retry/concurrent step never trips over an
+        # existing auth.json (`ln -sf` is not atomic and races as "File exists").
+        tmp_link="$CODEX_HOME/.auth.json.$$"
+        ln -sf "$HOME/.codex/auth.json" "$tmp_link"
+        mv -f "$tmp_link" "$CODEX_HOME/auth.json"
         # Mode assertion fails loudly if somehow we're still on apikey.
         status=$(codex login status 2>&1 || true)
         echo "$status"
