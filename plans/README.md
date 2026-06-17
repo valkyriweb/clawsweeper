@@ -18,7 +18,7 @@ was not changed while authoring them.
 | 004 | Idempotent issue comments (no duplicate on transient retry) | P2 | M | — | **DONE** — PR #105 (extracted import-safe `comment-match.ts`; re-check before retry) |
 | 005 | Extract GitHub client/auth out of `dashboard/worker.ts` | P2 | M | 002 | **DEFERRED (STOP)** — cluster not self-contained: `githubAuthToken` closes over module-scoped `githubAppTokenCache`; helpers scattered (lines 4–2196); runner fns interleaved. Needs a shared-module split or circular import on token-minting code — not a pure move. |
 | 006 | Unified control plane: typed config + per-repo enable + dashboard | P2 | L | 002 | **DEFERRED (STOP)** — control plane is two-tier: static workflow-env snapshot (~10 `=== "1"` sites) *and* a live GitHub-repo-variable tier (`readGateValue`/`openGate`/`setGate`). A single env reader only partially unifies; touches security gates; warrants a reviewed re-plan. |
-| 007 | Deflake `runCodex` total-timeout test under parallel-build load | — | S | — | **DONE** — PR #104 (bonus: root-caused intermittent `pnpm check` failure; bumped the startup-watchdog margin so spawn latency can't trip it) |
+| 007 | Deflake `runCodex` total-timeout test under parallel-build load | — | S | — | **DONE** — PR #104 (bonus: root-caused intermittent `pnpm check` failure; widened the startup/total margins while preserving startup-watchdog cancellation coverage) |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (one-line reason) | REJECTED (one-line rationale).
 
@@ -28,14 +28,13 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (one-line reason) | REJECTED 
 
 1. **001 + 002 + 003** first — small/medium, high-safety, independent. They harden the guard scripts, close a privilege-escalation gap on the runner kill-switch, and pin the irreversible merge/close gates with tests.
 2. **004** next — the idempotency fix; benefits from 003's test patterns.
-3. **005** after 002 (both edit `worker.ts`; sequence to avoid conflicts) — and ideally after 003 for general test safety.
-4. **006** after 002 (Phase C reuses the admin token). Ship its Phase A first.
+3. **007** can land independently whenever CI flakiness slows the queue.
+4. **Do not execute 005 or 006 as written.** They are retained as discovery context only; both hit STOP conditions and need a reviewed re-plan before implementation.
 
 ## Dependency notes
 
-- **005 depends on 002**: both modify `dashboard/worker.ts`; landing 002 first avoids a merge conflict and keeps the auth boundary intact during the extraction.
-- **006 depends on 002**: Phase C's control writes reuse the `DASHBOARD_ADMIN_TOKEN` boundary; do not reintroduce the ingest-token fallback.
-- 001, 002, 003, 004 are mutually independent and can be done in parallel by different executors (they touch disjoint files: 001 = tsconfig/package.json; 002 = worker.ts/dashboard test; 003 + 004 = apply-result.ts — **003 and 004 share `apply-result.ts`, so sequence those two** (003 then 004) or merge carefully).
+- **005 and 006 both depend on 002 if they are re-planned later**: do not reintroduce the ingest-token fallback or weaken the `DASHBOARD_ADMIN_TOKEN` boundary.
+- 001, 002, 003, 004, and 007 are mutually independent and can be done in parallel by different executors (they touch disjoint files: 001 = tsconfig/package.json; 002 = worker.ts/dashboard test; 003 + 004 = apply-result.ts; 007 = `test/clawsweeper.test.ts` — **003 and 004 share `apply-result.ts`, so sequence those two** (003 then 004) or merge carefully).
 
 ## Findings considered and NOT turned into plans (vetted out — don't re-audit)
 

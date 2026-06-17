@@ -1,5 +1,8 @@
 # Plan 006: Unify the control plane — one typed config surface, per-repo enable, and dashboard visibility
 
+> [!CAUTION]
+> **Deferred after STOP. Do not execute this plan as written.** Follow-up investigation found the control plane is two-tier: static workflow env snapshots and live GitHub repo-variable gates. A single env reader would only partially unify the model and risks touching security-critical gates without a complete design. Treat this file as discovery context for a reviewed re-plan, not an approved implementation recipe.
+
 > **Executor instructions**: This is a **phased** plan. Ship **Phase A** as a
 > complete, verified change first; Phases B and C are separate commits/PRs that
 > build on it. Run every verification command. If a "STOP conditions" item

@@ -1,5 +1,8 @@
 # Plan 005: Extract the GitHub client/auth out of `dashboard/worker.ts` (first god-file split; establishes the recipe)
 
+> [!CAUTION]
+> **Deferred after STOP. Do not execute this plan as written.** Follow-up investigation found the GitHub client/auth cluster is not a pure move: `githubAuthToken` closes over module-scoped `githubAppTokenCache`, helpers are scattered through the Worker, and runner functions are interleaved with token-minting code. Treat this file as discovery context for a reviewed re-plan, not an approved implementation recipe.
+
 > **Executor instructions**: Follow this plan step by step. Run every
 > verification command and confirm the expected result before moving on. This
 > is a **mechanical move with no logic changes** — if you find yourself
