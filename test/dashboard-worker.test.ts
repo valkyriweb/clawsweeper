@@ -1236,6 +1236,19 @@ test("dashboard html preserves client compactText regex escapes", async () => {
   );
 });
 
+test("dashboard html treats successful partial telemetry as fresh data", async () => {
+  const response = await worker.fetch(new Request("https://example.test/"));
+  const body = await response.text();
+
+  assert.match(body, /Updated with partial GitHub telemetry/);
+  assert.match(body, /localStorage\.setItem\("clawsweeper:last-status", JSON\.stringify\(data\)\)/);
+  assert.match(
+    body,
+    /renderDashboard\(data, hasErrors \? "Updated with partial GitHub telemetry\." : ""\)/,
+  );
+  assert.doesNotMatch(body, /looksEmpty/);
+});
+
 async function activePrFetch(input: RequestInfo | URL) {
   const url = String(input);
   if (url.includes("/repos/openclaw/clawsweeper/actions/runs")) {
