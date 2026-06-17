@@ -56,6 +56,7 @@ Exit: current dashboard no longer lies about live refresh; v2 route/deploy plan 
 
 Worker routes:
 
+- Google OAuth scope: `openid email` (sufficient for allowlisting Luke's email and compatible with the `gcloud iam oauth-clients` setup path).
 - `GET /login` — React/HTML login entry.
 - `GET /auth/google` — start OAuth with generated `state`, nonce, PKCE if supported by chosen flow.
 - `GET /auth/google/callback` — exchange code for tokens, verify Google identity, enforce allowlist, issue signed session cookie.

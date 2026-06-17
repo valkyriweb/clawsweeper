@@ -98,7 +98,7 @@ Google Console setup:
 1. Use the same Google Cloud project/client style as Horizon (`~/Projects/work/horizon-bermont` uses Laravel Socialite), or create a dedicated OAuth client named `ClawSweeper Dashboard`.
 2. Add the exact authorized redirect URI:
    `https://clawsweeper.myhorizon.co.za/auth/google/callback`.
-3. Use scopes `openid email profile`.
+3. Use scopes `openid email` (the `gcloud iam oauth-clients` path supports these for this dashboard use case).
 
 Non-secret Worker vars (commit in `dashboard/wrangler.toml` or set via Wrangler env if preferred):
 
