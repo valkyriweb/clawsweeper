@@ -399,8 +399,8 @@ async function statusJson(request, env, ctx) {
         ),
       ]),
     );
-    ctx?.waitUntil?.(recordStatusSnapshot(env, snapshot));
   }
+  ctx?.waitUntil?.(recordStatusSnapshot(env, snapshot));
   return cors(
     new Response(body, {
       headers: {

@@ -1353,6 +1353,72 @@ test("status responses survive Convex snapshot write failures", async () => {
   }
 });
 
+test("partial status responses still write through to Convex", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalCaches = globalThis.caches;
+  const convexWrites: Array<{ path: string; args: Record<string, unknown> }> = [];
+  const waitUntilPromises: Promise<unknown>[] = [];
+  Object.defineProperty(globalThis, "caches", {
+    configurable: true,
+    value: {
+      default: {
+        match: async () => undefined,
+        put: async () => undefined,
+      },
+    },
+  });
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(String(input));
+    if (url.hostname === "demo.convex.cloud") {
+      convexWrites.push(
+        JSON.parse(String(init?.body)) as { path: string; args: Record<string, unknown> },
+      );
+      return new Response(JSON.stringify({ status: "success", value: null }), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (url.pathname.includes("/actions/runners")) {
+      return jsonResponse({ message: "forbidden" }, 403);
+    }
+    if (url.pathname.endsWith("/actions/runs")) return jsonResponse({ workflow_runs: [] });
+    if (url.pathname === "/search/issues") return jsonResponse({ total_count: 0, items: [] });
+    if (url.pathname.endsWith("/issues")) return jsonResponse([]);
+    return jsonResponse({});
+  }) as typeof fetch;
+
+  try {
+    const response = await worker.fetch(
+      new Request("https://clawsweeper.openclaw.ai/api/status"),
+      {
+        CLAWSWEEPER_REPO: "openclaw/clawsweeper",
+        TARGET_REPOS: "openclaw/openclaw",
+        CACHE_TTL_SECONDS: "0",
+        STATUS_STORE: new MemoryKv(),
+        CONVEX_URL: "https://demo.convex.cloud",
+        CONVEX_WRITE_KEY: "convex-write-key",
+      },
+      {
+        waitUntil(promise: Promise<unknown>) {
+          waitUntilPromises.push(promise);
+        },
+      },
+    );
+
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.deepEqual(body.pipeline, []);
+    assert.equal(body.fleet.active_workflow_runs, 0);
+    assert.ok(Array.isArray(body.diagnostics.errors));
+    await Promise.all(waitUntilPromises);
+    assert.equal(convexWrites.length, 1);
+    assert.equal(convexWrites[0].path, "statusSnapshots:record");
+    assert.equal(convexWrites[0].args.schemaVersion, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+    Object.defineProperty(globalThis, "caches", { configurable: true, value: originalCaches });
+  }
+});
+
 test("events write through to Convex with a stable idempotency key", async () => {
   const originalFetch = globalThis.fetch;
   const convexWrites: Array<{
