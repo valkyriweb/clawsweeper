@@ -1249,6 +1249,193 @@ test("dashboard html treats successful partial telemetry as fresh data", async (
   assert.doesNotMatch(body, /looksEmpty/);
 });
 
+test("status skips Convex writes when Convex env is absent", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalCaches = globalThis.caches;
+  const waitUntilPromises: Promise<unknown>[] = [];
+  let convexFetches = 0;
+  Object.defineProperty(globalThis, "caches", {
+    configurable: true,
+    value: {
+      default: {
+        match: async () => undefined,
+        put: async () => undefined,
+      },
+    },
+  });
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = new URL(String(input));
+    if (url.hostname.includes("convex.cloud")) convexFetches += 1;
+    return activePrFetch(input);
+  }) as typeof fetch;
+
+  try {
+    const response = await worker.fetch(
+      new Request("https://clawsweeper.openclaw.ai/api/status"),
+      {
+        CLAWSWEEPER_REPO: "openclaw/clawsweeper",
+        TARGET_REPOS: "openclaw/openclaw",
+        CACHE_TTL_SECONDS: "0",
+        STATUS_STORE: new MemoryKv(),
+      },
+      {
+        waitUntil(promise: Promise<unknown>) {
+          waitUntilPromises.push(promise);
+        },
+      },
+    );
+
+    assert.equal(response.status, 200);
+    await Promise.all(waitUntilPromises);
+    assert.equal(convexFetches, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+    Object.defineProperty(globalThis, "caches", { configurable: true, value: originalCaches });
+  }
+});
+
+test("status responses survive Convex snapshot write failures", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalCaches = globalThis.caches;
+  const convexWrites: Array<{ path: string; args: Record<string, unknown> }> = [];
+  const waitUntilPromises: Promise<unknown>[] = [];
+  Object.defineProperty(globalThis, "caches", {
+    configurable: true,
+    value: {
+      default: {
+        match: async () => undefined,
+        put: async () => undefined,
+      },
+    },
+  });
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(String(input));
+    if (url.hostname === "demo.convex.cloud") {
+      convexWrites.push(
+        JSON.parse(String(init?.body)) as { path: string; args: Record<string, unknown> },
+      );
+      return new Response(JSON.stringify({ status: "error", errorMessage: "boom" }), {
+        status: 500,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    return activePrFetch(input);
+  }) as typeof fetch;
+
+  try {
+    const response = await worker.fetch(
+      new Request("https://clawsweeper.openclaw.ai/api/status"),
+      {
+        CLAWSWEEPER_REPO: "openclaw/clawsweeper",
+        TARGET_REPOS: "openclaw/openclaw",
+        CACHE_TTL_SECONDS: "0",
+        STATUS_STORE: new MemoryKv(),
+        CONVEX_URL: "https://demo.convex.cloud",
+        CONVEX_WRITE_KEY: "convex-write-key",
+      },
+      {
+        waitUntil(promise: Promise<unknown>) {
+          waitUntilPromises.push(promise);
+        },
+      },
+    );
+
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.schema_version, 1);
+    await Promise.all(waitUntilPromises);
+    assert.equal(convexWrites.length, 1);
+    assert.equal(convexWrites[0].path, "statusSnapshots:record");
+    assert.equal(convexWrites[0].args.schemaVersion, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+    Object.defineProperty(globalThis, "caches", { configurable: true, value: originalCaches });
+  }
+});
+
+test("events write through to Convex with a stable idempotency key", async () => {
+  const originalFetch = globalThis.fetch;
+  const convexWrites: Array<{
+    url: string;
+    authorization: string | null;
+    contentType: string | null;
+    body: { path: string; format: string; args: Record<string, unknown> };
+  }> = [];
+  const waitUntilPromises: Promise<unknown>[] = [];
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(String(input));
+    if (url.hostname === "demo.convex.cloud") {
+      const headers = new Headers(init?.headers);
+      convexWrites.push({
+        url: url.href,
+        authorization: headers.get("authorization"),
+        contentType: headers.get("content-type"),
+        body: JSON.parse(String(init?.body)) as {
+          path: string;
+          format: string;
+          args: Record<string, unknown>;
+        },
+      });
+      return new Response(JSON.stringify({ status: "success", value: null }), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  }) as typeof fetch;
+
+  try {
+    const response = await worker.fetch(
+      new Request("https://clawsweeper.openclaw.ai/api/events", {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer test-token",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          event_type: "pull_request.reviewed",
+          source: "github",
+          repository: "openclaw/openclaw",
+          item_number: 80609,
+          external_id: "delivery-1",
+          mode: "autofix",
+          stage: "review",
+          status: "ok",
+          title: "Reviewed PR",
+          item_url: "https://github.com/openclaw/openclaw/pull/80609",
+        }),
+      }),
+      {
+        INGEST_TOKEN: "test-token",
+        STATUS_STORE: new MemoryKv(),
+        CONVEX_URL: "https://demo.convex.cloud",
+        CONVEX_WRITE_KEY: "convex-write-key",
+      },
+      {
+        waitUntil(promise: Promise<unknown>) {
+          waitUntilPromises.push(promise);
+        },
+      },
+    );
+
+    assert.equal(response.status, 200);
+    await Promise.all(waitUntilPromises);
+    assert.equal(convexWrites.length, 1);
+    assert.equal(convexWrites[0].url, "https://demo.convex.cloud/api/mutation");
+    assert.equal(convexWrites[0].authorization, "Convex convex-write-key");
+    assert.equal(convexWrites[0].contentType, "application/json");
+    assert.equal(convexWrites[0].body.path, "events:record");
+    assert.equal(convexWrites[0].body.format, "json");
+    assert.equal(
+      convexWrites[0].body.args.idempotencyKey,
+      "github:pull_request.reviewed:openclaw/openclaw:80609:delivery-1",
+    );
+    assert.equal(convexWrites[0].body.args.repository, "openclaw/openclaw");
+    assert.equal(convexWrites[0].body.args.itemNumber, 80609);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 async function activePrFetch(input: RequestInfo | URL) {
   const url = String(input);
   if (url.includes("/repos/openclaw/clawsweeper/actions/runs")) {
@@ -1344,6 +1531,64 @@ test("runner-mode accepts the admin token then validates the mode", async () => 
   );
   // Auth passed (constant-time compare matched); rejected only on invalid mode.
   assert.equal(response.status, 400);
+});
+
+test("runner-mode admin token writes legacy-token audit source", async () => {
+  const originalFetch = globalThis.fetch;
+  const convexWrites: Array<{ path: string; args: Record<string, unknown> }> = [];
+  const waitUntilPromises: Promise<unknown>[] = [];
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(String(input));
+    if (url.hostname === "demo.convex.cloud") {
+      convexWrites.push(
+        JSON.parse(String(init?.body)) as { path: string; args: Record<string, unknown> },
+      );
+      return new Response(JSON.stringify({ status: "success", value: null }), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (
+      url.hostname === "api.github.com" &&
+      (init?.method === "PATCH" || init?.method === "POST")
+    ) {
+      return new Response(null, { status: 204 });
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  }) as typeof fetch;
+
+  try {
+    const response = await worker.fetch(
+      new Request("https://clawsweeper.openclaw.ai/api/runner-mode", {
+        method: "POST",
+        headers: { Authorization: "Bearer admin-secret", "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "paused" }),
+      }),
+      {
+        DASHBOARD_ADMIN_TOKEN: "admin-secret",
+        GITHUB_TOKEN: "gh-token",
+        CLAWSWEEPER_REPO: "openclaw/clawsweeper",
+        STATUS_STORE: new MemoryKv(),
+        CONVEX_URL: "https://demo.convex.cloud",
+        CONVEX_WRITE_KEY: "convex-write-key",
+      },
+      {
+        waitUntil(promise: Promise<unknown>) {
+          waitUntilPromises.push(promise);
+        },
+      },
+    );
+
+    assert.equal(response.status, 200);
+    await Promise.all(waitUntilPromises);
+    assert.equal(convexWrites.length, 1);
+    assert.equal(convexWrites[0].path, "runnerModeAudit:record");
+    assert.equal(convexWrites[0].args.mode, "paused");
+    assert.deepEqual(convexWrites[0].args.labels, ["self-hosted", "clawsweeper-paused"]);
+    assert.equal(convexWrites[0].args.email, "legacy-token");
+    assert.equal(convexWrites[0].args.source, "legacy-token");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("runner-mode rejects the ingest token even when both tokens are set", async () => {

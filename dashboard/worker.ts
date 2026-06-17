@@ -2,6 +2,12 @@ import { Effect } from "effect";
 
 import { type AuthConfigEnabled, loadDashboardConfig } from "./config.ts";
 import {
+  recordEvent,
+  recordRunnerModeAudit,
+  recordStatusSnapshot,
+  type ConvexRunnerModeAudit,
+} from "./convex.ts";
+import {
   exchangeGoogleCode,
   fetchGoogleUser,
   googleAuthUrl,
@@ -20,6 +26,9 @@ const ACTIVE_RUN_STATUSES = new Set(["queued", "in_progress", "waiting", "reques
 type DashboardEnv = Record<string, unknown>;
 type DashboardContext = { waitUntil?: (promise: Promise<unknown>) => void };
 type GithubAppJsonOptions = { method?: string; body?: BodyInit; errorLabel?: string };
+type RunnerModeActor =
+  | { authorized: true; email: string; source: "session" | "legacy-token" }
+  | { authorized: false };
 
 declare global {
   interface CacheStorage {
@@ -199,7 +208,7 @@ export default {
     if (request.method === "OPTIONS") return cors(new Response(null, { status: 204 }));
     if (url.pathname === "/api/health") return json({ ok: true, service: "clawsweeper-status" });
     if (url.pathname === "/api/events" && request.method === "POST")
-      return ingestEvent(request, env);
+      return ingestEvent(request, env, ctx);
     if (url.pathname === "/api/session") return sessionJson(request, env);
     if (url.pathname === "/auth/google") return startGoogleLogin(request, env);
     if (url.pathname === "/auth/google/callback") return finishGoogleLogin(request, env);
@@ -390,6 +399,7 @@ async function statusJson(request, env, ctx) {
         ),
       ]),
     );
+    ctx?.waitUntil?.(recordStatusSnapshot(env, snapshot));
   }
   return cors(
     new Response(body, {
@@ -547,13 +557,14 @@ async function setRunnerMode(request, env, ctx) {
   // control). When dashboard auth is enabled, a valid Google session can also
   // authorize browser-originated lane changes so Luke does not need to paste the
   // admin token into localStorage.
-  const authorized = await isRunnerModeAuthorized(request, env);
-  if (!authorized) return json({ error: "unauthorized" }, 401);
+  const actor = await runnerModeActor(request, env);
+  if (!actor.authorized) return json({ error: "unauthorized" }, 401);
   const body = await request.json().catch(() => null);
   const mode = String(body?.mode || "").trim();
   const labels = RUNNER_MODES[mode];
   if (!labels) return json({ error: "invalid_mode", modes: Object.keys(RUNNER_MODES) }, 400);
 
+  const fromMode = await readStoredRunnerMode(env);
   const repo = env.CLAWSWEEPER_REPO || "openclaw/clawsweeper";
   await Promise.all(
     RUNNER_VARIABLES.map((name) => upsertGithubVariable(env, repo, name, JSON.stringify(labels))),
@@ -561,21 +572,26 @@ async function setRunnerMode(request, env, ctx) {
   await env.STATUS_STORE?.delete?.("snapshot");
   const result = { ok: true, mode, labels };
   ctx?.waitUntil?.(writeStoredJson(env, "runner-mode", result));
+  ctx?.waitUntil?.(
+    recordRunnerModeAudit(env, runnerModeAudit(request, actor, fromMode, mode, labels)),
+  );
   return json(result);
 }
 
-async function isRunnerModeAuthorized(request: Request, env: DashboardEnv): Promise<boolean> {
+async function runnerModeActor(request: Request, env: DashboardEnv): Promise<RunnerModeActor> {
   const token = bearerToken(request);
   const adminToken = env.DASHBOARD_ADMIN_TOKEN;
   if (typeof adminToken === "string" && token && (await timingSafeEqualStr(token, adminToken))) {
-    return true;
+    return { authorized: true, email: "legacy-token", source: "legacy-token" };
   }
   const config = dashboardConfig(env);
-  if (!config.auth.enabled) return false;
-  return Boolean(await readSession(request, config.auth));
+  if (!config.auth.enabled) return { authorized: false };
+  const user = await readSession(request, config.auth);
+  if (!user) return { authorized: false };
+  return { authorized: true, email: user.email, source: "session" };
 }
 
-async function ingestEvent(request, env) {
+async function ingestEvent(request, env, ctx) {
   const token = bearerToken(request);
   if (!env.INGEST_TOKEN || !token || !(await timingSafeEqualStr(token, env.INGEST_TOKEN)))
     return json({ error: "unauthorized" }, 401);
@@ -591,7 +607,39 @@ async function ingestEvent(request, env) {
   const ci = normalizeCiStatus(body);
   if (ci) writes.push(writeCiStatus(env, ci));
   await Promise.all(writes);
+  ctx?.waitUntil?.(recordEvent(env, body, event));
   return json({ ok: true, event });
+}
+
+function runnerModeAudit(
+  request: Request,
+  actor: Extract<RunnerModeActor, { authorized: true }>,
+  fromMode: string | null,
+  mode: string,
+  labels: string[],
+): ConvexRunnerModeAudit {
+  return {
+    changedAt: new Date().toISOString(),
+    email: actor.email,
+    source: actor.source,
+    fromMode,
+    mode,
+    labels,
+    reviewRunner: labels.join(","),
+    sourceIp: requestSourceIp(request),
+  };
+}
+
+async function readStoredRunnerMode(env: DashboardEnv): Promise<string | null> {
+  const store = env.STATUS_STORE as { get?: unknown } | null | undefined;
+  if (typeof store?.get !== "function") return null;
+  const stored = await readStoredJson(env, "runner-mode").catch(() => null);
+  return typeof stored?.mode === "string" ? stored.mode : null;
+}
+
+function requestSourceIp(request: Request): string | null {
+  const forwardedFor = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+  return request.headers.get("cf-connecting-ip") || forwardedFor || null;
 }
 
 async function statusSnapshot(env, ctx) {

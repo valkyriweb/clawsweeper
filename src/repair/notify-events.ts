@@ -473,6 +473,9 @@ function statusDashboardPayload(event: ClawSweeperEvent): JsonObject {
     stage: event.action,
     status: event.status,
     repository: event.repo,
+    target: event.target,
+    item_number: targetItemNumber(event.target),
+    idempotencyKey: event.idempotencyKey,
     item_url: event.url,
     run_url: event.runUrl,
     title: event.title ?? `${event.repo}${event.target ?? ""}`,
@@ -482,6 +485,11 @@ function statusDashboardPayload(event: ClawSweeperEvent): JsonObject {
 
 function trimTrailingSlash(value: string): string {
   return value.replace(/\/+$/, "");
+}
+
+function targetItemNumber(target: string | null): number | null {
+  const match = target?.match(/^#?(\d+)$/);
+  return match ? Number(match[1]) : null;
 }
 
 function createEvent(params: {

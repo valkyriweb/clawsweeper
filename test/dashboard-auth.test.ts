@@ -20,7 +20,22 @@ test("parseDashboardConfig leaves auth disabled by default", () => {
   const config = parseDashboardConfig({});
 
   assert.deepEqual(config.auth, { enabled: false });
-  assert.equal(config.convex.url, null);
+  assert.deepEqual(config.convex, { url: null, key: null, enabled: false });
+});
+
+test("parseDashboardConfig enables Convex only with URL and write key", () => {
+  assert.deepEqual(parseDashboardConfig({ CONVEX_URL: "https://demo.convex.cloud" }).convex, {
+    url: "https://demo.convex.cloud",
+    key: null,
+    enabled: false,
+  });
+  assert.deepEqual(
+    parseDashboardConfig({
+      CONVEX_URL: "https://demo.convex.cloud",
+      CONVEX_WRITE_KEY: "write-key",
+    }).convex,
+    { url: "https://demo.convex.cloud", key: "write-key", enabled: true },
+  );
 });
 
 test("parseDashboardConfig fails closed when auth is enabled without secrets", () => {
@@ -234,6 +249,81 @@ test("Worker authorizes runner-mode with a signed dashboard session", async () =
     await Promise.all(waitUntilPromises);
     assert.equal(writes.length, 2);
     assert.ok(writes.every((write) => write.value === '["self-hosted","macOS","ARM64"]'));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("runner-mode response survives Convex audit write failures and sends session actor details", async () => {
+  const config = parseDashboardConfig(AUTH_ENV).auth;
+  assert.equal(config.enabled, true);
+  const cookie = await createSessionCookie(config, { email: "luke@bermont.digital" });
+  const convexWrites: Array<{ path: string; args: Record<string, unknown> }> = [];
+  const waitUntilPromises: Promise<unknown>[] = [];
+  const env = {
+    ...AUTH_ENV,
+    CLAWSWEEPER_REPO: "valkyriweb/clawsweeper",
+    GITHUB_TOKEN: "gh-token",
+    CONVEX_URL: "https://demo.convex.cloud",
+    CONVEX_WRITE_KEY: "convex-write-key",
+    STATUS_STORE: {
+      async get(key: string) {
+        if (key === "runner-mode") return JSON.stringify({ mode: "macbook" });
+        return null;
+      },
+      async delete() {},
+      async put() {},
+    },
+  };
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(String(input));
+    if (url.hostname === "demo.convex.cloud") {
+      convexWrites.push(
+        JSON.parse(String(init?.body)) as { path: string; args: Record<string, unknown> },
+      );
+      return new Response(JSON.stringify({ status: "error", errorMessage: "boom" }), {
+        status: 500,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (
+      url.hostname === "api.github.com" &&
+      (init?.method === "PATCH" || init?.method === "POST")
+    ) {
+      return new Response(null, { status: 204 });
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  }) as typeof fetch;
+  try {
+    const response = await worker.fetch(
+      new Request("https://example.test/api/runner-mode", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          cookie,
+          "cf-connecting-ip": "203.0.113.10",
+        },
+        body: JSON.stringify({ mode: "both" }),
+      }),
+      env,
+      {
+        waitUntil(promise: Promise<unknown>) {
+          waitUntilPromises.push(promise);
+        },
+      },
+    );
+
+    assert.equal(response.status, 200);
+    await Promise.all(waitUntilPromises);
+    assert.equal(convexWrites.length, 1);
+    assert.equal(convexWrites[0].path, "runnerModeAudit:record");
+    assert.equal(convexWrites[0].args.mode, "both");
+    assert.deepEqual(convexWrites[0].args.labels, ["self-hosted", "macOS", "ARM64"]);
+    assert.equal(convexWrites[0].args.email, "luke@bermont.digital");
+    assert.equal(convexWrites[0].args.source, "session");
+    assert.equal(convexWrites[0].args.fromMode, "macbook");
+    assert.equal(convexWrites[0].args.sourceIp, "203.0.113.10");
   } finally {
     globalThis.fetch = originalFetch;
   }
