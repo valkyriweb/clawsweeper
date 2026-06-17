@@ -19,6 +19,10 @@ Automated GitHub issue/PR triage + review/repair via GitHub Actions + Codex. Run
 | Token/cost limits | [`docs/limits.md`](docs/limits.md) |
 | Dashboard | [`docs/dashboard-deploy-valkyriweb.md`](docs/dashboard-deploy-valkyriweb.md) |
 
+## Mac resource pressure
+
+If work changes local review shards, dashboard/watch loops, event hooks, runner selection, or repair automation, read `~/Projects/personal/mac-resource-ops/VISION.md` and `~/Projects/personal/mac-resource-ops/docs/resource-graph.md` first. Keep local event pressure sparse/actionable, prefer mac-mini/crabbox/offload for heavy review loops, and document cleanup for any new persistent local load.
+
 ## Check state at runtime (don't trust static lists)
 
 ```bash
