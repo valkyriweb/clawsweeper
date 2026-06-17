@@ -47,6 +47,7 @@ jobs:
             tsconfig.dashboard.json
             tsconfig.json
             tsconfig.repair.json
+            tsconfig.scripts.json
           sparse-checkout-cone-mode: false
 
       - uses: ./.github/actions/setup-pnpm
