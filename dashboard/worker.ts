@@ -3633,13 +3633,8 @@ async function load() {
   if (!response.ok) throw new Error("/api/status returned " + response.status);
   data = await response.json();
   const hasErrors = Boolean(data.diagnostics && Array.isArray(data.diagnostics.errors) && data.diagnostics.errors.length);
-  const looksEmpty = !data.pipeline?.length && data.fleet?.active_workflow_runs === 0 && hasErrors;
-  if (looksEmpty && lastData) {
-    renderDashboard(lastData, "Live refresh failed; showing last good status.");
-    return;
-  }
   lastData = data;
-  if (!looksEmpty) localStorage.setItem("clawsweeper:last-status", JSON.stringify(data));
+  localStorage.setItem("clawsweeper:last-status", JSON.stringify(data));
   renderDashboard(data, hasErrors ? "Updated with partial GitHub telemetry." : "");
   } catch (error) {
     if (lastData) {
