@@ -81,7 +81,7 @@ test("session cookie round-trips, expires, and rejects tampering", async () => {
   );
 });
 
-test("googleAuthUrl uses the ClawSweeper callback and email/profile scopes", () => {
+test("googleAuthUrl uses the ClawSweeper callback and email scope", () => {
   const config = parseDashboardConfig(AUTH_ENV).auth;
   assert.equal(config.enabled, true);
 
@@ -96,7 +96,7 @@ test("googleAuthUrl uses the ClawSweeper callback and email/profile scopes", () 
   assert.equal(url.searchParams.get("state"), "state-123");
   assert.match(url.searchParams.get("scope") || "", /openid/);
   assert.match(url.searchParams.get("scope") || "", /email/);
-  assert.match(url.searchParams.get("scope") || "", /profile/);
+  assert.doesNotMatch(url.searchParams.get("scope") || "", /profile/);
 });
 
 test("requireAllowedGoogleUser accepts configured emails case-insensitively", () => {

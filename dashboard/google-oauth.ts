@@ -36,7 +36,7 @@ export function googleAuthUrl(config: AuthConfigEnabled, state: string): string 
   url.searchParams.set("client_id", config.googleClientId);
   url.searchParams.set("redirect_uri", config.googleRedirectUri);
   url.searchParams.set("response_type", "code");
-  url.searchParams.set("scope", "openid email profile");
+  url.searchParams.set("scope", "openid email");
   url.searchParams.set("state", state);
   url.searchParams.set("prompt", "select_account");
   return url.toString();
