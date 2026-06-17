@@ -3634,10 +3634,9 @@ setInterval(() => {}, 1000);
   // Deterministic margins: under CPU load (parallel builds, small CI runners)
   // spawning the fake codex node process can take >2s, which previously fired
   // the startup watchdog before thread.started arrived and made this test flaky.
-  // Use a generous startup deadline (so spawn latency never trips it) and a
-  // total timeout comfortably above worst-case spawn; only the total timeout
-  // should fire for a silent in-progress turn.
-  process.env.CLAWSWEEPER_CODEX_STARTUP_TIMEOUT_MS = "20000";
+  // Keep startup < total so the test still proves initial output cancels the
+  // startup watchdog; only the total timeout should fire after thread.started.
+  process.env.CLAWSWEEPER_CODEX_STARTUP_TIMEOUT_MS = "5000";
   try {
     assert.throws(
       () =>
@@ -3650,7 +3649,7 @@ setInterval(() => {}, 1000);
           reasoningEffort: "low",
           sandboxMode: "read-only",
           serviceTier: "",
-          timeoutMs: 5000,
+          timeoutMs: 8000,
           workDir,
           prompt: "Return a review decision.",
         }),
@@ -3659,7 +3658,7 @@ setInterval(() => {}, 1000);
     const stdout = readFileSync(join(workDir, "144.codex.stdout.log"), "utf8");
     const stderr = readFileSync(join(workDir, "144.codex.stderr.log"), "utf8");
     assert.match(stdout, /thread\.started/);
-    assert.match(stderr, /codex total timeout after 5000ms/);
+    assert.match(stderr, /codex total timeout after 8000ms/);
     assert.doesNotMatch(stderr, /codex startup timeout/);
   } finally {
     if (originalPath === undefined) delete process.env.PATH;
