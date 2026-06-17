@@ -45,6 +45,7 @@ on:
       - repair cluster worker
       - repair publish cluster results # currently in _disabled/; matches if re-enabled
       - ClawSweeper Commit Review
+      - telemetry egress check
     types:
       - completed
 

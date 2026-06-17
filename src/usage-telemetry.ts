@@ -413,7 +413,7 @@ function parseResourceAttributes(value: string | undefined): Record<string, stri
   return attributes;
 }
 
-function otlpTracesEndpoint(env: NodeJS.ProcessEnv = process.env): string | null {
+export function otlpTracesEndpoint(env: NodeJS.ProcessEnv = process.env): string | null {
   const explicit = env.CLAWSWEEPER_USAGE_OTLP_ENDPOINT || env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT;
   if (explicit) return explicit;
 
