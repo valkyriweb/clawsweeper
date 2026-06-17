@@ -16,7 +16,6 @@ TARGET_REPOS = "valkyriweb/pi-mono,bermont-digital/multica,valkyriweb/lue-kube,v
 WORKER_BUDGET = "80"
 CACHE_TTL_SECONDS = "20"
 INCLUDE_CI_STATUS = "1"
-CONVEX_URL = "https://third-bee-949.convex.cloud"
 
 # Optional Google OAuth dashboard gate (disabled unless DASHBOARD_AUTH_ENABLED is set):
 #   DASHBOARD_AUTH_ENABLED = "1"
