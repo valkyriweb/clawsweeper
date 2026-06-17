@@ -23,12 +23,14 @@ INCLUDE_CI_STATUS = "1"
 #   GOOGLE_REDIRECT_URI = "https://clawsweeper.myhorizon.co.za/auth/google/callback"
 #   CLAW_SWEEPER_ALLOWED_EMAILS = "luke@bermont.digital,blacklotussa@gmail.com"
 #   DASHBOARD_SESSION_TTL_HOURS = "12"
+#   CONVEX_URL = "https://<deployment>.convex.cloud"
 #
 # Secrets (set via `wrangler secret put`, never committed):
 #   INGEST_TOKEN              - auth for POST /api/events (telemetry ingest)
 #   DASHBOARD_ADMIN_TOKEN     - legacy fallback for POST /api/runner-mode (runner kill-switch); no INGEST_TOKEN fallback
 #   GOOGLE_CLIENT_SECRET      - required when DASHBOARD_AUTH_ENABLED=1
 #   DASHBOARD_SESSION_SECRET  - required when DASHBOARD_AUTH_ENABLED=1
+#   CONVEX_WRITE_KEY          - deployment write key for Convex mutations (CONVEX_DEPLOY_KEY also supported)
 
 [[kv_namespaces]]
 binding = "STATUS_STORE"

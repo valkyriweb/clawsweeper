@@ -27,11 +27,15 @@ export type AuthConfigEnabled = {
 
 export type AuthConfig = AuthConfigDisabled | AuthConfigEnabled;
 
+export type ConvexConfig = {
+  url: string | null;
+  key: string | null;
+  enabled: boolean;
+};
+
 export type DashboardConfig = {
   auth: AuthConfig;
-  convex: {
-    url: string | null;
-  };
+  convex: ConvexConfig;
 };
 
 export type DashboardEnv = Record<string, unknown>;
@@ -50,11 +54,11 @@ export function loadDashboardConfig(
 
 export function parseDashboardConfig(env: DashboardEnv): DashboardConfig {
   const enabled = parseBooleanEnv(env.DASHBOARD_AUTH_ENABLED, "DASHBOARD_AUTH_ENABLED", false);
-  const convexUrl = optionalString(env.CONVEX_URL);
+  const convex = parseConvexConfig(env);
   if (!enabled) {
     return {
       auth: { enabled: false },
-      convex: { url: convexUrl },
+      convex,
     };
   }
 
@@ -80,8 +84,14 @@ export function parseDashboardConfig(env: DashboardEnv): DashboardConfig {
       sessionCookieName: stringFromEnv(env.DASHBOARD_SESSION_COOKIE, "clawsweeper_session"),
       stateCookieName: stringFromEnv(env.DASHBOARD_OAUTH_STATE_COOKIE, "clawsweeper_oauth_state"),
     },
-    convex: { url: convexUrl },
+    convex,
   };
+}
+
+export function parseConvexConfig(env: DashboardEnv): ConvexConfig {
+  const url = optionalString(env.CONVEX_URL);
+  const key = optionalString(env.CONVEX_WRITE_KEY) ?? optionalString(env.CONVEX_DEPLOY_KEY);
+  return { url, key, enabled: Boolean(url && key) };
 }
 
 export function isAllowedEmail(email: string, allowedEmails: readonly string[]): boolean {

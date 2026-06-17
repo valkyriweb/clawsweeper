@@ -31,6 +31,8 @@ jobs:
           sparse-checkout: |
             .github
             config
+            convex
+            convex.json
             dashboard
             docs
             instructions
@@ -44,6 +46,7 @@ jobs:
             README.md
             package.json
             pnpm-lock.yaml
+            tsconfig.convex.json
             tsconfig.dashboard.json
             tsconfig.json
             tsconfig.repair.json

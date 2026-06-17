@@ -8,7 +8,8 @@
     "build": "tsgo -p tsconfig.json",
     "build:repair": "tsgo -p tsconfig.repair.json",
     "build:dashboard": "tsgo -p tsconfig.dashboard.json",
-    "build:all": "pnpm run build && pnpm run build:repair && pnpm run build:dashboard",
+    "build:convex": "tsgo -p tsconfig.convex.json",
+    "build:all": "pnpm run build && pnpm run build:repair && pnpm run build:dashboard && pnpm run build:convex",
     "typecheck:scripts": "tsgo -p tsconfig.scripts.json",
     "plan": "node dist/clawsweeper.js plan",
     "review": "node dist/clawsweeper.js review",
@@ -71,18 +72,20 @@
     "check:active-surface": "node scripts/check-active-surface.ts",
     "check:limits": "node scripts/check-limits.ts",
     "check:telemetry-egress": "node scripts/check-telemetry-egress.ts",
-    "lint": "pnpm run lint:src && pnpm run lint:repair && pnpm run lint:scripts && pnpm run lint:dashboard",
+    "lint": "pnpm run lint:src && pnpm run lint:repair && pnpm run lint:scripts && pnpm run lint:dashboard && pnpm run lint:convex",
     "lint:src": "oxlint src --ignore-pattern \"src/repair/**\" --tsconfig tsconfig.json --type-aware --deny-warnings --report-unused-disable-directives -D correctness",
     "lint:repair": "oxlint src/repair --tsconfig tsconfig.repair.json --deny-warnings --report-unused-disable-directives -D correctness",
     "lint:scripts": "oxlint scripts test --deny-warnings --report-unused-disable-directives -D correctness",
     "lint:dashboard": "oxlint dashboard --tsconfig tsconfig.dashboard.json --deny-warnings --report-unused-disable-directives -D correctness",
-    "format": "oxfmt --write src scripts test dashboard package.json tsconfig.json tsconfig.repair.json tsconfig.dashboard.json tsconfig.scripts.json .oxfmtrc.json config schema .github/actions .github/workflows",
-    "format:check": "oxfmt --check src scripts test dashboard package.json tsconfig.json tsconfig.repair.json tsconfig.dashboard.json tsconfig.scripts.json .oxfmtrc.json config schema .github/actions .github/workflows",
+    "lint:convex": "oxlint convex --tsconfig tsconfig.convex.json --deny-warnings --report-unused-disable-directives -D correctness",
+    "format": "oxfmt --write src scripts test dashboard convex package.json tsconfig.json tsconfig.repair.json tsconfig.dashboard.json tsconfig.convex.json tsconfig.scripts.json .oxfmtrc.json config schema .github/actions .github/workflows",
+    "format:check": "oxfmt --check src scripts test dashboard convex package.json tsconfig.json tsconfig.repair.json tsconfig.dashboard.json tsconfig.convex.json tsconfig.scripts.json .oxfmtrc.json config schema .github/actions .github/workflows",
     "oxformat": "pnpm run format",
     "oxformat:check": "pnpm run format:check",
     "check": "pnpm run check:active-surface && pnpm run check:limits && pnpm run build:all && pnpm run typecheck:scripts && pnpm run lint && pnpm run test:unit && pnpm run test:repair && pnpm run test:coverage:changed && pnpm run test:coverage && pnpm run format:check"
   },
   "dependencies": {
+    "convex": "^1.41.0",
     "effect": "3.21.3"
   },
   "devDependencies": {
