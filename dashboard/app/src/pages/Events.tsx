@@ -48,6 +48,8 @@ export function Events() {
           {events.map((e, i) => {
             const link = e.item_url;
             const num = e.item_number != null ? `#${e.item_number}` : "";
+            const title = e.title ?? e.stage ?? "";
+            const linkText = num || title || "open";
             return (
               <li key={i} className="event-row">
                 <span className="event-time">{fmt(e.received_at ?? e.closed_at)}</span>
@@ -56,12 +58,12 @@ export function Events() {
                   <span className="event-repo">{e.repository ?? "—"}</span>{" "}
                   {link ? (
                     <a href={link} target="_blank" rel="noreferrer">
-                      {num}
+                      {linkText}
                     </a>
                   ) : (
-                    <span>{num}</span>
+                    <span>{linkText}</span>
                   )}{" "}
-                  <span className="event-title">{e.title ?? e.stage ?? ""}</span>
+                  {num && <span className="event-title">{title}</span>}
                 </span>
                 {e.mode && <span className="event-mode">{e.mode}</span>}
               </li>

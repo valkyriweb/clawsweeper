@@ -1,15 +1,35 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { RunnerModeResult } from "../types.js";
 
-async function setRunnerMode(mode: string): Promise<RunnerModeResult> {
-  const res = await fetch("/api/runner-mode", {
+const ADMIN_TOKEN_KEY = "clawsweeper:admin-token";
+
+async function requestRunnerMode(mode: string, token: string): Promise<Response> {
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  if (token) headers.authorization = `Bearer ${token}`;
+  return fetch("/api/runner-mode", {
     method: "POST",
     credentials: "include",
-    headers: { "content-type": "application/json" },
+    headers,
     body: JSON.stringify({ mode }),
   });
+}
+
+async function setRunnerMode(mode: string): Promise<RunnerModeResult> {
+  let token = window.localStorage.getItem(ADMIN_TOKEN_KEY) ?? "";
+  let res = await requestRunnerMode(mode, token);
+  if (res.status === 401 && !token) {
+    token = window.prompt("Dashboard admin token") ?? "";
+    if (!token) {
+      const err = new Error("Not signed in") as Error & { status: number };
+      err.status = 401;
+      throw err;
+    }
+    window.localStorage.setItem(ADMIN_TOKEN_KEY, token);
+    res = await requestRunnerMode(mode, token);
+  }
   if (res.status === 401) {
-    const err = new Error("Not signed in") as Error & { status: number };
+    window.localStorage.removeItem(ADMIN_TOKEN_KEY);
+    const err = new Error("Unauthorized runner toggle token or session") as Error & { status: number };
     err.status = 401;
     throw err;
   }

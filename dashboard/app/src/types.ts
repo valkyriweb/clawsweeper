@@ -17,6 +17,45 @@ export interface ActivityEvent {
   source?: string;
 }
 
+export interface PipelineItem extends Record<string, unknown> {
+  id?: number | string;
+  run_id?: number | string;
+  run_number?: number | string;
+  number?: number | string;
+  item_number?: number | string;
+  repository?: string | null;
+  repo?: string | null;
+  title?: string;
+  name?: string;
+  workflow?: string;
+  mode?: string;
+  stage?: string;
+  status?: string;
+  conclusion?: string | null;
+  run_url?: string;
+  item_url?: string;
+  url?: string;
+  created_at?: string;
+  started_at?: string;
+  updated_at?: string;
+  timestamp?: string;
+  elapsed_ms?: number;
+  ci?: {
+    state?: string;
+    source?: string;
+    label?: string;
+    total?: number;
+    failing?: number;
+    pending?: number;
+    error?: string;
+    head_sha?: string;
+    details_url?: string;
+    description?: string;
+    item_url?: string;
+    run_url?: string;
+  };
+}
+
 export interface StatusResponse {
   schema_version: number;
   generated_at: string;
@@ -40,7 +79,7 @@ export interface StatusResponse {
     automerge_command_to_merge_ms: number | null;
     automerge_samples: number;
   };
-  pipeline: Array<Record<string, unknown>>;
+  pipeline: PipelineItem[];
   recent: {
     automerge: unknown[];
     closed_items: unknown[];
