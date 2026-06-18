@@ -2,6 +2,7 @@ import { createRouter, createRootRoute, createRoute } from "@tanstack/react-rout
 import { Layout } from "./components/Layout.js";
 import { Overview } from "./pages/Overview.js";
 import { Runs } from "./pages/Runs.js";
+import { RunDetail } from "./pages/RunDetail.js";
 import { Events } from "./pages/Events.js";
 import { Controls } from "./pages/Controls.js";
 
@@ -21,6 +22,12 @@ const runsRoute = createRoute({
   component: Runs,
 });
 
+const runDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/v2/runs/$runId",
+  component: RunDetail,
+});
+
 const eventsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/v2/events",
@@ -33,7 +40,7 @@ const controlsRoute = createRoute({
   component: Controls,
 });
 
-const routeTree = rootRoute.addChildren([overviewRoute, runsRoute, eventsRoute, controlsRoute]);
+const routeTree = rootRoute.addChildren([overviewRoute, runsRoute, runDetailRoute, eventsRoute, controlsRoute]);
 
 export const router = createRouter({ routeTree });
 

@@ -1,32 +1,9 @@
 import { useMemo } from "react";
+import { Link } from "@tanstack/react-router";
 import { useStatus } from "../hooks/useStatus.js";
 import { Loading, SignInPrompt, FetchError } from "../components/StateViews.js";
 import { TelemetryBanner } from "../components/TelemetryBanner.js";
-
-function str(v: unknown): string {
-  if (v == null) return "—";
-  return String(v);
-}
-
-function getLink(item: Record<string, unknown>): string | null {
-  const u = item["run_url"] ?? item["item_url"] ?? item["url"];
-  return typeof u === "string" ? u : null;
-}
-
-function getTimestamp(item: Record<string, unknown>): string | null {
-  const ts = item["created_at"] ?? item["started_at"] ?? item["updated_at"] ?? item["timestamp"];
-  if (!ts) return null;
-  try {
-    return new Date(String(ts)).toISOString();
-  } catch {
-    return null;
-  }
-}
-
-function getNumber(item: Record<string, unknown>): string {
-  const n = item["number"] ?? item["item_number"] ?? item["run_number"];
-  return n != null ? `#${n}` : "—";
-}
+import { itemNumber, runId, str, timestamp } from "../lib/pipeline.js";
 
 export function Runs() {
   const { data, isLoading, error } = useStatus();
@@ -66,26 +43,21 @@ export function Runs() {
             </thead>
             <tbody>
               {rows.map((item, i) => {
-                const link = getLink(item);
-                const ts = getTimestamp(item);
-                const title = str(item["title"] ?? item["name"]);
+                const ts = timestamp(item);
+                const title = str(item.title ?? item.name);
                 return (
-                  <tr key={i}>
+                  <tr key={runId(item, i)}>
                     <td>
-                      {link ? (
-                        <a href={link} target="_blank" rel="noreferrer">
-                          {getNumber(item)}
-                        </a>
-                      ) : (
-                        getNumber(item)
-                      )}
+                      <Link to="/v2/runs/$runId" params={{ runId: runId(item, i) }}>
+                        {itemNumber(item)}
+                      </Link>
                     </td>
-                    <td>{str(item["repository"] ?? item["repo"])}</td>
+                    <td>{str(item.repository ?? item.repo)}</td>
                     <td>
                       {title === "—" ? <span style={{ color: "var(--text-muted)" }}>—</span> : title}
                     </td>
-                    <td>{str(item["status"])}</td>
-                    <td>{str(item["stage"] ?? item["mode"])}</td>
+                    <td>{str(item.status)}</td>
+                    <td>{str(item.stage ?? item.mode)}</td>
                     <td>{ts ? ts.replace("T", " ").replace("Z", "").slice(0, 16) : "—"}</td>
                   </tr>
                 );

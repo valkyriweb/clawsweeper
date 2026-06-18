@@ -102,3 +102,17 @@ tbody td a:hover { text-decoration: underline; }
 .event-body a:hover { text-decoration: underline; }
 .event-title { color: var(--text); }
 .event-mode { font-family: var(--mono); font-size: 0.7rem; color: var(--text-muted); }
+
+/* Run detail */
+.back-link { display: inline-block; margin: 0 0 1rem; color: var(--accent); text-decoration: none; font-family: var(--mono); font-size: 0.78rem; }
+.back-link:hover { text-decoration: underline; }
+.detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; }
+.detail-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; }
+.detail-card h2 { margin: 0 0 0.9rem; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); }
+.detail-card dl { margin: 0; }
+.detail-row { display: grid; grid-template-columns: 110px 1fr; gap: 0.75rem; padding: 0.45rem 0; border-bottom: 1px solid var(--border); }
+.detail-row:last-child { border-bottom: 0; }
+.detail-row dt { color: var(--text-muted); font-size: 0.78rem; }
+.detail-row dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.detail-row a { color: var(--accent); text-decoration: none; }
+.detail-row a:hover { text-decoration: underline; }
