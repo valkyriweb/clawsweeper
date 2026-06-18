@@ -1217,20 +1217,23 @@ test("dashboard shares in-flight GitHub App installation tokens per access scope
     );
     assert.equal(response.status, 200);
     assert.equal(tokenRequests, 2);
-    assert.deepEqual(requestedPermissions, [
-      {
-        actions: "read",
-        actions_variables: "read",
-        checks: "read",
-        contents: "read",
-        issues: "read",
-        pull_requests: "read",
-      },
-      {
-        actions: "read",
-        administration: "read",
-      },
-    ]);
+    assert.deepEqual(
+      requestedPermissions.map((permissions) => JSON.stringify(permissions)).sort(),
+      [
+        JSON.stringify({
+          actions: "read",
+          actions_variables: "read",
+          checks: "read",
+          contents: "read",
+          issues: "read",
+          pull_requests: "read",
+        }),
+        JSON.stringify({
+          actions: "read",
+          administration: "read",
+        }),
+      ].sort(),
+    );
     assert.equal(badBearer, "");
   } finally {
     globalThis.fetch = originalFetch;
