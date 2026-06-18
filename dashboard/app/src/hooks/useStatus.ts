@@ -2,7 +2,10 @@ import { useQuery } from "@tanstack/react-query";
 import type { StatusResponse } from "../types.js";
 
 async function fetchStatus(): Promise<StatusResponse> {
-  const res = await fetch("/api/status", { credentials: "include" });
+  const res = await fetch(`/api/status?ts=${Date.now()}`, {
+    credentials: "include",
+    cache: "no-store",
+  });
   if (res.status === 401) {
     const err = new Error("401") as Error & { status: number };
     err.status = 401;
