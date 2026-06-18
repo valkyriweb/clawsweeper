@@ -556,9 +556,11 @@ Required secrets:
 - `OPENAI_API_KEY`: OpenAI API key used by the per-job local Codex Responses
   proxy. Codex subprocesses inherit only the proxy-backed `CODEX_HOME`, not the
   raw API key.
-- `CLAWSWEEPER_APP_CLIENT_ID`: public GitHub App client ID for `clawsweeper`.
-  Currently `Iv23liOECG0slfuhz093`.
-- `CLAWSWEEPER_APP_PRIVATE_KEY`: private key for `clawsweeper`; plan/review
+- `CLAWSWEEPER_APP_CLIENT_ID`: public GitHub App client ID for the deployed
+  ClawSweeper GitHub App. Do not copy this from the public app page; use the app
+  configured for the deployment (for the live dashboard, see
+  `dashboard/wrangler.toml`).
+- `CLAWSWEEPER_APP_PRIVATE_KEY`: private key for the same GitHub App; plan/review
   jobs use a short-lived GitHub App installation token for read-heavy target API
   calls, commit review uses a read-scoped target token while Codex runs, and
   apply/comment-sync/check jobs use the app token for comments, closes, and
