@@ -15,6 +15,12 @@ export function Layout() {
         <Link to="/v2/runs" aria-current={p.startsWith("/v2/runs") ? "page" : undefined}>
           Runs
         </Link>
+        <Link to="/v2/events" aria-current={p.startsWith("/v2/events") ? "page" : undefined}>
+          Activity
+        </Link>
+        <Link to="/v2/controls" aria-current={p.startsWith("/v2/controls") ? "page" : undefined}>
+          Controls
+        </Link>
       </nav>
       <main className="app-main">
         <Outlet />
