@@ -94,6 +94,39 @@ export interface StatusResponse {
   };
 }
 
+export interface HistoryPage<T> {
+  ok: boolean;
+  kind: "snapshots" | "events";
+  rows: T[];
+  nextCursor: string | null;
+  error?: string;
+}
+
+export interface HistorySnapshot {
+  _id?: string;
+  generatedAt: string;
+  schemaVersion?: number;
+  source?: StatusResponse["source"];
+  fleet?: StatusResponse["fleet"];
+  pipeline?: PipelineItem[];
+  recent?: StatusResponse["recent"];
+  diagnostics?: StatusResponse["diagnostics"];
+}
+
+export interface StoredEvent {
+  _id?: string;
+  receivedAt: string;
+  eventType: string;
+  repository: string | null;
+  itemNumber: number | null;
+  mode: string;
+  stage: string;
+  status: string;
+  title: string | null;
+  itemUrl: string | null;
+  runUrl: string | null;
+}
+
 export interface RunnerModeResult {
   ok: boolean;
   mode: string;

@@ -3,6 +3,7 @@ import { Effect } from "effect";
 import { parseConvexConfig, type DashboardEnv } from "./config.ts";
 
 type ConvexMutationPath = "statusSnapshots:record" | "events:record" | "runnerModeAudit:record";
+type ConvexQueryPath = "history:snapshots" | "history:events";
 type JsonObject = Record<string, unknown>;
 
 type ConvexApiResponse = {
@@ -73,6 +74,16 @@ export function recordRunnerModeAudit(
   return writeConvexMutation(env, "runnerModeAudit:record", audit);
 }
 
+export async function readConvexHistory(
+  env: DashboardEnv,
+  path: ConvexQueryPath,
+  args: JsonObject,
+): Promise<unknown> {
+  const config = parseConvexConfig(env);
+  if (!config.enabled || !config.url || !config.key) return null;
+  return postConvexQuery(config.url, config.key, config.authScheme, path, args);
+}
+
 function writeConvexMutation(
   env: DashboardEnv,
   path: ConvexMutationPath,
@@ -112,6 +123,28 @@ async function postConvexMutation(
   if (result?.status !== "success") throw new Error(result?.errorMessage || "unknown error");
 }
 
+async function postConvexQuery(
+  url: string,
+  key: string,
+  authScheme: "convex" | "bearer",
+  path: ConvexQueryPath,
+  args: JsonObject,
+): Promise<unknown> {
+  const response = await fetch(convexApiEndpoint(url, "query"), {
+    method: "POST",
+    headers: {
+      authorization: `${authScheme === "convex" ? "Convex" : "Bearer"} ${key}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ path, args, format: "json" }),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+  const result = (await response.json().catch(() => null)) as ConvexApiResponse | null;
+  if (result?.status !== "success") throw new Error(result?.errorMessage || "unknown error");
+  return result.value ?? null;
+}
+
 function eventIdempotencyKey(
   body: JsonObject,
   event: JsonObject,
@@ -145,8 +178,15 @@ function eventIdempotencyKey(
 }
 
 function convexMutationEndpoint(url: string): string {
+  return convexApiEndpoint(url, "mutation");
+}
+
+function convexApiEndpoint(url: string, kind: "mutation" | "query"): string {
   const trimmed = trimTrailingSlash(url);
-  return trimmed.endsWith("/api/mutation") ? trimmed : `${trimmed}/api/mutation`;
+  if (trimmed.endsWith("/api/mutation") || trimmed.endsWith("/api/query")) {
+    return trimmed.replace(/\/api\/(mutation|query)$/, `/api/${kind}`);
+  }
+  return `${trimmed}/api/${kind}`;
 }
 
 function trimTrailingSlash(value: string): string {
