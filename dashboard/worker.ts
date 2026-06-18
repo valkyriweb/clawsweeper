@@ -193,7 +193,7 @@ const PR_PROOF_VIEWS = [
   },
 ];
 
-let githubAppTokenCache = null;
+const githubAppTokenCache = new Map();
 
 export default {
   async fetch(request: Request, env: DashboardEnv = {}, ctx?: DashboardContext) {
@@ -676,8 +676,8 @@ async function statusSnapshot(env, ctx) {
       errors.push(`runner config: ${error.message}`);
       return runnerConfigFromLabels(null);
     }),
-    githubJson(env, `/repos/${repo}/actions/runners?per_page=100`).catch((error) => {
-      errors.push(`runners: ${error.message}`);
+    githubJson(env, `/repos/${repo}/actions/runners?per_page=100`, "admin-read").catch((error) => {
+      errors.push(`runners: ${runnerPermissionMessage(error)}`);
       return null;
     }),
   ]);
@@ -2099,8 +2099,16 @@ function storeCacheRequest(key) {
   });
 }
 
-async function githubJson(env, path) {
-  const token = await githubAuthToken(env);
+function runnerPermissionMessage(error) {
+  const message = String(error?.message || error);
+  if (message.includes("GitHub 403")) {
+    return `${message} (GitHub App needs repository Administration: read permission to list self-hosted runners)`;
+  }
+  return message;
+}
+
+async function githubJson(env, path, access = "read") {
+  const token = await githubAuthToken(env, access);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort("timeout"), GITHUB_TIMEOUT_MS);
   const response = await fetch(`https://api.github.com${path}`, {
@@ -2237,35 +2245,29 @@ async function githubAuthToken(env, access = "read") {
     credentials.installationId || repos[0] || "",
     repos.join(","),
   ].join("|");
-  if (
-    githubAppTokenCache?.key === cacheKey &&
-    githubAppTokenCache.expiresAtMs - GITHUB_APP_TOKEN_REFRESH_SKEW_MS > now
-  ) {
-    return githubAppTokenCache.token;
+  const cached = githubAppTokenCache.get(cacheKey);
+  if (cached?.expiresAtMs - GITHUB_APP_TOKEN_REFRESH_SKEW_MS > now) {
+    return cached.token;
   }
-  if (githubAppTokenCache?.key === cacheKey && githubAppTokenCache.promise) {
-    return githubAppTokenCache.promise;
-  }
+  if (cached?.promise) return cached.promise;
 
   const promise = createGithubAppInstallationToken(env, credentials, repos, access)
     .then((result) => {
-      githubAppTokenCache = {
-        key: cacheKey,
+      githubAppTokenCache.set(cacheKey, {
         token: result.token,
         expiresAtMs: result.expiresAtMs,
-      };
+      });
       return result.token;
     })
     .catch((error) => {
-      githubAppTokenCache = null;
+      githubAppTokenCache.delete(cacheKey);
       throw error;
     });
-  githubAppTokenCache = {
-    key: cacheKey,
+  githubAppTokenCache.set(cacheKey, {
     token: "",
     expiresAtMs: 0,
     promise,
-  };
+  });
   return promise;
 }
 
@@ -2295,14 +2297,19 @@ async function createGithubAppInstallationToken(env, credentials, repos, access 
             ? {
                 actions_variables: "write",
               }
-            : {
-                actions: "read",
-                actions_variables: "read",
-                checks: "read",
-                contents: "read",
-                issues: "read",
-                pull_requests: "read",
-              },
+            : access === "admin-read"
+              ? {
+                  actions: "read",
+                  administration: "read",
+                }
+              : {
+                  actions: "read",
+                  actions_variables: "read",
+                  checks: "read",
+                  contents: "read",
+                  issues: "read",
+                  pull_requests: "read",
+                },
       }),
       errorLabel: "GitHub App token",
     },

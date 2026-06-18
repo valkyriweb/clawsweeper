@@ -1156,7 +1156,7 @@ test("triage uses ClawSweeper GitHub App credentials when no static token is con
   }
 });
 
-test("dashboard shares in-flight GitHub App installation token across parallel requests", async () => {
+test("dashboard shares in-flight GitHub App installation tokens per access scope", async () => {
   const originalFetch = globalThis.fetch;
   const originalCaches = globalThis.caches;
   Object.defineProperty(globalThis, "caches", {
@@ -1174,6 +1174,7 @@ test("dashboard shares in-flight GitHub App installation token across parallel r
     publicKeyEncoding: { type: "spki", format: "pem" },
   });
   let tokenRequests = 0;
+  const requestedPermissions: unknown[] = [];
   let badBearer = "";
   globalThis.fetch = async (input, init) => {
     const url = new URL(String(input));
@@ -1183,6 +1184,7 @@ test("dashboard shares in-flight GitHub App installation token across parallel r
     }
     if (url.pathname === "/app/installations/12345/access_tokens") {
       tokenRequests += 1;
+      requestedPermissions.push(JSON.parse(String(init?.body || "{}")).permissions);
       await new Promise((resolve) => setTimeout(resolve, 5));
       return jsonResponse({
         token: "installation-token",
@@ -1192,6 +1194,7 @@ test("dashboard shares in-flight GitHub App installation token across parallel r
     if (url.hostname === "api.github.com") {
       if (authorization !== "Bearer installation-token") badBearer = authorization;
       if (url.pathname.endsWith("/actions/runs")) return jsonResponse({ workflow_runs: [] });
+      if (url.pathname.endsWith("/actions/runners")) return jsonResponse({ runners: [] });
       if (url.pathname === "/search/issues") return jsonResponse({ total_count: 0, items: [] });
       if (url.pathname.endsWith("/issues")) return jsonResponse([]);
     }
@@ -1213,7 +1216,21 @@ test("dashboard shares in-flight GitHub App installation token across parallel r
       },
     );
     assert.equal(response.status, 200);
-    assert.equal(tokenRequests, 1);
+    assert.equal(tokenRequests, 2);
+    assert.deepEqual(requestedPermissions, [
+      {
+        actions: "read",
+        actions_variables: "read",
+        checks: "read",
+        contents: "read",
+        issues: "read",
+        pull_requests: "read",
+      },
+      {
+        actions: "read",
+        administration: "read",
+      },
+    ]);
     assert.equal(badBearer, "");
   } finally {
     globalThis.fetch = originalFetch;
