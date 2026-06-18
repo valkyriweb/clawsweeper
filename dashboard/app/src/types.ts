@@ -43,8 +43,16 @@ export interface PipelineItem extends Record<string, unknown> {
   ci?: {
     state?: string;
     source?: string;
+    label?: string;
+    total?: number;
+    failing?: number;
+    pending?: number;
+    error?: string;
+    head_sha?: string;
     details_url?: string;
     description?: string;
+    item_url?: string;
+    run_url?: string;
   };
 }
 

@@ -46,6 +46,7 @@ export function RunDetail() {
   const ts = timestamp(row);
   const github = runLink(row);
   const ci = row.ci;
+  const ciDetailsUrl = ci?.details_url ?? ci?.run_url ?? ci?.item_url;
 
   return (
     <>
@@ -94,12 +95,15 @@ export function RunDetail() {
           <dl>
             <DetailRow label="State" value={str(ci?.state)} />
             <DetailRow label="Source" value={str(ci?.source)} />
-            <DetailRow label="Description" value={str(ci?.description)} />
+            <DetailRow label="Label" value={str(ci?.label ?? ci?.description)} />
+            <DetailRow label="Checks" value={ci ? `${ci.total ?? "—"} total · ${ci.failing ?? "—"} failing · ${ci.pending ?? "—"} pending` : "—"} />
+            <DetailRow label="Head SHA" value={str(ci?.head_sha)} />
+            <DetailRow label="Error" value={str(ci?.error)} />
             <DetailRow
               label="Details"
               value={
-                ci?.details_url ? (
-                  <a href={ci.details_url} target="_blank" rel="noreferrer">
+                ciDetailsUrl ? (
+                  <a href={ciDetailsUrl} target="_blank" rel="noreferrer">
                     Open CI details
                   </a>
                 ) : (

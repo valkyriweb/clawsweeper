@@ -6,8 +6,8 @@ export function str(v: unknown): string {
 }
 
 export function runId(item: PipelineItem, index: number): string {
-  const id = item.id ?? item.run_id ?? item.run_number ?? `${item.repository ?? "run"}-${item.item_number ?? index}`;
-  return encodeURIComponent(String(id));
+  const id = item.id ?? item.run_id ?? item.run_number;
+  return id != null ? String(id) : `row-${index}`;
 }
 
 export function runLink(item: PipelineItem): string | null {
@@ -40,6 +40,5 @@ export function elapsed(ms: unknown): string {
 }
 
 export function findRun(rows: PipelineItem[], id: string): PipelineItem | null {
-  const decoded = decodeURIComponent(id);
-  return rows.find((row, index) => runId(row, index) === id || String(row.id ?? "") === decoded) ?? null;
+  return rows.find((row, index) => runId(row, index) === id) ?? null;
 }
