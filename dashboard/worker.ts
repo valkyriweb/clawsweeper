@@ -2,6 +2,7 @@ import { Effect } from "effect";
 
 import { type AuthConfigEnabled, loadDashboardConfig } from "./config.ts";
 import {
+  readConvexHistory,
   recordEvent,
   recordRunnerModeAudit,
   recordStatusSnapshot,
@@ -221,6 +222,11 @@ export default {
       if (gate instanceof Response) return gate;
       return statusJson(request, env, ctx);
     }
+    if (url.pathname === "/api/history/snapshots" || url.pathname === "/api/history/events") {
+      const gate = await requireDashboardAuth(request, env, "json");
+      if (gate instanceof Response) return gate;
+      return historyJson(request, env, url.pathname.endsWith("/events") ? "events" : "snapshots");
+    }
     if (url.pathname === "/api/triage") {
       const gate = await requireDashboardAuth(request, env, "json");
       if (gate instanceof Response) return gate;
@@ -426,6 +432,40 @@ function statusCacheRequest(request, bucket) {
   return new Request(new URL(`/api/status-cache/${bucket}`, request.url).toString(), {
     method: "GET",
   });
+}
+
+async function historyJson(request: Request, env: DashboardEnv, kind: "snapshots" | "events") {
+  const url = new URL(request.url);
+  const limit = boundedLimit(url.searchParams.get("limit"), 50, 200);
+  const before = optionalCursor(url.searchParams.get("before") || url.searchParams.get("cursor"));
+  try {
+    const result = await readConvexHistory(env, `history:${kind}`, { limit, before });
+    return json({
+      ok: true,
+      kind,
+      ...(isRecord(result) ? result : { rows: [], nextCursor: null }),
+    });
+  } catch (error) {
+    return json(
+      { ok: false, kind, rows: [], nextCursor: null, error: String(error?.message || error) },
+      502,
+    );
+  }
+}
+
+function boundedLimit(value: string | null, fallback: number, max: number): number {
+  const n = Number(value ?? fallback);
+  if (!Number.isFinite(n) || n < 1) return fallback;
+  return Math.min(Math.floor(n), max);
+}
+
+function optionalCursor(value: string | null): string | undefined {
+  const text = String(value ?? "").trim();
+  return text || undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 async function triageJson(request, env, ctx) {

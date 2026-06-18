@@ -160,6 +160,60 @@ test("Worker protects status JSON when auth is enabled", async () => {
   assert.deepEqual(await response.json(), { error: "unauthorized" });
 });
 
+test("Worker protects history JSON when auth is enabled", async () => {
+  const response = await worker.fetch(
+    new Request("https://example.test/api/history/events"),
+    AUTH_ENV,
+  );
+
+  assert.equal(response.status, 401);
+  assert.deepEqual(await response.json(), { error: "unauthorized" });
+});
+
+test("Worker proxies history queries through the Convex bridge", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls: Array<{ url: string; body: unknown; authorization: string | null }> = [];
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    calls.push({
+      url: String(input),
+      body: JSON.parse(String(init?.body || "{}")),
+      authorization: new Headers(init?.headers).get("authorization"),
+    });
+    return new Response(
+      JSON.stringify({
+        status: "success",
+        value: { rows: [{ receivedAt: "2026-06-18T00:00:00.000Z" }], nextCursor: null },
+      }),
+      { headers: { "content-type": "application/json" } },
+    );
+  }) as typeof fetch;
+
+  try {
+    const response = await worker.fetch(
+      new Request(
+        "https://example.test/api/history/events?limit=999&before=2026-06-18T00:00:00.000Z",
+      ),
+      { CONVEX_INGEST_URL: "https://convex.example/api/mutation", CONVEX_INGEST_TOKEN: "token" },
+    );
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      ok: true,
+      kind: "events",
+      rows: [{ receivedAt: "2026-06-18T00:00:00.000Z" }],
+      nextCursor: null,
+    });
+    assert.equal(calls[0].url, "https://convex.example/api/query");
+    assert.equal(calls[0].authorization, "Bearer token");
+    assert.deepEqual(calls[0].body, {
+      path: "history:events",
+      args: { limit: 200, before: "2026-06-18T00:00:00.000Z" },
+      format: "json",
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("Worker starts Google OAuth with an HttpOnly state cookie", async () => {
   const response = await worker.fetch(
     new Request("https://example.test/auth/google?returnTo=/triage"),

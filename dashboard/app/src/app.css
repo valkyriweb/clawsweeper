@@ -116,3 +116,11 @@ tbody td a:hover { text-decoration: underline; }
 .detail-row dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 .detail-row a { color: var(--accent); text-decoration: none; }
 .detail-row a:hover { text-decoration: underline; }
+
+/* History */
+.history-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+.history-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; }
+.history-card h2 { margin: 0 0 0.75rem; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); }
+.history-chart { width: 100%; height: 80px; display: block; }
+.pager { margin-top: 0.75rem; border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 999px; padding: 0.45rem 0.75rem; cursor: pointer; font: inherit; }
+.pager:hover { border-color: var(--accent); }
