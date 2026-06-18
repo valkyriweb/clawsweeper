@@ -384,7 +384,7 @@ async function statusJson(request, env, ctx) {
   const staleTtl = numberFrom(env.STALE_CACHE_TTL_SECONDS, STALE_CACHE_TTL_SECONDS);
   const cache = caches.default;
   const cached = await cache.match(statusCacheRequest(request, "fresh"));
-  if (cached) return cors(new Response(cached.body, cached));
+  if (cached) return cachedStatusResponse(cached);
 
   const snapshot = await statusSnapshot(env, ctx);
   const body = JSON.stringify(snapshot, null, 2);
@@ -393,7 +393,7 @@ async function statusJson(request, env, ctx) {
     !snapshot.pipeline.length && snapshot.fleet.active_workflow_runs === 0 && hasErrors;
   if (looksEmpty) {
     const stale = await cache.match(statusCacheRequest(request, "stale"));
-    if (stale) return cors(new Response(stale.body, stale));
+    if (stale) return cachedStatusResponse(stale);
   }
   if (!looksEmpty) {
     const responseHeaders = {
@@ -432,6 +432,19 @@ function statusCacheRequest(request, bucket) {
   return new Request(new URL(`/api/status-cache/${bucket}`, request.url).toString(), {
     method: "GET",
   });
+}
+
+function cachedStatusResponse(response: Response): Response {
+  return cors(
+    new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: {
+        "content-type": response.headers.get("content-type") ?? "application/json; charset=utf-8",
+        "cache-control": "no-store",
+      },
+    }),
+  );
 }
 
 async function historyJson(request: Request, env: DashboardEnv, kind: "snapshots" | "events") {
