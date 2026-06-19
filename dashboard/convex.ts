@@ -50,6 +50,7 @@ export type ConvexRepoSettingsAudit = {
 export type ConvexRepoSettingsClearAudit = {
   repository: string;
   defaultEnabled: boolean;
+  defaultClawsweeperEnabled: boolean;
   email: string;
   changedAt: string;
   sourceIp: string | null;
@@ -59,6 +60,8 @@ export type ConvexRepoSettingsClearAudit = {
 export type ConvexClawsweeperEnabledAudit = {
   repository: string;
   enabled: boolean;
+  defaultEnabled: boolean;
+  defaultActionsWatched: boolean;
   email: string;
   changedAt: string;
   sourceIp: string | null;
@@ -142,17 +145,29 @@ export async function clearActionsWatchSetting(
   env: DashboardEnv,
   audit: ConvexRepoSettingsClearAudit,
 ): Promise<void> {
-  return writeConvexMutation(env, "repoSettings:clearActionsWatch", audit as unknown as JsonObject);
+  const { defaultClawsweeperEnabled: _defaultClawsweeperEnabled, ...legacyAudit } = audit;
+  return writeConvexMutationStrict(
+    env,
+    "repoSettings:clearActionsWatch",
+    audit as unknown as JsonObject,
+    audit.defaultClawsweeperEnabled ? undefined : (legacyAudit as unknown as JsonObject),
+  );
 }
 
 export async function setClawsweeperEnabledSetting(
   env: DashboardEnv,
   audit: ConvexClawsweeperEnabledAudit,
 ): Promise<void> {
-  return writeConvexMutation(
+  const {
+    defaultActionsWatched: _defaultActionsWatched,
+    defaultEnabled: _defaultEnabled,
+    ...legacyAudit
+  } = audit;
+  return writeConvexMutationStrict(
     env,
     "repoSettings:setClawsweeperEnabled",
     audit as unknown as JsonObject,
+    legacyAudit as unknown as JsonObject,
   );
 }
 
@@ -161,16 +176,42 @@ function writeConvexMutation(
   path: ConvexMutationPath,
   args: JsonObject,
 ): Promise<void> {
+  return writeConvexMutationWithMode(env, path, args, undefined, false);
+}
+
+function writeConvexMutationStrict(
+  env: DashboardEnv,
+  path: ConvexMutationPath,
+  args: JsonObject,
+  fallbackArgs?: JsonObject,
+): Promise<void> {
+  return writeConvexMutationWithMode(env, path, args, fallbackArgs, true);
+}
+
+function writeConvexMutationWithMode(
+  env: DashboardEnv,
+  path: ConvexMutationPath,
+  args: JsonObject,
+  fallbackArgs: JsonObject | undefined,
+  strict: boolean,
+): Promise<void> {
   const config = parseConvexConfig(env);
   if (!config.enabled || !config.url || !config.key) return Promise.resolve();
 
-  return Effect.runPromise(
-    Effect.tryPromise({
-      try: async () => {
+  const write = Effect.tryPromise({
+    try: async () => {
+      try {
         await postConvexMutation(config.url, config.key, config.authScheme, path, args);
-      },
-      catch: (cause) => new ConvexWriteError(path, cause),
-    }).pipe(Effect.catchAll(() => Effect.succeed(undefined))),
+      } catch (error) {
+        if (!fallbackArgs) throw error;
+        await postConvexMutation(config.url, config.key, config.authScheme, path, fallbackArgs);
+      }
+    },
+    catch: (cause) => new ConvexWriteError(path, cause),
+  });
+
+  return Effect.runPromise(
+    strict ? write : write.pipe(Effect.catchAll(() => Effect.succeed(undefined))),
   );
 }
 
