@@ -82,7 +82,7 @@ export const setClawsweeperEnabled = mutationGeneric({
   handler: async (ctx, args) => {
     const existing = await repoSetting(ctx, args.repository);
     const fromValue = existing?.clawsweeperEnabled ?? null;
-    const nextActionsWatched = args.enabled ? true : (existing?.actionsWatched ?? false);
+    const nextActionsWatched = args.enabled ? true : false;
     const now = {
       repository: args.repository,
       actionsWatched: nextActionsWatched,
@@ -106,8 +106,8 @@ export const setClawsweeperEnabled = mutationGeneric({
       source: args.source,
     });
 
-    if (args.enabled && existing?.actionsWatched !== true) {
-      await auditActionsWatch(ctx, args, existing?.actionsWatched ?? null, true);
+    if (existing?.actionsWatched !== nextActionsWatched) {
+      await auditActionsWatch(ctx, args, existing?.actionsWatched ?? null, nextActionsWatched);
     }
 
     return {
