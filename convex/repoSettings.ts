@@ -70,6 +70,54 @@ export const clearActionsWatch = mutationGeneric({
   },
 });
 
+export const setClawsweeperEnabled = mutationGeneric({
+  args: {
+    repository: v.string(),
+    enabled: v.boolean(),
+    email: v.string(),
+    changedAt: v.string(),
+    sourceIp: v.union(v.string(), v.null()),
+    source: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const existing = await repoSetting(ctx, args.repository);
+    const fromValue = existing?.clawsweeperEnabled ?? null;
+    const nextActionsWatched = args.enabled ? true : (existing?.actionsWatched ?? false);
+    const now = {
+      repository: args.repository,
+      actionsWatched: nextActionsWatched,
+      clawsweeperEnabled: args.enabled,
+      updatedAt: args.changedAt,
+      updatedBy: args.email,
+      source: args.source,
+    };
+
+    if (existing) await ctx.db.patch(existing._id, now);
+    else await ctx.db.insert("repoSettings", now);
+
+    await ctx.db.insert("repoSettingsAudit", {
+      changedAt: args.changedAt,
+      email: args.email,
+      repository: args.repository,
+      field: "clawsweeperEnabled",
+      fromValue,
+      toValue: args.enabled,
+      sourceIp: args.sourceIp,
+      source: args.source,
+    });
+
+    if (args.enabled && existing?.actionsWatched !== true) {
+      await auditActionsWatch(ctx, args, existing?.actionsWatched ?? null, true);
+    }
+
+    return {
+      repository: args.repository,
+      clawsweeperEnabled: args.enabled,
+      actionsWatched: nextActionsWatched,
+    };
+  },
+});
+
 async function repoSetting(ctx: { db: any }, repository: string) {
   return await ctx.db
     .query("repoSettings")

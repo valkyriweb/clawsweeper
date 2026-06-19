@@ -7,7 +7,8 @@ type ConvexMutationPath =
   | "events:record"
   | "runnerModeAudit:record"
   | "repoSettings:setActionsWatch"
-  | "repoSettings:clearActionsWatch";
+  | "repoSettings:clearActionsWatch"
+  | "repoSettings:setClawsweeperEnabled";
 type ConvexQueryPath = "history:snapshots" | "history:events" | "repoSettings:list";
 type JsonObject = Record<string, unknown>;
 
@@ -49,6 +50,15 @@ export type ConvexRepoSettingsAudit = {
 export type ConvexRepoSettingsClearAudit = {
   repository: string;
   defaultEnabled: boolean;
+  email: string;
+  changedAt: string;
+  sourceIp: string | null;
+  source: string;
+};
+
+export type ConvexClawsweeperEnabledAudit = {
+  repository: string;
+  enabled: boolean;
   email: string;
   changedAt: string;
   sourceIp: string | null;
@@ -133,6 +143,17 @@ export async function clearActionsWatchSetting(
   audit: ConvexRepoSettingsClearAudit,
 ): Promise<void> {
   return writeConvexMutation(env, "repoSettings:clearActionsWatch", audit as unknown as JsonObject);
+}
+
+export async function setClawsweeperEnabledSetting(
+  env: DashboardEnv,
+  audit: ConvexClawsweeperEnabledAudit,
+): Promise<void> {
+  return writeConvexMutation(
+    env,
+    "repoSettings:setClawsweeperEnabled",
+    audit as unknown as JsonObject,
+  );
 }
 
 function writeConvexMutation(
