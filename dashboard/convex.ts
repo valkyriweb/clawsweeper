@@ -145,17 +145,29 @@ export async function clearActionsWatchSetting(
   env: DashboardEnv,
   audit: ConvexRepoSettingsClearAudit,
 ): Promise<void> {
-  return writeConvexMutation(env, "repoSettings:clearActionsWatch", audit as unknown as JsonObject);
+  const { defaultClawsweeperEnabled: _defaultClawsweeperEnabled, ...legacyAudit } = audit;
+  return writeConvexMutation(
+    env,
+    "repoSettings:clearActionsWatch",
+    audit as unknown as JsonObject,
+    legacyAudit as unknown as JsonObject,
+  );
 }
 
 export async function setClawsweeperEnabledSetting(
   env: DashboardEnv,
   audit: ConvexClawsweeperEnabledAudit,
 ): Promise<void> {
+  const {
+    defaultActionsWatched: _defaultActionsWatched,
+    defaultEnabled: _defaultEnabled,
+    ...legacyAudit
+  } = audit;
   return writeConvexMutation(
     env,
     "repoSettings:setClawsweeperEnabled",
     audit as unknown as JsonObject,
+    legacyAudit as unknown as JsonObject,
   );
 }
 
@@ -163,6 +175,7 @@ function writeConvexMutation(
   env: DashboardEnv,
   path: ConvexMutationPath,
   args: JsonObject,
+  fallbackArgs?: JsonObject,
 ): Promise<void> {
   const config = parseConvexConfig(env);
   if (!config.enabled || !config.url || !config.key) return Promise.resolve();
@@ -170,7 +183,12 @@ function writeConvexMutation(
   return Effect.runPromise(
     Effect.tryPromise({
       try: async () => {
-        await postConvexMutation(config.url, config.key, config.authScheme, path, args);
+        try {
+          await postConvexMutation(config.url, config.key, config.authScheme, path, args);
+        } catch (error) {
+          if (!fallbackArgs) throw error;
+          await postConvexMutation(config.url, config.key, config.authScheme, path, fallbackArgs);
+        }
       },
       catch: (cause) => new ConvexWriteError(path, cause),
     }).pipe(Effect.catchAll(() => Effect.succeed(undefined))),
