@@ -53,7 +53,7 @@ export const clearActionsWatch = mutationGeneric({
     if (existing) {
       if (
         existing.clawsweeperEnabled ||
-        (args.defaultClawsweeperEnabled ?? false) ||
+        args.defaultClawsweeperEnabled !== false ||
         args.defaultEnabled
       ) {
         await ctx.db.patch(existing._id, {
@@ -99,18 +99,16 @@ export const setClawsweeperEnabled = mutationGeneric({
       source: args.source,
     };
 
+    const shouldKeepRow =
+      args.defaultEnabled !== false ||
+      args.defaultActionsWatched !== false ||
+      args.enabled ||
+      nextActionsWatched;
+
     if (existing) {
-      if (
-        !(args.defaultEnabled ?? false) &&
-        !(args.defaultActionsWatched ?? false) &&
-        !args.enabled &&
-        !nextActionsWatched
-      ) {
-        await ctx.db.delete(existing._id);
-      } else {
-        await ctx.db.patch(existing._id, now);
-      }
-    } else if (args.defaultEnabled || args.enabled || nextActionsWatched) {
+      if (shouldKeepRow) await ctx.db.patch(existing._id, now);
+      else await ctx.db.delete(existing._id);
+    } else if (shouldKeepRow) {
       await ctx.db.insert("repoSettings", now);
     }
 
