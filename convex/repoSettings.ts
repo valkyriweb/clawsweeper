@@ -18,10 +18,7 @@ export const setActionsWatch = mutationGeneric({
     source: v.string(),
   },
   handler: async (ctx, args) => {
-    const existing = await ctx.db
-      .query("repoSettings")
-      .withIndex("by_repository", (query) => query.eq("repository", args.repository))
-      .first();
+    const existing = await repoSetting(ctx, args.repository);
     const fromValue = existing?.actionsWatched ?? null;
     const now = {
       repository: args.repository,
@@ -35,17 +32,71 @@ export const setActionsWatch = mutationGeneric({
     if (existing) await ctx.db.patch(existing._id, now);
     else await ctx.db.insert("repoSettings", now);
 
-    await ctx.db.insert("repoSettingsAudit", {
-      changedAt: args.changedAt,
-      email: args.email,
-      repository: args.repository,
-      field: "actionsWatched",
-      fromValue,
-      toValue: args.enabled,
-      sourceIp: args.sourceIp,
-      source: args.source,
-    });
-
-    return { repository: args.repository, actionsWatched: args.enabled };
+    await auditActionsWatch(ctx, args, fromValue, args.enabled);
+    return { repository: args.repository, actionsWatched: args.enabled, configured: "setting" };
   },
 });
+
+export const clearActionsWatch = mutationGeneric({
+  args: {
+    repository: v.string(),
+    defaultEnabled: v.boolean(),
+    email: v.string(),
+    changedAt: v.string(),
+    sourceIp: v.union(v.string(), v.null()),
+    source: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const existing = await repoSetting(ctx, args.repository);
+    const fromValue = existing?.actionsWatched ?? null;
+    if (existing) {
+      if (existing.clawsweeperEnabled) {
+        await ctx.db.patch(existing._id, {
+          actionsWatched: args.defaultEnabled,
+          updatedAt: args.changedAt,
+          updatedBy: args.email,
+          source: args.source,
+        });
+      } else {
+        await ctx.db.delete(existing._id);
+      }
+    }
+    await auditActionsWatch(ctx, args, fromValue, args.defaultEnabled);
+    return {
+      repository: args.repository,
+      actionsWatched: args.defaultEnabled,
+      configured: "default",
+    };
+  },
+});
+
+async function repoSetting(ctx: { db: any }, repository: string) {
+  return await ctx.db
+    .query("repoSettings")
+    .withIndex("by_repository", (query: any) => query.eq("repository", repository))
+    .first();
+}
+
+async function auditActionsWatch(
+  ctx: { db: any },
+  args: {
+    changedAt: string;
+    email: string;
+    repository: string;
+    sourceIp: string | null;
+    source: string;
+  },
+  fromValue: boolean | null,
+  toValue: boolean,
+) {
+  await ctx.db.insert("repoSettingsAudit", {
+    changedAt: args.changedAt,
+    email: args.email,
+    repository: args.repository,
+    field: "actionsWatched",
+    fromValue,
+    toValue,
+    sourceIp: args.sourceIp,
+    source: args.source,
+  });
+}

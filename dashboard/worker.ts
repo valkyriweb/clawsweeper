@@ -2,6 +2,7 @@ import { Effect } from "effect";
 
 import { type AuthConfigEnabled, loadDashboardConfig } from "./config.ts";
 import {
+  clearActionsWatchSetting,
   readConvexHistory,
   readRepoSettings,
   recordEvent,
@@ -535,16 +536,26 @@ async function setRepoActionsWatch(
   const body = (await request.json().catch(() => null)) as { enabled?: unknown } | null;
   if (typeof body?.enabled !== "boolean") return json({ error: "enabled_boolean_required" }, 400);
 
-  const audit = {
+  const defaultEnabled = actionsWatchRepos(
+    env,
+    String(env.CLAWSWEEPER_REPO || "openclaw/clawsweeper"),
+    splitRepoCsv(env.TARGET_REPOS || "openclaw/openclaw"),
+  ).includes(repository);
+  const baseAudit = {
     repository,
-    enabled: body.enabled,
     email: actor.email,
     changedAt: new Date().toISOString(),
-    sourceIp: request.headers.get("cf-connecting-ip") || null,
+    sourceIp: requestSourceIp(request),
     source: actor.source,
   };
-  await setActionsWatchSetting(env, audit);
-  return json({ ok: true, repository, actions_watched: body.enabled });
+
+  if (body.enabled === defaultEnabled) {
+    await clearActionsWatchSetting(env, { ...baseAudit, defaultEnabled });
+    return json({ ok: true, repository, actions_watched: defaultEnabled, configured: "default" });
+  }
+
+  await setActionsWatchSetting(env, { ...baseAudit, enabled: body.enabled });
+  return json({ ok: true, repository, actions_watched: body.enabled, configured: "setting" });
 }
 
 async function repoSettingsMap(
