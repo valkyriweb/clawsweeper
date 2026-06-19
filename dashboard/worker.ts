@@ -278,6 +278,9 @@ export default {
       return assets.fetch(new Request(indexUrl.toString(), { headers: request.headers }));
     }
     if (url.pathname === "/" || url.pathname === "/index.html") {
+      return Response.redirect(new URL(`/v2${url.search}`, request.url).toString(), 302);
+    }
+    if (url.pathname === "/legacy" || url.pathname === "/legacy.html") {
       const gate = await requireDashboardAuth(request, env, "redirect");
       if (gate instanceof Response) return gate;
       return html(dashboardHtml());
