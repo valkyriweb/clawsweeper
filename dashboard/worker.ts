@@ -542,10 +542,14 @@ async function setRepoClawsweeperEnabled(
   if (!isValidRepoName(repository)) return json({ error: "invalid_repository" }, 400);
   const body = (await request.json().catch(() => null)) as { enabled?: unknown } | null;
   if (typeof body?.enabled !== "boolean") return json({ error: "enabled_boolean_required" }, 400);
+  const clawsweeperRepo = String(env.CLAWSWEEPER_REPO || "openclaw/clawsweeper");
+  const targetRepos = splitRepoCsv(env.TARGET_REPOS || "openclaw/openclaw");
+  const defaultEnabled = repository === clawsweeperRepo || targetRepos.includes(repository);
 
   const audit = {
     repository,
     enabled: body.enabled,
+    defaultEnabled,
     email: actor.email,
     changedAt: new Date().toISOString(),
     sourceIp: requestSourceIp(request),

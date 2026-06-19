@@ -74,6 +74,7 @@ export const setClawsweeperEnabled = mutationGeneric({
   args: {
     repository: v.string(),
     enabled: v.boolean(),
+    defaultEnabled: v.boolean(),
     email: v.string(),
     changedAt: v.string(),
     sourceIp: v.union(v.string(), v.null()),
@@ -93,9 +94,12 @@ export const setClawsweeperEnabled = mutationGeneric({
     };
 
     if (existing) {
-      if (!args.enabled && !nextActionsWatched) await ctx.db.delete(existing._id);
-      else await ctx.db.patch(existing._id, now);
-    } else if (args.enabled || nextActionsWatched) {
+      if (!args.defaultEnabled && !args.enabled && !nextActionsWatched) {
+        await ctx.db.delete(existing._id);
+      } else {
+        await ctx.db.patch(existing._id, now);
+      }
+    } else if (args.defaultEnabled || args.enabled || nextActionsWatched) {
       await ctx.db.insert("repoSettings", now);
     }
 
