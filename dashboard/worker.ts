@@ -240,6 +240,14 @@ export default {
       if (gate instanceof Response) return gate;
       return setRepoActionsWatch(request, env, ctx, repoActionsMatch[1], repoActionsMatch[2]);
     }
+    const repoEnablePlanMatch = url.pathname.match(
+      /^\/api\/repos\/([^/]+)\/([^/]+)\/clawsweeper-plan$/,
+    );
+    if (repoEnablePlanMatch && request.method === "POST") {
+      const gate = await requireDashboardAuth(request, env, "json");
+      if (gate instanceof Response) return gate;
+      return clawsweeperEnablePlan(env, repoEnablePlanMatch[1], repoEnablePlanMatch[2]);
+    }
     if (url.pathname === "/api/triage") {
       const gate = await requireDashboardAuth(request, env, "json");
       if (gate instanceof Response) return gate;
@@ -446,6 +454,70 @@ async function reposJson(env: DashboardEnv = {}) {
       target_repositories: targetRepos,
       actions_repositories: actionsRepos,
     },
+  });
+}
+
+async function clawsweeperEnablePlan(env: DashboardEnv, owner: string, name: string) {
+  const repository = `${decodeURIComponent(owner)}/${decodeURIComponent(name)}`;
+  if (!isValidRepoName(repository)) return json({ error: "invalid_repository" }, 400);
+
+  const [repo, variables, workflows] = await Promise.all([
+    githubJson(env, `/repos/${repository}`).catch((error) => ({
+      error: String(error?.message || error),
+    })),
+    githubJson(env, `/repos/${repository}/actions/variables`).catch((error) => ({
+      error: String(error?.message || error),
+    })),
+    githubJson(env, `/repos/${repository}/actions/workflows?per_page=100`).catch((error) => ({
+      error: String(error?.message || error),
+    })),
+  ]);
+
+  if (repo.error) return json({ ok: false, repository, error: repo.error }, 502);
+
+  const variableNames = new Set(
+    (Array.isArray(variables?.variables) ? variables.variables : [])
+      .map((item) => String(item?.name || ""))
+      .filter(Boolean),
+  );
+  const workflowNames = (Array.isArray(workflows?.workflows) ? workflows.workflows : [])
+    .map((workflow) => String(workflow?.path || workflow?.name || ""))
+    .filter(Boolean);
+  const hasRunnerLabels = variableNames.has("CLAWSWEEPER_RUNNER_LABELS");
+  const hasWorkflow = workflowNames.some((item) => item.toLowerCase().includes("clawsweeper"));
+
+  return json({
+    ok: true,
+    dry_run: true,
+    repository,
+    repo: {
+      private: Boolean(repo.private),
+      archived: Boolean(repo.archived),
+      default_branch: repo.default_branch || null,
+      html_url: repo.html_url || null,
+    },
+    checks: [
+      { id: "app-installed", ok: true, label: "GitHub App can read this repository" },
+      {
+        id: "actions-variables",
+        ok: !variables.error,
+        label: "Actions variables API is readable",
+        detail: variables.error || null,
+      },
+      {
+        id: "runner-labels",
+        ok: hasRunnerLabels,
+        label: "CLAWSWEEPER_RUNNER_LABELS variable exists",
+      },
+      { id: "workflow", ok: hasWorkflow, label: "ClawSweeper workflow appears present" },
+    ],
+    would_do: [
+      "add repository to ClawSweeper target settings",
+      "ensure Actions watch is enabled",
+      "verify runner labels variable",
+      "verify workflow/dispatch entrypoint",
+      "write repo-settings audit row",
+    ],
   });
 }
 
