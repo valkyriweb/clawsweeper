@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { FetchError, Loading, SignInPrompt } from "../components/StateViews.js";
 import { useClawSweeperPlan } from "../hooks/useClawSweeperPlan.js";
 import { useRepoActionsWatch } from "../hooks/useRepoActionsWatch.js";
+import { useRepoClawSweeper } from "../hooks/useRepoClawSweeper.js";
 import { useRepos } from "../hooks/useRepos.js";
 import type { RepoInventoryItem } from "../types.js";
 
@@ -23,6 +24,7 @@ export function Repos() {
   const { data, isLoading, error } = useRepos();
   const actionsWatch = useRepoActionsWatch();
   const clawsweeperPlan = useClawSweeperPlan();
+  const clawsweeperToggle = useRepoClawSweeper();
   const [owner, setOwner] = useState("all");
   const [query, setQuery] = useState("");
 
@@ -54,6 +56,14 @@ export function Repos() {
     clawsweeperPlan.mutate(repo.full_name);
   }
 
+  function toggleClawSweeper(repo: RepoInventoryItem) {
+    const next = !repo.clawsweeper_enabled;
+    const verb = next ? "enable ClawSweeper for" : "disable ClawSweeper for";
+    const suffix = next ? " This will also enable Actions watch." : "";
+    if (!window.confirm(`Really ${verb} ${repo.full_name}?${suffix}`)) return;
+    clawsweeperToggle.mutate({ repository: repo.full_name, enabled: next });
+  }
+
   return (
     <>
       <div className="page-header">
@@ -74,6 +84,13 @@ export function Repos() {
         <div className="banner warn" role="alert">
           <div className="banner-title">Actions watch update failed</div>
           <div className="error-text">{(actionsWatch.error as Error).message}</div>
+        </div>
+      )}
+
+      {clawsweeperToggle.isError && (
+        <div className="banner warn" role="alert">
+          <div className="banner-title">ClawSweeper toggle failed</div>
+          <div className="error-text">{(clawsweeperToggle.error as Error).message}</div>
         </div>
       )}
 
@@ -168,12 +185,23 @@ export function Repos() {
                     <button
                       type="button"
                       className="inline-action"
-                      disabled={repo.clawsweeper_enabled || clawsweeperPlan.isPending}
-                      title="Dry-run setup plan; does not mutate the repository"
-                      onClick={() => planClawSweeper(repo)}
+                      disabled={clawsweeperToggle.isPending}
+                      title="Saved to audited Convex repo settings; does not edit repo files/secrets"
+                      onClick={() => toggleClawSweeper(repo)}
                     >
-                      {repo.clawsweeper_enabled ? "Enabled" : "Plan setup"}
+                      {repo.clawsweeper_enabled ? "Disable" : "Enable"}
                     </button>
+                    {!repo.clawsweeper_enabled && (
+                      <button
+                        type="button"
+                        className="inline-action secondary"
+                        disabled={clawsweeperPlan.isPending}
+                        title="Dry-run setup plan; does not mutate the repository"
+                        onClick={() => planClawSweeper(repo)}
+                      >
+                        Plan setup
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}

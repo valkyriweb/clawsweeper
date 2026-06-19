@@ -9,6 +9,7 @@ import {
   recordRunnerModeAudit,
   recordStatusSnapshot,
   setActionsWatchSetting,
+  setClawsweeperEnabledSetting,
   type ConvexRunnerModeAudit,
 } from "./convex.ts";
 import {
@@ -249,6 +250,12 @@ export default {
       if (gate instanceof Response) return gate;
       return clawsweeperEnablePlan(env, repoEnablePlanMatch[1], repoEnablePlanMatch[2]);
     }
+    const repoEnableMatch = url.pathname.match(/^\/api\/repos\/([^/]+)\/([^/]+)\/clawsweeper$/);
+    if (repoEnableMatch && request.method === "POST") {
+      const gate = await requireDashboardAuth(request, env, "json");
+      if (gate instanceof Response) return gate;
+      return setRepoClawsweeperEnabled(request, env, repoEnableMatch[1], repoEnableMatch[2]);
+    }
     if (url.pathname === "/api/triage") {
       const gate = await requireDashboardAuth(request, env, "json");
       if (gate instanceof Response) return gate;
@@ -406,9 +413,10 @@ async function reposJson(env: DashboardEnv = {}) {
   const targetRepos = splitRepoCsv(env.TARGET_REPOS || "openclaw/openclaw");
   const staticActionsRepos = actionsWatchRepos(env, clawsweeperRepo, targetRepos);
   const settings = await repoSettingsMap(env);
+  const effectiveTargetRepos = targetReposWithSettings(targetRepos, settings);
   const actionsRepos = actionsWatchReposWithSettings(staticActionsRepos, settings);
   const configuredRepos = new Set(
-    uniqueStrings([clawsweeperRepo, ...targetRepos, ...actionsRepos]),
+    uniqueStrings([clawsweeperRepo, ...effectiveTargetRepos, ...actionsRepos]),
   );
   const payload = await githubJson(env, "/installation/repositories?per_page=100").catch(
     (error) => ({
@@ -437,7 +445,7 @@ async function reposJson(env: DashboardEnv = {}) {
         : staticActionsRepos.includes(fullName)
           ? "static"
           : "off",
-      clawsweeper_enabled: fullName === clawsweeperRepo || targetRepos.includes(fullName),
+      clawsweeper_enabled: fullName === clawsweeperRepo || effectiveTargetRepos.includes(fullName),
       configured: configuredRepos.has(fullName),
     };
   });
@@ -452,7 +460,7 @@ async function reposJson(env: DashboardEnv = {}) {
     repos: rows.sort((left, right) => left.full_name.localeCompare(right.full_name)),
     config: {
       clawsweeper_repo: clawsweeperRepo,
-      target_repositories: targetRepos,
+      target_repositories: effectiveTargetRepos,
       actions_repositories: actionsRepos,
     },
   });
@@ -522,6 +530,36 @@ async function clawsweeperEnablePlan(env: DashboardEnv, owner: string, name: str
   });
 }
 
+async function setRepoClawsweeperEnabled(
+  request: Request,
+  env: DashboardEnv,
+  owner: string,
+  name: string,
+) {
+  const actor = await runnerModeActor(request, env);
+  if (!actor.authorized) return json({ error: "unauthorized" }, 401);
+  const repository = `${decodeURIComponent(owner)}/${decodeURIComponent(name)}`;
+  if (!isValidRepoName(repository)) return json({ error: "invalid_repository" }, 400);
+  const body = (await request.json().catch(() => null)) as { enabled?: unknown } | null;
+  if (typeof body?.enabled !== "boolean") return json({ error: "enabled_boolean_required" }, 400);
+
+  const audit = {
+    repository,
+    enabled: body.enabled,
+    email: actor.email,
+    changedAt: new Date().toISOString(),
+    sourceIp: requestSourceIp(request),
+    source: actor.source,
+  };
+  await setClawsweeperEnabledSetting(env, audit);
+  return json({
+    ok: true,
+    repository,
+    clawsweeper_enabled: body.enabled,
+    actions_watched: body.enabled ? true : undefined,
+  });
+}
+
 async function setRepoActionsWatch(
   request: Request,
   env: DashboardEnv,
@@ -560,11 +598,26 @@ async function setRepoActionsWatch(
 
 async function repoSettingsMap(
   env: DashboardEnv,
-): Promise<Map<string, { actionsWatched?: boolean }>> {
+): Promise<Map<string, { actionsWatched?: boolean; clawsweeperEnabled?: boolean }>> {
   const rows = await readRepoSettings(env).catch(() => []);
   return new Map(
     rows.map((row) => [row.repository, row] as [string, { actionsWatched?: boolean }]),
   );
+}
+
+function targetReposWithSettings(
+  staticRepos: string[],
+  settings: Map<string, { clawsweeperEnabled?: boolean }>,
+) {
+  const disabled = new Set(
+    [...settings.entries()]
+      .filter(([, setting]) => setting.clawsweeperEnabled === false)
+      .map(([repository]) => repository),
+  );
+  const enabled = [...settings.entries()]
+    .filter(([, setting]) => setting.clawsweeperEnabled === true)
+    .map(([repository]) => repository);
+  return uniqueStrings([...staticRepos.filter((repo) => !disabled.has(repo)), ...enabled]);
 }
 
 function actionsWatchReposWithSettings(
@@ -923,8 +976,9 @@ async function statusSnapshot(env, ctx) {
   const repo = String(env.CLAWSWEEPER_REPO || "openclaw/clawsweeper");
   const targetRepos = splitRepoCsv(env.TARGET_REPOS || "openclaw/openclaw");
   const settings = await repoSettingsMap(env);
+  const effectiveTargetRepos = targetReposWithSettings(targetRepos, settings);
   const actionsRepos = actionsWatchReposWithSettings(
-    actionsWatchRepos(env, repo, targetRepos),
+    actionsWatchRepos(env, repo, effectiveTargetRepos),
     settings,
   );
   const budget = numberFrom(env.WORKER_BUDGET, 72);
@@ -988,7 +1042,7 @@ async function statusSnapshot(env, ctx) {
     generated_at: generatedAt,
     source: {
       clawsweeper_repo: repo,
-      target_repositories: targetRepos,
+      target_repositories: effectiveTargetRepos,
       actions_repositories: actionsRepos,
     },
     fleet: {
