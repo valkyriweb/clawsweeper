@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { FetchError, Loading, SignInPrompt } from "../components/StateViews.js";
+import { useClawSweeperPlan } from "../hooks/useClawSweeperPlan.js";
 import { useRepoActionsWatch } from "../hooks/useRepoActionsWatch.js";
 import { useRepos } from "../hooks/useRepos.js";
 import type { RepoInventoryItem } from "../types.js";
@@ -21,6 +22,7 @@ function badge(on: boolean, label: string) {
 export function Repos() {
   const { data, isLoading, error } = useRepos();
   const actionsWatch = useRepoActionsWatch();
+  const clawsweeperPlan = useClawSweeperPlan();
   const [owner, setOwner] = useState("all");
   const [query, setQuery] = useState("");
 
@@ -48,6 +50,10 @@ export function Repos() {
     actionsWatch.mutate({ repository: repo.full_name, enabled: next });
   }
 
+  function planClawSweeper(repo: RepoInventoryItem) {
+    clawsweeperPlan.mutate(repo.full_name);
+  }
+
   return (
     <>
       <div className="page-header">
@@ -68,6 +74,28 @@ export function Repos() {
         <div className="banner warn" role="alert">
           <div className="banner-title">Actions watch update failed</div>
           <div className="error-text">{(actionsWatch.error as Error).message}</div>
+        </div>
+      )}
+
+      {clawsweeperPlan.isError && (
+        <div className="banner warn" role="alert">
+          <div className="banner-title">ClawSweeper plan failed</div>
+          <div className="error-text">{(clawsweeperPlan.error as Error).message}</div>
+        </div>
+      )}
+
+      {clawsweeperPlan.data && (
+        <div className="section plan-box">
+          <div className="section-title">Enable plan: {clawsweeperPlan.data.repository}</div>
+          <div className="plan-grid">
+            {(clawsweeperPlan.data.checks ?? []).map((check) => (
+              <div key={check.id} className={`plan-check ${check.ok ? "ok" : "warn"}`}>
+                <strong>{check.ok ? "✓" : "!"} {check.label}</strong>
+                {check.detail && <div className="muted-text">{check.detail}</div>}
+              </div>
+            ))}
+          </div>
+          <div className="muted-text">Would do: {(clawsweeperPlan.data.would_do ?? []).join(" · ")}</div>
         </div>
       )}
 
@@ -137,8 +165,14 @@ export function Repos() {
                   </td>
                   <td>
                     {badge(repo.clawsweeper_enabled, repo.clawsweeper_enabled ? "enabled" : "disabled")}
-                    <button type="button" className="inline-action" disabled title="Next slice: guided setup + audit log">
-                      {repo.clawsweeper_enabled ? "Disable" : "Enable ClawSweeper"}
+                    <button
+                      type="button"
+                      className="inline-action"
+                      disabled={repo.clawsweeper_enabled || clawsweeperPlan.isPending}
+                      title="Dry-run setup plan; does not mutate the repository"
+                      onClick={() => planClawSweeper(repo)}
+                    >
+                      {repo.clawsweeper_enabled ? "Enabled" : "Plan setup"}
                     </button>
                   </td>
                 </tr>

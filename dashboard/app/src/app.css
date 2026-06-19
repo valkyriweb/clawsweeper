@@ -136,3 +136,8 @@ tbody td a:hover { text-decoration: underline; }
 .pill.muted { color: var(--text-muted); }
 .inline-action { display: block; margin-top: 0.3rem; border: 1px solid var(--border); border-radius: 5px; background: var(--surface); color: var(--text); padding: 0.3rem 0.5rem; font: inherit; font-size: 0.72rem; }
 .inline-action:disabled { opacity: 0.45; cursor: not-allowed; }
+.plan-box { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; }
+.plan-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.75rem; margin-bottom: 0.8rem; }
+.plan-check { border: 1px solid var(--border); border-radius: 6px; padding: 0.65rem; background: var(--surface2); }
+.plan-check.ok strong { color: var(--success); }
+.plan-check.warn strong { color: var(--warn); }
