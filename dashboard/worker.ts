@@ -556,7 +556,7 @@ async function setRepoClawsweeperEnabled(
     ok: true,
     repository,
     clawsweeper_enabled: body.enabled,
-    actions_watched: body.enabled ? true : undefined,
+    actions_watched: body.enabled,
   });
 }
 
