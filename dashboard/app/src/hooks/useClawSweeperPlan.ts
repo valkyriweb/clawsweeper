@@ -18,6 +18,14 @@ export interface ClawSweeperPlanResult {
     html_url: string | null;
   };
   checks?: ClawSweeperPlanCheck[];
+  setup_pr?: {
+    available: boolean;
+    workflow_path: string;
+  };
+  triage_model?: {
+    labels: string[];
+    commands: string[];
+  };
   would_do?: string[];
   error?: string;
 }

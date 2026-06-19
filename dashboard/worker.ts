@@ -250,6 +250,14 @@ export default {
       if (gate instanceof Response) return gate;
       return clawsweeperEnablePlan(env, repoEnablePlanMatch[1], repoEnablePlanMatch[2]);
     }
+    const repoSetupPrMatch = url.pathname.match(
+      /^\/api\/repos\/([^/]+)\/([^/]+)\/clawsweeper-setup-pr$/,
+    );
+    if (repoSetupPrMatch && request.method === "POST") {
+      const gate = await requireDashboardAuth(request, env, "json");
+      if (gate instanceof Response) return gate;
+      return createClawsweeperSetupPr(request, env, repoSetupPrMatch[1], repoSetupPrMatch[2]);
+    }
     const repoEnableMatch = url.pathname.match(/^\/api\/repos\/([^/]+)\/([^/]+)\/clawsweeper$/);
     if (repoEnableMatch && request.method === "POST") {
       const gate = await requireDashboardAuth(request, env, "json");
@@ -523,14 +531,283 @@ async function clawsweeperEnablePlan(env: DashboardEnv, owner: string, name: str
       },
       { id: "workflow", ok: hasWorkflow, label: "ClawSweeper workflow appears present" },
     ],
+    setup_pr: {
+      available: !hasWorkflow && !repo.archived,
+      workflow_path: CLAWSWEEPER_DISPATCH_WORKFLOW_PATH,
+    },
+    triage_model: {
+      labels: [
+        "clawsweeper:needs-info",
+        "clawsweeper:queueable-fix",
+        "clawsweeper:autofix",
+        "clawsweeper:automerge",
+        "clawsweeper:human-review",
+      ],
+      commands: ["/clawsweeper implement", "/clawsweeper autofix", "/clawsweeper automerge"],
+    },
     would_do: [
-      "add repository to ClawSweeper target settings",
-      "ensure Actions watch is enabled",
-      "verify runner labels variable",
-      "verify workflow/dispatch entrypoint",
-      "write repo-settings audit row",
+      "open a reviewable setup PR with the target dispatcher workflow",
+      "forward issue, PR, label, and maintainer command events to ClawSweeper",
+      "allow ClawSweeper to triage labels/comments into exact agent runs",
+      "write no target repo files until the setup PR is reviewed and merged",
+      "after merge, enable ClawSweeper repo settings and Actions watch",
     ],
   });
+}
+
+const CLAWSWEEPER_DISPATCH_WORKFLOW_PATH = ".github/workflows/clawsweeper-dispatch.yml";
+
+async function createClawsweeperSetupPr(
+  request: Request,
+  env: DashboardEnv,
+  owner: string,
+  name: string,
+) {
+  const actor = await runnerModeActor(request, env);
+  if (!actor.authorized) return json({ error: "unauthorized" }, 401);
+  const repository = `${decodeURIComponent(owner)}/${decodeURIComponent(name)}`;
+  if (!isValidRepoName(repository)) return json({ error: "invalid_repository" }, 400);
+
+  const repo = await githubJson(env, `/repos/${repository}`, "write");
+  if (repo?.archived) return json({ error: "repository_archived" }, 409);
+  const defaultBranch = typeof repo?.default_branch === "string" ? repo.default_branch : "main";
+  const branch = "clawsweeper/setup-dispatch";
+  const baseRef = await githubJson(
+    env,
+    `/repos/${repository}/git/ref/heads/${encodeGitRef(defaultBranch)}`,
+    "write",
+  );
+  const baseSha = typeof baseRef?.object?.sha === "string" ? baseRef.object.sha : null;
+  if (!baseSha) return json({ error: "missing_default_branch_sha" }, 502);
+
+  const existingPr = await findOpenSetupPr(env, repository, branch);
+  if (existingPr) {
+    return json({ ok: true, repository, branch, existing: true, pull_request: existingPr });
+  }
+
+  await createBranchIfMissing(env, repository, branch, baseSha);
+  await putGithubFile(
+    env,
+    repository,
+    CLAWSWEEPER_DISPATCH_WORKFLOW_PATH,
+    branch,
+    clawsweeperDispatchWorkflow(),
+    {
+      message: "Add ClawSweeper dispatcher workflow",
+    },
+  );
+  let pr;
+  try {
+    pr = await githubWriteJson(env, `/repos/${repository}/pulls`, {
+      method: "POST",
+      body: {
+        title: "Add ClawSweeper dispatcher workflow",
+        head: branch,
+        base: defaultBranch,
+        body: clawsweeperSetupPrBody(repository, actor.email),
+        maintainer_can_modify: true,
+      },
+    });
+  } catch (error) {
+    if (!String((error as Error)?.message || error).includes("GitHub 422")) throw error;
+    const existingAfterRace = await findOpenSetupPr(env, repository, branch);
+    if (!existingAfterRace) throw error;
+    return json({
+      ok: true,
+      repository,
+      branch,
+      existing: true,
+      pull_request: existingAfterRace,
+    });
+  }
+
+  return json({
+    ok: true,
+    repository,
+    branch,
+    existing: false,
+    pull_request: {
+      number: pr?.number ?? null,
+      html_url: pr?.html_url ?? null,
+      state: pr?.state ?? null,
+    },
+  });
+}
+
+async function findOpenSetupPr(env: DashboardEnv, repository: string, branch: string) {
+  const owner = repository.split("/")[0];
+  const prs = await githubJson(
+    env,
+    `/repos/${repository}/pulls?state=open&head=${encodeURIComponent(`${owner}:${branch}`)}&per_page=1`,
+    "write",
+  ).catch(() => []);
+  const first = Array.isArray(prs) ? prs[0] : null;
+  if (!first) return null;
+  return {
+    number: first.number ?? null,
+    html_url: first.html_url ?? null,
+    state: first.state ?? null,
+  };
+}
+
+function encodeGitRef(ref: string) {
+  return ref.split("/").map(encodeURIComponent).join("/");
+}
+
+async function createBranchIfMissing(
+  env: DashboardEnv,
+  repository: string,
+  branch: string,
+  sha: string,
+) {
+  const encodedBranch = encodeGitRef(branch);
+  const existing = await githubJson(
+    env,
+    `/repos/${repository}/git/ref/heads/${encodedBranch}`,
+    "write",
+  ).catch(() => null);
+  if (existing?.object?.sha) return;
+  await githubWriteJson(env, `/repos/${repository}/git/refs`, {
+    method: "POST",
+    body: { ref: `refs/heads/${branch}`, sha },
+  });
+}
+
+async function putGithubFile(
+  env: DashboardEnv,
+  repository: string,
+  path: string,
+  branch: string,
+  content: string,
+  options: { message: string },
+) {
+  const encodedPath = path.split("/").map(encodeURIComponent).join("/");
+  const existing = await githubJson(
+    env,
+    `/repos/${repository}/contents/${encodedPath}?ref=${encodeURIComponent(branch)}`,
+    "write",
+  ).catch(() => null);
+  await githubWriteJson(env, `/repos/${repository}/contents/${encodedPath}`, {
+    method: "PUT",
+    body: {
+      message: options.message,
+      branch,
+      content: btoa(content),
+      ...(existing?.sha ? { sha: existing.sha } : {}),
+    },
+  });
+}
+
+function clawsweeperSetupPrBody(repository: string, actorEmail: string) {
+  return `## Summary
+
+Adds the ClawSweeper target dispatcher workflow for \`${repository}\`.
+
+This is intentionally a reviewable setup PR. It does not silently mutate repository files from the dashboard.
+
+## What this enables
+
+- Issue/PR open, edit, label, and comment events dispatch exact-item work to the ClawSweeper control repo.
+- Maintainer commands like \`/clawsweeper implement\`, \`/clawsweeper autofix\`, and \`/clawsweeper automerge\` can start bounded agent runs.
+- ClawSweeper labels such as \`clawsweeper:queueable-fix\`, \`clawsweeper:autofix\`, \`clawsweeper:automerge\`, and \`clawsweeper:human-review\` remain the state machine for agent work.
+
+## After merge
+
+1. Ensure \`CLAWSWEEPER_APP_PRIVATE_KEY\` is configured for this repository or org.
+2. Enable ClawSweeper and Actions watch from the dashboard.
+3. Trigger a test comment such as \`/clawsweeper status\` on an issue.
+
+Requested by dashboard user: ${actorEmail}
+`;
+}
+
+function clawsweeperDispatchWorkflow() {
+  return `name: ClawSweeper Dispatch
+
+on:
+  issues:
+    types: [opened, reopened, edited, labeled, unlabeled]
+  issue_comment:
+    types: [created, edited]
+  pull_request_target: # zizmor: ignore[dangerous-triggers] maintainer-owned external dispatch; no checkout or untrusted PR code execution
+    types: [opened, reopened, synchronize, ready_for_review, edited, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: clawsweeper-dispatch-\${{ github.repository }}-\${{ github.event.issue.number || github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: \${{ github.event.action == 'edited' || github.event.action == 'synchronize' || github.event.action == 'ready_for_review' }}
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    if: \${{ !(endsWith(github.actor, '[bot]') && (github.event.action == 'labeled' || github.event.action == 'unlabeled')) }}
+    env:
+      HAS_CLAWSWEEPER_APP_PRIVATE_KEY: \${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY != '' }}
+      CLAWSWEEPER_APP_CLIENT_ID: Iv23liOECG0slfuhz093
+      SUPERSEDES_IN_PROGRESS: \${{ (github.event.action == 'edited' || github.event.action == 'synchronize' || github.event.action == 'ready_for_review') && 'true' || 'false' }}
+    steps:
+      - name: Debounce bursty metadata events
+        if: \${{ github.event.action == 'labeled' || github.event.action == 'unlabeled' }}
+        run: sleep 20
+
+      - name: Create ClawSweeper dispatch token
+        id: token
+        if: \${{ env.HAS_CLAWSWEEPER_APP_PRIVATE_KEY == 'true' }}
+        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+        with:
+          client-id: \${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
+          private-key: \${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
+          owner: openclaw
+          repositories: clawsweeper
+          permission-contents: write
+
+      - name: Dispatch exact ClawSweeper review
+        if: \${{ github.event_name != 'issue_comment' }}
+        env:
+          GH_TOKEN: \${{ steps.token.outputs.token }}
+          TARGET_REPO: \${{ github.repository }}
+          ITEM_NUMBER: \${{ github.event.issue.number || github.event.pull_request.number }}
+          ITEM_KIND: \${{ github.event_name == 'pull_request_target' && 'pull_request' || 'issue' }}
+          SOURCE_EVENT: \${{ github.event_name }}
+          SOURCE_ACTION: \${{ github.event.action }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::notice::Skipping ClawSweeper dispatch because no dispatch credential is configured."
+            exit 0
+          fi
+          payload="$(jq -nc --arg target_repo "$TARGET_REPO" --argjson item_number "$ITEM_NUMBER" --arg item_kind "$ITEM_KIND" --arg source_event "$SOURCE_EVENT" --arg source_action "$SOURCE_ACTION" --argjson supersedes_in_progress "$SUPERSEDES_IN_PROGRESS" '{event_type:"clawsweeper_item",client_payload:{target_repo:$target_repo,item_number:$item_number,item_kind:$item_kind,source_event:$source_event,source_action:$source_action,supersedes_in_progress:$supersedes_in_progress}}')"
+          gh api repos/openclaw/clawsweeper/dispatches --method POST --input - <<< "$payload"
+
+      - name: Dispatch ClawSweeper comment command
+        if: \${{ github.event_name == 'issue_comment' }}
+        env:
+          DISPATCH_TOKEN: \${{ steps.token.outputs.token }}
+          TARGET_REPO: \${{ github.repository }}
+          ITEM_NUMBER: \${{ github.event.issue.number }}
+          COMMENT_ID: \${{ github.event.comment.id }}
+          COMMENT_BODY: \${{ github.event.comment.body }}
+          AUTHOR_ASSOCIATION: \${{ github.event.comment.author_association }}
+          SOURCE_ACTION: \${{ github.event.action }}
+        run: |
+          case "$AUTHOR_ASSOCIATION" in
+            OWNER|MEMBER|COLLABORATOR) ;;
+            *) echo "Ignoring non-maintainer ClawSweeper command."; exit 0 ;;
+          esac
+          if [ -z "$DISPATCH_TOKEN" ]; then
+            echo "::notice::Skipping ClawSweeper dispatch because no dispatch credential is configured."
+            exit 0
+          fi
+          body_file="$RUNNER_TEMP/clawsweeper-comment-body.txt"
+          printf '%s\n' "$COMMENT_BODY" > "$body_file"
+          if ! grep -Eiq '(^|[[:space:]])@clawsweeper\\b|(^|[[:space:]])/(clawsweeper|review|re-review|rerun[ -]?review|status|explain|fix|build|implement|create[ -]?pr|fix[ -]?issue|autofix|auto[ -]?fix|automerge|auto[ -]?merge|approve|stop|autoclose)\\b' "$body_file"; then
+            echo "No ClawSweeper command found in comment."
+            exit 0
+          fi
+          payload="$(jq -nc --arg target_repo "$TARGET_REPO" --argjson item_number "$ITEM_NUMBER" --argjson comment_id "$COMMENT_ID" --arg source_event "issue_comment" --arg source_action "$SOURCE_ACTION" '{event_type:"clawsweeper_comment",client_payload:{target_repo:$target_repo,item_number:$item_number,comment_id:$comment_id,source_event:$source_event,source_action:$source_action,max_comments:"1"}}')"
+          GH_TOKEN="$DISPATCH_TOKEN" gh api repos/openclaw/clawsweeper/dispatches --method POST --input - <<< "$payload"
+`;
 }
 
 async function setRepoClawsweeperEnabled(
@@ -2674,6 +2951,9 @@ async function createGithubAppInstallationToken(env, credentials, repos, access 
           access === "write"
             ? {
                 actions_variables: "write",
+                contents: "write",
+                pull_requests: "write",
+                workflows: "write",
               }
             : access === "admin-read"
               ? {
