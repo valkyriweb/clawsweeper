@@ -151,6 +151,7 @@ export interface RepoInventoryItem {
   updated_at: string | null;
   app_installed: boolean;
   actions_watched: boolean;
+  actions_watch_configured?: "static" | "setting" | "off";
   clawsweeper_enabled: boolean;
   configured: boolean;
 }

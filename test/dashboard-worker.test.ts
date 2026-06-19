@@ -1364,9 +1364,9 @@ test("status responses survive Convex snapshot write failures", async () => {
     const body = await response.json();
     assert.equal(body.schema_version, 1);
     await Promise.all(waitUntilPromises);
-    assert.equal(convexWrites.length, 1);
-    assert.equal(convexWrites[0].path, "statusSnapshots:record");
-    assert.equal(convexWrites[0].args.schemaVersion, 1);
+    const snapshotWrites = convexWrites.filter((write) => write.path === "statusSnapshots:record");
+    assert.equal(snapshotWrites.length, 1);
+    assert.equal(snapshotWrites[0].args.schemaVersion, 1);
   } finally {
     globalThis.fetch = originalFetch;
     Object.defineProperty(globalThis, "caches", { configurable: true, value: originalCaches });
@@ -1430,9 +1430,9 @@ test("partial status responses still write through to Convex", async () => {
     assert.equal(body.fleet.active_workflow_runs, 0);
     assert.ok(Array.isArray(body.diagnostics.errors));
     await Promise.all(waitUntilPromises);
-    assert.equal(convexWrites.length, 1);
-    assert.equal(convexWrites[0].path, "statusSnapshots:record");
-    assert.equal(convexWrites[0].args.schemaVersion, 1);
+    const snapshotWrites = convexWrites.filter((write) => write.path === "statusSnapshots:record");
+    assert.equal(snapshotWrites.length, 1);
+    assert.equal(snapshotWrites[0].args.schemaVersion, 1);
   } finally {
     globalThis.fetch = originalFetch;
     Object.defineProperty(globalThis, "caches", { configurable: true, value: originalCaches });

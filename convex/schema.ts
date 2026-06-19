@@ -42,4 +42,27 @@ export default defineSchema({
   })
     .index("by_changed_at", ["changedAt"])
     .index("by_email", ["email"]),
+
+  repoSettings: defineTable({
+    repository: v.string(),
+    actionsWatched: v.boolean(),
+    clawsweeperEnabled: v.boolean(),
+    updatedAt: v.string(),
+    updatedBy: v.string(),
+    source: v.string(),
+  }).index("by_repository", ["repository"]),
+
+  repoSettingsAudit: defineTable({
+    changedAt: v.string(),
+    email: v.string(),
+    repository: v.string(),
+    field: v.string(),
+    fromValue: v.union(v.boolean(), v.null()),
+    toValue: v.boolean(),
+    sourceIp: v.union(v.string(), v.null()),
+    source: v.string(),
+  })
+    .index("by_changed_at", ["changedAt"])
+    .index("by_repository", ["repository"])
+    .index("by_email", ["email"]),
 });

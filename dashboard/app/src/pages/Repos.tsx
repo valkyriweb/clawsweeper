@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { FetchError, Loading, SignInPrompt } from "../components/StateViews.js";
+import { useRepoActionsWatch } from "../hooks/useRepoActionsWatch.js";
 import { useRepos } from "../hooks/useRepos.js";
 import type { RepoInventoryItem } from "../types.js";
 
@@ -19,6 +20,7 @@ function badge(on: boolean, label: string) {
 
 export function Repos() {
   const { data, isLoading, error } = useRepos();
+  const actionsWatch = useRepoActionsWatch();
   const [owner, setOwner] = useState("all");
   const [query, setQuery] = useState("");
 
@@ -39,6 +41,13 @@ export function Repos() {
   const watched = data.repos.filter((repo) => repo.actions_watched).length;
   const enabled = data.repos.filter((repo) => repo.clawsweeper_enabled).length;
 
+  function toggleActionsWatch(repo: RepoInventoryItem) {
+    const next = !repo.actions_watched;
+    const verb = next ? "watch Actions for" : "stop watching Actions for";
+    if (!window.confirm(`Really ${verb} ${repo.full_name}?`)) return;
+    actionsWatch.mutate({ repository: repo.full_name, enabled: next });
+  }
+
   return (
     <>
       <div className="page-header">
@@ -49,12 +58,18 @@ export function Repos() {
       </div>
 
       <div className="banner info">
-        <div className="banner-title">Safe mode</div>
+        <div className="banner-title">Audited controls</div>
         <div>
-          This tab is inventory-only for now. The buttons show the intended controls; the next slice
-          wires them to audited settings mutations.
+          Actions watch toggles are saved to Convex repo settings with an audit row. ClawSweeper enablement still stays disabled until the guided setup flow lands.
         </div>
       </div>
+
+      {actionsWatch.isError && (
+        <div className="banner warn" role="alert">
+          <div className="banner-title">Actions watch update failed</div>
+          <div className="error-text">{(actionsWatch.error as Error).message}</div>
+        </div>
+      )}
 
       <div className="repo-toolbar">
         <label>
@@ -108,7 +123,15 @@ export function Repos() {
                   <td>{fmtDate(repo.pushed_at ?? repo.updated_at)}</td>
                   <td>
                     {badge(repo.actions_watched, repo.actions_watched ? "watching" : "not watched")}
-                    <button type="button" className="inline-action" disabled title="Next slice: audited settings mutation">
+                    {repo.actions_watch_configured === "static" && badge(true, "static")}
+                    {repo.actions_watch_configured === "setting" && badge(true, "setting")}
+                    <button
+                      type="button"
+                      className="inline-action"
+                      disabled={actionsWatch.isPending}
+                      onClick={() => toggleActionsWatch(repo)}
+                      title="Saved to audited Convex repo settings"
+                    >
                       {repo.actions_watched ? "Stop watching" : "Watch Actions"}
                     </button>
                   </td>

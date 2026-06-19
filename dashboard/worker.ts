@@ -3,9 +3,11 @@ import { Effect } from "effect";
 import { type AuthConfigEnabled, loadDashboardConfig } from "./config.ts";
 import {
   readConvexHistory,
+  readRepoSettings,
   recordEvent,
   recordRunnerModeAudit,
   recordStatusSnapshot,
+  setActionsWatchSetting,
   type ConvexRunnerModeAudit,
 } from "./convex.ts";
 import {
@@ -232,6 +234,12 @@ export default {
       if (gate instanceof Response) return gate;
       return reposJson(env);
     }
+    const repoActionsMatch = url.pathname.match(/^\/api\/repos\/([^/]+)\/([^/]+)\/actions-watch$/);
+    if (repoActionsMatch && request.method === "POST") {
+      const gate = await requireDashboardAuth(request, env, "json");
+      if (gate instanceof Response) return gate;
+      return setRepoActionsWatch(request, env, ctx, repoActionsMatch[1], repoActionsMatch[2]);
+    }
     if (url.pathname === "/api/triage") {
       const gate = await requireDashboardAuth(request, env, "json");
       if (gate instanceof Response) return gate;
@@ -385,9 +393,11 @@ function loginHtml(authUrl: string) {
 }
 
 async function reposJson(env: DashboardEnv = {}) {
-  const clawsweeperRepo = env.CLAWSWEEPER_REPO || "openclaw/clawsweeper";
+  const clawsweeperRepo = String(env.CLAWSWEEPER_REPO || "openclaw/clawsweeper");
   const targetRepos = splitRepoCsv(env.TARGET_REPOS || "openclaw/openclaw");
-  const actionsRepos = actionsWatchRepos(env, clawsweeperRepo, targetRepos);
+  const staticActionsRepos = actionsWatchRepos(env, clawsweeperRepo, targetRepos);
+  const settings = await repoSettingsMap(env);
+  const actionsRepos = actionsWatchReposWithSettings(staticActionsRepos, settings);
   const configuredRepos = new Set(
     uniqueStrings([clawsweeperRepo, ...targetRepos, ...actionsRepos]),
   );
@@ -413,6 +423,11 @@ async function reposJson(env: DashboardEnv = {}) {
       updated_at: repo.updated_at || null,
       app_installed: true,
       actions_watched: actionsRepos.includes(fullName),
+      actions_watch_configured: settings.has(fullName)
+        ? "setting"
+        : staticActionsRepos.includes(fullName)
+          ? "static"
+          : "off",
       clawsweeper_enabled: fullName === clawsweeperRepo || targetRepos.includes(fullName),
       configured: configuredRepos.has(fullName),
     };
@@ -432,6 +447,60 @@ async function reposJson(env: DashboardEnv = {}) {
       actions_repositories: actionsRepos,
     },
   });
+}
+
+async function setRepoActionsWatch(
+  request: Request,
+  env: DashboardEnv,
+  ctx: DashboardContext | undefined,
+  owner: string,
+  name: string,
+) {
+  const actor = await runnerModeActor(request, env);
+  if (!actor.authorized) return json({ error: "unauthorized" }, 401);
+  const repository = `${decodeURIComponent(owner)}/${decodeURIComponent(name)}`;
+  if (!isValidRepoName(repository)) return json({ error: "invalid_repository" }, 400);
+  const body = (await request.json().catch(() => null)) as { enabled?: unknown } | null;
+  if (typeof body?.enabled !== "boolean") return json({ error: "enabled_boolean_required" }, 400);
+
+  const audit = {
+    repository,
+    enabled: body.enabled,
+    email: actor.email,
+    changedAt: new Date().toISOString(),
+    sourceIp: request.headers.get("cf-connecting-ip") || null,
+    source: actor.source,
+  };
+  await setActionsWatchSetting(env, audit);
+  return json({ ok: true, repository, actions_watched: body.enabled });
+}
+
+async function repoSettingsMap(
+  env: DashboardEnv,
+): Promise<Map<string, { actionsWatched?: boolean }>> {
+  const rows = await readRepoSettings(env).catch(() => []);
+  return new Map(
+    rows.map((row) => [row.repository, row] as [string, { actionsWatched?: boolean }]),
+  );
+}
+
+function actionsWatchReposWithSettings(
+  staticRepos: string[],
+  settings: Map<string, { actionsWatched?: boolean }>,
+) {
+  const disabled = new Set(
+    [...settings.entries()]
+      .filter(([, setting]) => setting.actionsWatched === false)
+      .map(([repository]) => repository),
+  );
+  const enabled = [...settings.entries()]
+    .filter(([, setting]) => setting.actionsWatched === true)
+    .map(([repository]) => repository);
+  return uniqueStrings([...staticRepos.filter((repo) => !disabled.has(repo)), ...enabled]);
+}
+
+function isValidRepoName(value: string) {
+  return /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(value);
 }
 
 async function statusJson(request, env, ctx) {
@@ -768,12 +837,13 @@ async function statusSnapshot(env, ctx) {
 
   const generatedAt = new Date().toISOString();
   const errors = [];
-  const repo = env.CLAWSWEEPER_REPO || "openclaw/clawsweeper";
-  const targetRepos = String(env.TARGET_REPOS || "openclaw/openclaw")
-    .split(",")
-    .map((value) => value.trim())
-    .filter(Boolean);
-  const actionsRepos = actionsWatchRepos(env, repo, targetRepos);
+  const repo = String(env.CLAWSWEEPER_REPO || "openclaw/clawsweeper");
+  const targetRepos = splitRepoCsv(env.TARGET_REPOS || "openclaw/openclaw");
+  const settings = await repoSettingsMap(env);
+  const actionsRepos = actionsWatchReposWithSettings(
+    actionsWatchRepos(env, repo, targetRepos),
+    settings,
+  );
   const budget = numberFrom(env.WORKER_BUDGET, 72);
   const [runs, filteredActiveRuns, runnerConfig, runners] = await Promise.all([
     recentWorkflowRunsForRepos(env, actionsRepos, errors),
@@ -1793,14 +1863,14 @@ function annotateWorkflowRuns(repo, runs) {
   return runs.map((run) => ({ ...run, repository_full_name: run?.repository?.full_name || repo }));
 }
 
-function splitRepoCsv(value) {
+function splitRepoCsv(value: unknown): string[] {
   return String(value || "")
     .split(",")
     .map((part) => part.trim())
     .filter(Boolean);
 }
 
-function uniqueStrings(values) {
+function uniqueStrings(values: unknown[]): string[] {
   return [...new Set(values.filter(Boolean).map(String))];
 }
 
