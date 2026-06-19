@@ -92,8 +92,12 @@ export const setClawsweeperEnabled = mutationGeneric({
       source: args.source,
     };
 
-    if (existing) await ctx.db.patch(existing._id, now);
-    else await ctx.db.insert("repoSettings", now);
+    if (existing) {
+      if (!args.enabled && !nextActionsWatched) await ctx.db.delete(existing._id);
+      else await ctx.db.patch(existing._id, now);
+    } else if (args.enabled || nextActionsWatched) {
+      await ctx.db.insert("repoSettings", now);
+    }
 
     await ctx.db.insert("repoSettingsAudit", {
       changedAt: args.changedAt,
