@@ -132,3 +132,38 @@ export interface RunnerModeResult {
   mode: string;
   labels: string[];
 }
+
+export interface RepoOwnerSummary {
+  owner: string;
+  count: number;
+}
+
+export interface RepoInventoryItem {
+  id?: number;
+  full_name: string;
+  name: string;
+  owner: string;
+  private: boolean;
+  archived: boolean;
+  default_branch: string | null;
+  html_url: string | null;
+  pushed_at: string | null;
+  updated_at: string | null;
+  app_installed: boolean;
+  actions_watched: boolean;
+  clawsweeper_enabled: boolean;
+  configured: boolean;
+}
+
+export interface ReposResponse {
+  ok: boolean;
+  generated_at: string;
+  owners: RepoOwnerSummary[];
+  repos: RepoInventoryItem[];
+  config: {
+    clawsweeper_repo: string;
+    target_repositories: string[];
+    actions_repositories: string[];
+  };
+  error?: string;
+}

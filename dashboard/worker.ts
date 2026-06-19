@@ -227,6 +227,11 @@ export default {
       if (gate instanceof Response) return gate;
       return historyJson(request, env, url.pathname.endsWith("/events") ? "events" : "snapshots");
     }
+    if (url.pathname === "/api/repos") {
+      const gate = await requireDashboardAuth(request, env, "json");
+      if (gate instanceof Response) return gate;
+      return reposJson(env);
+    }
     if (url.pathname === "/api/triage") {
       const gate = await requireDashboardAuth(request, env, "json");
       if (gate instanceof Response) return gate;
@@ -377,6 +382,56 @@ function safeReturnTo(value: string | null | undefined): string {
 
 function loginHtml(authUrl: string) {
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ClawSweeper Login</title><style>:root{color-scheme:dark}body{min-height:100vh;margin:0;display:grid;place-items:center;background:#05070d;color:#e5eefc;font-family:Inter,ui-sans-serif,system-ui,sans-serif}.login-card{width:min(440px,calc(100vw - 32px));padding:32px;border:1px solid #1f2a44;border-radius:24px;background:linear-gradient(135deg,#0d1426,#111827);box-shadow:0 24px 80px #0008}.eyebrow{margin:0 0 12px;color:#93c5fd;text-transform:uppercase;letter-spacing:.12em;font-size:12px}h1{margin:0 0 12px;font-size:32px}p{line-height:1.6;color:#b8c5dc}.button{display:inline-flex;align-items:center;justify-content:center;margin-top:16px;padding:12px 16px;border-radius:999px;background:#38bdf8;color:#03111f;text-decoration:none;font-weight:800}</style></head><body><main class="login-card"><p class="eyebrow">ClawSweeper Dashboard</p><h1>Sign in</h1><p>Use your allowed Google account to manage runner lanes and view live status.</p><p><a class="button" href="${escapeHtml(authUrl)}">Continue with Google</a></p></main></body></html>`;
+}
+
+async function reposJson(env: DashboardEnv = {}) {
+  const clawsweeperRepo = env.CLAWSWEEPER_REPO || "openclaw/clawsweeper";
+  const targetRepos = splitRepoCsv(env.TARGET_REPOS || "openclaw/openclaw");
+  const actionsRepos = actionsWatchRepos(env, clawsweeperRepo, targetRepos);
+  const configuredRepos = new Set(
+    uniqueStrings([clawsweeperRepo, ...targetRepos, ...actionsRepos]),
+  );
+  const payload = await githubJson(env, "/installation/repositories?per_page=100").catch(
+    (error) => ({
+      error: String(error?.message || error),
+    }),
+  );
+  if (payload.error) return json({ ok: false, error: payload.error }, 502);
+  const repos = Array.isArray(payload?.repositories) ? payload.repositories : [];
+  const rows = repos.map((repo) => {
+    const fullName = String(repo.full_name || "");
+    return {
+      id: repo.id,
+      full_name: fullName,
+      name: repo.name,
+      owner: repo.owner?.login || fullName.split("/")[0] || "unknown",
+      private: Boolean(repo.private),
+      archived: Boolean(repo.archived),
+      default_branch: repo.default_branch || null,
+      html_url: repo.html_url || null,
+      pushed_at: repo.pushed_at || null,
+      updated_at: repo.updated_at || null,
+      app_installed: true,
+      actions_watched: actionsRepos.includes(fullName),
+      clawsweeper_enabled: fullName === clawsweeperRepo || targetRepos.includes(fullName),
+      configured: configuredRepos.has(fullName),
+    };
+  });
+  const byOwner = rows.reduce((acc, repo) => {
+    acc[repo.owner] = (acc[repo.owner] || 0) + 1;
+    return acc;
+  }, {});
+  return json({
+    ok: true,
+    generated_at: new Date().toISOString(),
+    owners: Object.entries(byOwner).map(([owner, count]) => ({ owner, count })),
+    repos: rows.sort((left, right) => left.full_name.localeCompare(right.full_name)),
+    config: {
+      clawsweeper_repo: clawsweeperRepo,
+      target_repositories: targetRepos,
+      actions_repositories: actionsRepos,
+    },
+  });
 }
 
 async function statusJson(request, env, ctx) {

@@ -124,3 +124,15 @@ tbody td a:hover { text-decoration: underline; }
 .history-chart { width: 100%; height: 80px; display: block; }
 .pager { margin-top: 0.75rem; border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 999px; padding: 0.45rem 0.75rem; cursor: pointer; font: inherit; }
 .pager:hover { border-color: var(--accent); }
+
+/* Repositories */
+.banner.info { background: rgba(79,209,197,0.08); border: 1px solid rgba(79,209,197,0.28); color: var(--text); }
+.repo-toolbar { display: flex; flex-wrap: wrap; gap: 1rem; align-items: end; margin-bottom: 1rem; }
+.repo-toolbar label { display: flex; flex-direction: column; gap: 0.35rem; color: var(--text-muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; }
+.repo-toolbar select, .repo-toolbar input { min-width: 220px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); padding: 0.5rem 0.6rem; font: inherit; text-transform: none; letter-spacing: 0; }
+.muted-text { color: var(--text-muted); font-size: 0.7rem; margin-top: 0.15rem; }
+.pill { display: inline-block; margin: 0 0.35rem 0.35rem 0; border: 1px solid var(--border); border-radius: 999px; padding: 0.12rem 0.45rem; color: var(--text-muted); font-size: 0.68rem; line-height: 1.4; white-space: nowrap; }
+.pill.ok { color: var(--success); border-color: rgba(104,211,145,0.35); background: rgba(104,211,145,0.08); }
+.pill.muted { color: var(--text-muted); }
+.inline-action { display: block; margin-top: 0.3rem; border: 1px solid var(--border); border-radius: 5px; background: var(--surface); color: var(--text); padding: 0.3rem 0.5rem; font: inherit; font-size: 0.72rem; }
+.inline-action:disabled { opacity: 0.45; cursor: not-allowed; }

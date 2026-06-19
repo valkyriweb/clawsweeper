@@ -5,6 +5,7 @@ import { Runs } from "./pages/Runs.js";
 import { RunDetail } from "./pages/RunDetail.js";
 import { Events } from "./pages/Events.js";
 import { History } from "./pages/History.js";
+import { Repos } from "./pages/Repos.js";
 import { Controls } from "./pages/Controls.js";
 
 const rootRoute = createRootRoute({
@@ -41,13 +42,27 @@ const historyRoute = createRoute({
   component: History,
 });
 
+const reposRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/v2/repos",
+  component: Repos,
+});
+
 const controlsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/v2/controls",
   component: Controls,
 });
 
-const routeTree = rootRoute.addChildren([overviewRoute, runsRoute, runDetailRoute, eventsRoute, historyRoute, controlsRoute]);
+const routeTree = rootRoute.addChildren([
+  overviewRoute,
+  runsRoute,
+  runDetailRoute,
+  eventsRoute,
+  historyRoute,
+  reposRoute,
+  controlsRoute,
+]);
 
 export const router = createRouter({ routeTree });
 
