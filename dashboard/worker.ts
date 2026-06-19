@@ -718,13 +718,11 @@ async function statusSnapshot(env, ctx) {
     .split(",")
     .map((value) => value.trim())
     .filter(Boolean);
+  const actionsRepos = actionsWatchRepos(env, repo, targetRepos);
   const budget = numberFrom(env.WORKER_BUDGET, 72);
   const [runs, filteredActiveRuns, runnerConfig, runners] = await Promise.all([
-    githubJson(env, `/repos/${repo}/actions/runs?per_page=100`).catch((error) => {
-      errors.push(`workflow runs: ${error.message}`);
-      return null;
-    }),
-    activeWorkflowRuns(env, repo, errors),
+    recentWorkflowRunsForRepos(env, actionsRepos, errors),
+    activeWorkflowRunsForRepos(env, actionsRepos, errors),
     runnerConfigSnapshot(env, repo).catch((error) => {
       errors.push(`runner config: ${error.message}`);
       return runnerConfigFromLabels(null);
@@ -734,7 +732,7 @@ async function statusSnapshot(env, ctx) {
       return null;
     }),
   ]);
-  const workflowRuns = Array.isArray(runs?.workflow_runs) ? runs.workflow_runs : [];
+  const workflowRuns = Array.isArray(runs) ? runs : [];
   const activeRuns = uniqueWorkflowRuns([
     ...filteredActiveRuns,
     ...workflowRuns.filter((run) => ACTIVE_RUN_STATUSES.has(String(run.status))),
@@ -783,6 +781,7 @@ async function statusSnapshot(env, ctx) {
     source: {
       clawsweeper_repo: repo,
       target_repositories: targetRepos,
+      actions_repositories: actionsRepos,
     },
     fleet: {
       worker_budget: budget,
@@ -1683,6 +1682,37 @@ async function estimateActiveCodexJobs(runs) {
   };
 }
 
+function actionsWatchRepos(env, clawsweeperRepo, targetRepos) {
+  const configured = splitRepoCsv(env.ACTIONS_REPOS);
+  if (configured.length) return configured;
+  return uniqueStrings([clawsweeperRepo, ...targetRepos]);
+}
+
+async function recentWorkflowRunsForRepos(env, repos, errors) {
+  const rows = await Promise.all(
+    repos.map(async (repo) => {
+      const runs = await githubJson(env, `/repos/${repo}/actions/runs?per_page=30`).catch(
+        (error) => {
+          errors.push(`workflow runs ${repo}: ${error.message}`);
+          return null;
+        },
+      );
+      return annotateWorkflowRuns(
+        repo,
+        Array.isArray(runs?.workflow_runs) ? runs.workflow_runs : [],
+      );
+    }),
+  );
+  return uniqueWorkflowRuns(rows.flat()).sort(newestWorkflowRunFirst).slice(0, 100);
+}
+
+async function activeWorkflowRunsForRepos(env, repos, errors) {
+  const rows = await Promise.all(repos.map((repo) => activeWorkflowRuns(env, repo, errors)));
+  return uniqueWorkflowRuns(rows.flat()).filter((run) =>
+    ACTIVE_RUN_STATUSES.has(String(run.status)),
+  );
+}
+
 async function activeWorkflowRuns(env, repo, errors) {
   const pages = await Promise.all(
     ACTIVE_RUN_STATUS_FILTERS.map(async (status) => {
@@ -1690,15 +1720,33 @@ async function activeWorkflowRuns(env, repo, errors) {
         env,
         `/repos/${repo}/actions/runs?status=${status}&per_page=100`,
       ).catch((error) => {
-        errors.push(`workflow runs ${status}: ${error.message}`);
+        errors.push(`workflow runs ${repo} ${status}: ${error.message}`);
         return null;
       });
-      return Array.isArray(runs?.workflow_runs) ? runs.workflow_runs : [];
+      return annotateWorkflowRuns(
+        repo,
+        Array.isArray(runs?.workflow_runs) ? runs.workflow_runs : [],
+      );
     }),
   );
   return uniqueWorkflowRuns(pages.flat()).filter((run) =>
     ACTIVE_RUN_STATUSES.has(String(run.status)),
   );
+}
+
+function annotateWorkflowRuns(repo, runs) {
+  return runs.map((run) => ({ ...run, repository_full_name: run?.repository?.full_name || repo }));
+}
+
+function splitRepoCsv(value) {
+  return String(value || "")
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function uniqueStrings(values) {
+  return [...new Set(values.filter(Boolean).map(String))];
 }
 
 function uniqueWorkflowRuns(runs) {
@@ -1782,7 +1830,7 @@ function classifyRun(run) {
     stage,
     status: run.status,
     conclusion: run.conclusion,
-    repository: extracted?.[1] || null,
+    repository: extracted?.[1] || run.repository_full_name || run.repository?.full_name || null,
     item_number: extracted?.[2] ? Number(extracted[2]) : null,
     title,
     workflow,
