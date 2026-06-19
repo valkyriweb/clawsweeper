@@ -1242,7 +1242,7 @@ test("dashboard shares in-flight GitHub App installation tokens per access scope
 });
 
 test("dashboard html preserves client compactText regex escapes", async () => {
-  const response = await worker.fetch(new Request("https://example.test/"));
+  const response = await worker.fetch(new Request("https://example.test/legacy"));
   const body = await response.text();
   const match = body.match(/function compactText\(value\) \{[\s\S]*?\n\}/);
   assert.ok(match, "compactText function should render in dashboard html");
@@ -1257,7 +1257,7 @@ test("dashboard html preserves client compactText regex escapes", async () => {
 });
 
 test("dashboard html treats successful partial telemetry as fresh data", async () => {
-  const response = await worker.fetch(new Request("https://example.test/"));
+  const response = await worker.fetch(new Request("https://example.test/legacy"));
   const body = await response.text();
 
   assert.match(body, /Updated with partial GitHub telemetry/);
@@ -1694,4 +1694,40 @@ test("runner-mode rejects the ingest token even when both tokens are set", async
   );
   // The ingest token must NOT grant runner control even when it is configured.
   assert.equal(response.status, 401);
+});
+
+test("root dashboard redirects to v2 while preserving query params", async () => {
+  const response = await worker.fetch(
+    new Request("https://clawsweeper.openclaw.ai/?repo=valkyriweb%2Facpx"),
+    {},
+    { waitUntil: () => undefined },
+  );
+  assert.equal(response.status, 302);
+  assert.equal(
+    response.headers.get("location"),
+    "https://clawsweeper.openclaw.ai/v2?repo=valkyriweb%2Facpx",
+  );
+
+  const indexResponse = await worker.fetch(
+    new Request("https://clawsweeper.openclaw.ai/index.html?repo=valkyriweb%2Facpx"),
+    {},
+    { waitUntil: () => undefined },
+  );
+  assert.equal(indexResponse.status, 302);
+  assert.equal(
+    indexResponse.headers.get("location"),
+    "https://clawsweeper.openclaw.ai/v2?repo=valkyriweb%2Facpx",
+  );
+});
+
+test("legacy dashboard stays reachable at /legacy", async () => {
+  for (const path of ["/legacy", "/legacy.html"]) {
+    const response = await worker.fetch(
+      new Request(`https://clawsweeper.openclaw.ai${path}`),
+      {},
+      { waitUntil: () => undefined },
+    );
+    assert.equal(response.status, 200);
+    assert.match(await response.text(), /ClawSweeper Live/);
+  }
 });

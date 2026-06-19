@@ -146,11 +146,11 @@ test("Worker session endpoint reports disabled auth without requiring config", a
   assert.deepEqual(await response.json(), { authenticated: false, authEnabled: false });
 });
 
-test("Worker redirects dashboard requests to login when auth is enabled", async () => {
+test("Worker promotes root dashboard requests to v2 when auth is enabled", async () => {
   const response = await worker.fetch(new Request("https://example.test/"), AUTH_ENV);
 
   assert.equal(response.status, 302);
-  assert.equal(response.headers.get("location"), "https://example.test/login?returnTo=%2F");
+  assert.equal(response.headers.get("location"), "https://example.test/v2");
 });
 
 test("Worker protects status JSON when auth is enabled", async () => {
