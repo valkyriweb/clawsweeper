@@ -50,6 +50,7 @@ export type ConvexRepoSettingsAudit = {
 export type ConvexRepoSettingsClearAudit = {
   repository: string;
   defaultEnabled: boolean;
+  defaultClawsweeperEnabled: boolean;
   email: string;
   changedAt: string;
   sourceIp: string | null;

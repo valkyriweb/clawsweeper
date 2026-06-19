@@ -41,6 +41,7 @@ export const clearActionsWatch = mutationGeneric({
   args: {
     repository: v.string(),
     defaultEnabled: v.boolean(),
+    defaultClawsweeperEnabled: v.boolean(),
     email: v.string(),
     changedAt: v.string(),
     sourceIp: v.union(v.string(), v.null()),
@@ -50,7 +51,7 @@ export const clearActionsWatch = mutationGeneric({
     const existing = await repoSetting(ctx, args.repository);
     const fromValue = existing?.actionsWatched ?? null;
     if (existing) {
-      if (existing.clawsweeperEnabled) {
+      if (existing.clawsweeperEnabled || args.defaultClawsweeperEnabled) {
         await ctx.db.patch(existing._id, {
           actionsWatched: args.defaultEnabled,
           updatedAt: args.changedAt,

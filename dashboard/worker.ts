@@ -578,11 +578,11 @@ async function setRepoActionsWatch(
   const body = (await request.json().catch(() => null)) as { enabled?: unknown } | null;
   if (typeof body?.enabled !== "boolean") return json({ error: "enabled_boolean_required" }, 400);
 
-  const defaultEnabled = actionsWatchRepos(
-    env,
-    String(env.CLAWSWEEPER_REPO || "openclaw/clawsweeper"),
-    splitRepoCsv(env.TARGET_REPOS || "openclaw/openclaw"),
-  ).includes(repository);
+  const clawsweeperRepo = String(env.CLAWSWEEPER_REPO || "openclaw/clawsweeper");
+  const targetRepos = splitRepoCsv(env.TARGET_REPOS || "openclaw/openclaw");
+  const defaultEnabled = actionsWatchRepos(env, clawsweeperRepo, targetRepos).includes(repository);
+  const defaultClawsweeperEnabled =
+    repository === clawsweeperRepo || targetRepos.includes(repository);
   const baseAudit = {
     repository,
     email: actor.email,
@@ -592,7 +592,11 @@ async function setRepoActionsWatch(
   };
 
   if (body.enabled === defaultEnabled) {
-    await clearActionsWatchSetting(env, { ...baseAudit, defaultEnabled });
+    await clearActionsWatchSetting(env, {
+      ...baseAudit,
+      defaultEnabled,
+      defaultClawsweeperEnabled,
+    });
     return json({ ok: true, repository, actions_watched: defaultEnabled, configured: "default" });
   }
 
