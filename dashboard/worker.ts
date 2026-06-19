@@ -544,12 +544,16 @@ async function setRepoClawsweeperEnabled(
   if (typeof body?.enabled !== "boolean") return json({ error: "enabled_boolean_required" }, 400);
   const clawsweeperRepo = String(env.CLAWSWEEPER_REPO || "openclaw/clawsweeper");
   const targetRepos = splitRepoCsv(env.TARGET_REPOS || "openclaw/openclaw");
+  const defaultActionsWatched = actionsWatchRepos(env, clawsweeperRepo, targetRepos).includes(
+    repository,
+  );
   const defaultEnabled = repository === clawsweeperRepo || targetRepos.includes(repository);
 
   const audit = {
     repository,
     enabled: body.enabled,
     defaultEnabled,
+    defaultActionsWatched,
     email: actor.email,
     changedAt: new Date().toISOString(),
     sourceIp: requestSourceIp(request),

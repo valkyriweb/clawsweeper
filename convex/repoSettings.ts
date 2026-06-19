@@ -41,7 +41,7 @@ export const clearActionsWatch = mutationGeneric({
   args: {
     repository: v.string(),
     defaultEnabled: v.boolean(),
-    defaultClawsweeperEnabled: v.boolean(),
+    defaultClawsweeperEnabled: v.optional(v.boolean()),
     email: v.string(),
     changedAt: v.string(),
     sourceIp: v.union(v.string(), v.null()),
@@ -51,7 +51,11 @@ export const clearActionsWatch = mutationGeneric({
     const existing = await repoSetting(ctx, args.repository);
     const fromValue = existing?.actionsWatched ?? null;
     if (existing) {
-      if (existing.clawsweeperEnabled || args.defaultClawsweeperEnabled) {
+      if (
+        existing.clawsweeperEnabled ||
+        (args.defaultClawsweeperEnabled ?? false) ||
+        args.defaultEnabled
+      ) {
         await ctx.db.patch(existing._id, {
           actionsWatched: args.defaultEnabled,
           updatedAt: args.changedAt,
@@ -75,7 +79,8 @@ export const setClawsweeperEnabled = mutationGeneric({
   args: {
     repository: v.string(),
     enabled: v.boolean(),
-    defaultEnabled: v.boolean(),
+    defaultEnabled: v.optional(v.boolean()),
+    defaultActionsWatched: v.optional(v.boolean()),
     email: v.string(),
     changedAt: v.string(),
     sourceIp: v.union(v.string(), v.null()),
@@ -95,7 +100,12 @@ export const setClawsweeperEnabled = mutationGeneric({
     };
 
     if (existing) {
-      if (!args.defaultEnabled && !args.enabled && !nextActionsWatched) {
+      if (
+        !(args.defaultEnabled ?? false) &&
+        !(args.defaultActionsWatched ?? false) &&
+        !args.enabled &&
+        !nextActionsWatched
+      ) {
         await ctx.db.delete(existing._id);
       } else {
         await ctx.db.patch(existing._id, now);
