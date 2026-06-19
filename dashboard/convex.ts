@@ -2,8 +2,12 @@ import { Effect } from "effect";
 
 import { parseConvexConfig, type DashboardEnv } from "./config.ts";
 
-type ConvexMutationPath = "statusSnapshots:record" | "events:record" | "runnerModeAudit:record";
-type ConvexQueryPath = "history:snapshots" | "history:events";
+type ConvexMutationPath =
+  | "statusSnapshots:record"
+  | "events:record"
+  | "runnerModeAudit:record"
+  | "repoSettings:setActionsWatch";
+type ConvexQueryPath = "history:snapshots" | "history:events" | "repoSettings:list";
 type JsonObject = Record<string, unknown>;
 
 type ConvexApiResponse = {
@@ -21,6 +25,24 @@ export type ConvexRunnerModeAudit = {
   labels: string[];
   reviewRunner: string | null;
   sourceIp: string | null;
+};
+
+export type RepoSettingsRow = {
+  repository: string;
+  actionsWatched: boolean;
+  clawsweeperEnabled: boolean;
+  updatedAt: string;
+  updatedBy: string;
+  source: string;
+};
+
+export type ConvexRepoSettingsAudit = {
+  repository: string;
+  enabled: boolean;
+  email: string;
+  changedAt: string;
+  sourceIp: string | null;
+  source: string;
 };
 
 class ConvexWriteError extends Error {
@@ -82,6 +104,18 @@ export async function readConvexHistory(
   const config = parseConvexConfig(env);
   if (!config.enabled || !config.url || !config.key) return null;
   return postConvexQuery(config.url, config.key, config.authScheme, path, args);
+}
+
+export async function readRepoSettings(env: DashboardEnv): Promise<RepoSettingsRow[]> {
+  const rows = await readConvexHistory(env, "repoSettings:list", {});
+  return Array.isArray(rows) ? (rows as RepoSettingsRow[]) : [];
+}
+
+export async function setActionsWatchSetting(
+  env: DashboardEnv,
+  audit: ConvexRepoSettingsAudit,
+): Promise<void> {
+  return writeConvexMutation(env, "repoSettings:setActionsWatch", audit as unknown as JsonObject);
 }
 
 function writeConvexMutation(
