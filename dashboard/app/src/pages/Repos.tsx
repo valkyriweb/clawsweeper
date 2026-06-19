@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { FetchError, Loading, SignInPrompt } from "../components/StateViews.js";
 import { useClawSweeperPlan } from "../hooks/useClawSweeperPlan.js";
+import { useClawSweeperSetupPr } from "../hooks/useClawSweeperSetupPr.js";
 import { useRepoActionsWatch } from "../hooks/useRepoActionsWatch.js";
 import { useRepoClawSweeper } from "../hooks/useRepoClawSweeper.js";
 import { useRepos } from "../hooks/useRepos.js";
@@ -24,6 +25,7 @@ export function Repos() {
   const { data, isLoading, error } = useRepos();
   const actionsWatch = useRepoActionsWatch();
   const clawsweeperPlan = useClawSweeperPlan();
+  const clawsweeperSetupPr = useClawSweeperSetupPr();
   const clawsweeperToggle = useRepoClawSweeper();
   const [owner, setOwner] = useState("all");
   const [query, setQuery] = useState("");
@@ -56,6 +58,11 @@ export function Repos() {
     clawsweeperPlan.mutate(repo.full_name);
   }
 
+  function createSetupPr(repository: string) {
+    if (!window.confirm(`Open a ClawSweeper setup PR for ${repository}?`)) return;
+    clawsweeperSetupPr.mutate(repository);
+  }
+
   function toggleClawSweeper(repo: RepoInventoryItem) {
     const next = !repo.clawsweeper_enabled;
     const verb = next ? "enable ClawSweeper for" : "disable ClawSweeper for";
@@ -76,7 +83,7 @@ export function Repos() {
       <div className="banner info">
         <div className="banner-title">Audited controls</div>
         <div>
-          Actions watch toggles are saved to Convex repo settings with an audit row. ClawSweeper enablement still stays disabled until the guided setup flow lands.
+          Actions watch and ClawSweeper toggles are saved to Convex repo settings with audit rows. Missing repo workflow setup is opened as a reviewable PR, not silently written.
         </div>
       </div>
 
@@ -101,6 +108,22 @@ export function Repos() {
         </div>
       )}
 
+      {clawsweeperSetupPr.isError && (
+        <div className="banner warn" role="alert">
+          <div className="banner-title">Setup PR failed</div>
+          <div className="error-text">{(clawsweeperSetupPr.error as Error).message}</div>
+        </div>
+      )}
+
+      {clawsweeperSetupPr.data?.pull_request.html_url && (
+        <div className="banner info">
+          <div className="banner-title">Setup PR ready</div>
+          <a href={clawsweeperSetupPr.data.pull_request.html_url} target="_blank" rel="noreferrer">
+            #{clawsweeperSetupPr.data.pull_request.number}: {clawsweeperSetupPr.data.pull_request.html_url}
+          </a>
+        </div>
+      )}
+
       {clawsweeperPlan.data && (
         <div className="section plan-box">
           <div className="section-title">Enable plan: {clawsweeperPlan.data.repository}</div>
@@ -112,7 +135,22 @@ export function Repos() {
               </div>
             ))}
           </div>
+          {clawsweeperPlan.data.triage_model && (
+            <div className="muted-text">
+              Agent loop: labels {(clawsweeperPlan.data.triage_model.labels ?? []).join(", ")} · commands {(clawsweeperPlan.data.triage_model.commands ?? []).join(", ")}
+            </div>
+          )}
           <div className="muted-text">Would do: {(clawsweeperPlan.data.would_do ?? []).join(" · ")}</div>
+          {clawsweeperPlan.data.setup_pr?.available && (
+            <button
+              type="button"
+              className="inline-action"
+              disabled={clawsweeperSetupPr.isPending}
+              onClick={() => createSetupPr(clawsweeperPlan.data.repository)}
+            >
+              Open setup PR
+            </button>
+          )}
         </div>
       )}
 
@@ -191,7 +229,7 @@ export function Repos() {
                     >
                       {repo.clawsweeper_enabled ? "Disable" : "Enable"}
                     </button>
-                    {!repo.clawsweeper_enabled && (
+                    {!repo.archived && (
                       <button
                         type="button"
                         className="inline-action secondary"

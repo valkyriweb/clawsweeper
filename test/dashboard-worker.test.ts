@@ -1731,3 +1731,105 @@ test("legacy dashboard stays reachable at /legacy", async () => {
     assert.match(await response.text(), /ClawSweeper Live/);
   }
 });
+
+test("clawsweeper setup PR rejects anonymous dashboard requests", async () => {
+  const response = await worker.fetch(
+    new Request("https://clawsweeper.openclaw.ai/api/repos/valkyriweb/acpx/clawsweeper-setup-pr", {
+      method: "POST",
+    }),
+    { GITHUB_TOKEN: "gh-token" },
+    { waitUntil: () => undefined },
+  );
+  assert.equal(response.status, 401);
+  assert.deepEqual(await response.json(), { error: "unauthorized" });
+});
+
+test("clawsweeper setup PR writes dispatcher workflow and opens a reviewable PR", async () => {
+  const originalFetch = globalThis.fetch;
+  const writes: Array<{ method: string; path: string; body: Record<string, unknown> }> = [];
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(String(input));
+    const path = `${url.pathname}${url.search}`;
+    if (init?.method) {
+      writes.push({ method: init.method, path, body: JSON.parse(String(init.body)) });
+    }
+    if (path === "/repos/valkyriweb/acpx") {
+      return jsonResponse({
+        full_name: "valkyriweb/acpx",
+        default_branch: "main",
+        archived: false,
+      });
+    }
+    if (path === "/repos/valkyriweb/acpx/git/ref/heads/main") {
+      return jsonResponse({ object: { sha: "base-sha" } });
+    }
+    if (
+      path ===
+      "/repos/valkyriweb/acpx/pulls?state=open&head=valkyriweb%3Aclawsweeper%2Fsetup-dispatch&per_page=1"
+    ) {
+      return jsonResponse([]);
+    }
+    if (path === "/repos/valkyriweb/acpx/git/ref/heads/clawsweeper/setup-dispatch") {
+      return new Response(JSON.stringify({ message: "not found" }), { status: 404 });
+    }
+    if (
+      path ===
+      "/repos/valkyriweb/acpx/contents/.github/workflows/clawsweeper-dispatch.yml?ref=clawsweeper%2Fsetup-dispatch"
+    ) {
+      return new Response(JSON.stringify({ message: "not found" }), { status: 404 });
+    }
+    if (path === "/repos/valkyriweb/acpx/git/refs") {
+      return new Response(JSON.stringify({ ref: "refs/heads/clawsweeper/setup-dispatch" }), {
+        status: 201,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (path === "/repos/valkyriweb/acpx/contents/.github/workflows/clawsweeper-dispatch.yml") {
+      return jsonResponse({ content: { path: ".github/workflows/clawsweeper-dispatch.yml" } });
+    }
+    if (path === "/repos/valkyriweb/acpx/pulls") {
+      return new Response(
+        JSON.stringify({
+          number: 42,
+          html_url: "https://github.com/valkyriweb/acpx/pull/42",
+          state: "open",
+        }),
+        { status: 201, headers: { "content-type": "application/json" } },
+      );
+    }
+    throw new Error(`unexpected fetch ${path}`);
+  }) as typeof fetch;
+
+  try {
+    const response = await worker.fetch(
+      new Request(
+        "https://clawsweeper.openclaw.ai/api/repos/valkyriweb/acpx/clawsweeper-setup-pr",
+        {
+          method: "POST",
+          headers: { Authorization: "Bearer admin-secret" },
+        },
+      ),
+      { GITHUB_TOKEN: "gh-token", DASHBOARD_ADMIN_TOKEN: "admin-secret" },
+      { waitUntil: () => undefined },
+    );
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.pull_request.html_url, "https://github.com/valkyriweb/acpx/pull/42");
+    assert.equal(writes[0].path, "/repos/valkyriweb/acpx/git/refs");
+    assert.equal(
+      writes[1].path,
+      "/repos/valkyriweb/acpx/contents/.github/workflows/clawsweeper-dispatch.yml",
+    );
+    const workflow = Buffer.from(String(writes[1].body.content), "base64").toString("utf8");
+    assert.match(workflow, /repos\/openclaw\/clawsweeper\/dispatches/);
+    assert.match(workflow, /clawsweeper_item/);
+    assert.match(workflow, /clawsweeper_comment/);
+    assert.match(workflow, /AUTHOR_ASSOCIATION/);
+    assert.match(workflow, /OWNER\|MEMBER\|COLLABORATOR/);
+    assert.equal(writes[2].path, "/repos/valkyriweb/acpx/pulls");
+    assert.match(String(writes[2].body.body), /clawsweeper:autofix/);
+    assert.match(String(writes[2].body.body), /\/clawsweeper implement/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
