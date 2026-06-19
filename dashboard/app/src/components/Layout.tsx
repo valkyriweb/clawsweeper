@@ -21,6 +21,9 @@ export function Layout() {
         <Link to="/v2/history" aria-current={p.startsWith("/v2/history") ? "page" : undefined}>
           History
         </Link>
+        <Link to="/v2/repos" aria-current={p.startsWith("/v2/repos") ? "page" : undefined}>
+          Repos
+        </Link>
         <Link to="/v2/controls" aria-current={p.startsWith("/v2/controls") ? "page" : undefined}>
           Controls
         </Link>
