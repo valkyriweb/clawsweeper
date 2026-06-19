@@ -146,11 +146,11 @@ export async function clearActionsWatchSetting(
   audit: ConvexRepoSettingsClearAudit,
 ): Promise<void> {
   const { defaultClawsweeperEnabled: _defaultClawsweeperEnabled, ...legacyAudit } = audit;
-  return writeConvexMutation(
+  return writeConvexMutationStrict(
     env,
     "repoSettings:clearActionsWatch",
     audit as unknown as JsonObject,
-    legacyAudit as unknown as JsonObject,
+    audit.defaultClawsweeperEnabled ? undefined : (legacyAudit as unknown as JsonObject),
   );
 }
 
@@ -163,7 +163,7 @@ export async function setClawsweeperEnabledSetting(
     defaultEnabled: _defaultEnabled,
     ...legacyAudit
   } = audit;
-  return writeConvexMutation(
+  return writeConvexMutationStrict(
     env,
     "repoSettings:setClawsweeperEnabled",
     audit as unknown as JsonObject,
@@ -175,23 +175,43 @@ function writeConvexMutation(
   env: DashboardEnv,
   path: ConvexMutationPath,
   args: JsonObject,
+): Promise<void> {
+  return writeConvexMutationWithMode(env, path, args, undefined, false);
+}
+
+function writeConvexMutationStrict(
+  env: DashboardEnv,
+  path: ConvexMutationPath,
+  args: JsonObject,
   fallbackArgs?: JsonObject,
+): Promise<void> {
+  return writeConvexMutationWithMode(env, path, args, fallbackArgs, true);
+}
+
+function writeConvexMutationWithMode(
+  env: DashboardEnv,
+  path: ConvexMutationPath,
+  args: JsonObject,
+  fallbackArgs: JsonObject | undefined,
+  strict: boolean,
 ): Promise<void> {
   const config = parseConvexConfig(env);
   if (!config.enabled || !config.url || !config.key) return Promise.resolve();
 
+  const write = Effect.tryPromise({
+    try: async () => {
+      try {
+        await postConvexMutation(config.url, config.key, config.authScheme, path, args);
+      } catch (error) {
+        if (!fallbackArgs) throw error;
+        await postConvexMutation(config.url, config.key, config.authScheme, path, fallbackArgs);
+      }
+    },
+    catch: (cause) => new ConvexWriteError(path, cause),
+  });
+
   return Effect.runPromise(
-    Effect.tryPromise({
-      try: async () => {
-        try {
-          await postConvexMutation(config.url, config.key, config.authScheme, path, args);
-        } catch (error) {
-          if (!fallbackArgs) throw error;
-          await postConvexMutation(config.url, config.key, config.authScheme, path, fallbackArgs);
-        }
-      },
-      catch: (cause) => new ConvexWriteError(path, cause),
-    }).pipe(Effect.catchAll(() => Effect.succeed(undefined))),
+    strict ? write : write.pipe(Effect.catchAll(() => Effect.succeed(undefined))),
   );
 }
 
