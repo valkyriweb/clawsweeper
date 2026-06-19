@@ -6,7 +6,8 @@ type ConvexMutationPath =
   | "statusSnapshots:record"
   | "events:record"
   | "runnerModeAudit:record"
-  | "repoSettings:setActionsWatch";
+  | "repoSettings:setActionsWatch"
+  | "repoSettings:clearActionsWatch";
 type ConvexQueryPath = "history:snapshots" | "history:events" | "repoSettings:list";
 type JsonObject = Record<string, unknown>;
 
@@ -39,6 +40,15 @@ export type RepoSettingsRow = {
 export type ConvexRepoSettingsAudit = {
   repository: string;
   enabled: boolean;
+  email: string;
+  changedAt: string;
+  sourceIp: string | null;
+  source: string;
+};
+
+export type ConvexRepoSettingsClearAudit = {
+  repository: string;
+  defaultEnabled: boolean;
   email: string;
   changedAt: string;
   sourceIp: string | null;
@@ -116,6 +126,13 @@ export async function setActionsWatchSetting(
   audit: ConvexRepoSettingsAudit,
 ): Promise<void> {
   return writeConvexMutation(env, "repoSettings:setActionsWatch", audit as unknown as JsonObject);
+}
+
+export async function clearActionsWatchSetting(
+  env: DashboardEnv,
+  audit: ConvexRepoSettingsClearAudit,
+): Promise<void> {
+  return writeConvexMutation(env, "repoSettings:clearActionsWatch", audit as unknown as JsonObject);
 }
 
 function writeConvexMutation(
