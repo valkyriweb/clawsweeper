@@ -5565,6 +5565,32 @@ test("runClaudeCode spawns claude -p with JSON schema, parses the envelope, and 
   });
 });
 
+test("runClaudeCode passes --bare to skip SessionEnd hooks on CI runners (#67)", () => {
+  let capturedArgs: readonly string[] = [];
+  const stubSpawn: SpawnFn = (_command, args) => {
+    capturedArgs = args;
+    return {
+      status: 0,
+      stdout: JSON.stringify({
+        type: "result",
+        is_error: false,
+        result: JSON.stringify(closeDecision()),
+      }),
+      stderr: "",
+    };
+  };
+  const options = claudeCodeOptionsForTest({ spawnFn: stubSpawn });
+  runClaudeCode(options);
+  // `--bare` disables claude's SessionEnd/hooks, LSP, plugin sync, attribution,
+  // and auto-memory. Without it, an inherited SessionEnd hook on the self-hosted
+  // runner exited nonzero and failed the whole review even when the model
+  // returned content.
+  assert.ok(
+    capturedArgs.includes("--bare"),
+    "runClaudeCode must pass --bare so claude skips SessionEnd hooks/LSP/plugin sync on CI runners",
+  );
+});
+
 test("runClaudeCode maps ETIMEDOUT to the stable 'timed out after Nms' marker", () => {
   const timeoutError = new Error("timed out after 60000ms") as Error & { code: string };
   timeoutError.code = "ETIMEDOUT";
