@@ -27,6 +27,7 @@ import {
   auditHasStrictFailures,
   auditHealthSection,
   canPatchReviewComment,
+  trimBotCommentHistory,
   closeReasonApplyAgeSkipReason,
   closeReasonsArg,
   closingPullRequestReferenceTarget,
@@ -2183,6 +2184,68 @@ test("canPatchReviewComment recognizes fork App bot logins without env override 
     if (oldEnv === undefined) delete process.env.CLAWSWEEPER_COMMENT_AUTHOR_LOGIN;
     else process.env.CLAWSWEEPER_COMMENT_AUTHOR_LOGIN = oldEnv;
   }
+});
+
+const REVIEW_HISTORY_MARKER = "<!-- clawsweeper-review";
+function botHistoryComment(body: string, createdAt: string) {
+  return {
+    user: { login: "valkyriweb-clawsweeper[bot]" },
+    body: `${REVIEW_HISTORY_MARKER} verdict -->\n${body}`,
+    created_at: createdAt,
+  };
+}
+function humanHistoryComment(body: string, createdAt: string) {
+  return { user: { login: "octocat" }, body, created_at: createdAt };
+}
+
+test("trimBotCommentHistory leaves a small, non-bot-dominated thread untouched (#14)", () => {
+  const comments = [
+    botHistoryComment("a".repeat(100), "2026-01-01T00:00:00Z"),
+    humanHistoryComment("h".repeat(5000), "2026-01-02T00:00:00Z"),
+    botHistoryComment("b".repeat(100), "2026-01-03T00:00:00Z"),
+    humanHistoryComment("h".repeat(5000), "2026-01-04T00:00:00Z"),
+    humanHistoryComment("h".repeat(5000), "2026-01-05T00:00:00Z"),
+  ];
+  const result = trimBotCommentHistory(comments);
+  assert.equal(result.trimmed, false);
+  assert.equal(result.droppedCount, 0);
+  assert.equal(result.comments.length, comments.length);
+  assert.equal(result.charsAfter, result.charsBefore);
+});
+
+test("trimBotCommentHistory drops all but the latest bot comment in a large mixed thread (#14)", () => {
+  const human1 = humanHistoryComment("H".repeat(5000), "2026-01-02T00:00:00Z");
+  const human2 = humanHistoryComment("U".repeat(5000), "2026-01-04T00:00:00Z");
+  const latestBot = botHistoryComment("c".repeat(5000), "2026-01-05T00:00:00Z");
+  const comments = [
+    botHistoryComment("a".repeat(5000), "2026-01-01T00:00:00Z"),
+    human1,
+    botHistoryComment("b".repeat(5000), "2026-01-03T00:00:00Z"),
+    human2,
+    latestBot,
+  ];
+  const result = trimBotCommentHistory(comments);
+  assert.equal(result.trimmed, true);
+  assert.equal(result.droppedCount, 2);
+  assert.equal(result.comments.length, 3);
+  // Human comments kept verbatim and in place; latest bot retained, earlier bots dropped.
+  assert.deepEqual(result.comments, [human1, human2, latestBot]);
+  assert.ok(result.charsAfter < result.charsBefore);
+  assert.ok(result.charsAfter > 0);
+});
+
+test("trimBotCommentHistory keeps only the latest comment in an all-bot thread (#14)", () => {
+  const latestBot = botHistoryComment("c".repeat(1000), "2026-01-03T00:00:00Z");
+  const comments = [
+    botHistoryComment("a".repeat(1000), "2026-01-01T00:00:00Z"),
+    botHistoryComment("b".repeat(1000), "2026-01-02T00:00:00Z"),
+    latestBot,
+  ];
+  const result = trimBotCommentHistory(comments);
+  assert.equal(result.trimmed, true);
+  assert.equal(result.droppedCount, 2);
+  assert.equal(result.comments.length, 1);
+  assert.deepEqual(result.comments, [latestBot]);
 });
 
 test("review start status comment is marker-backed and crustacean-friendly", () => {

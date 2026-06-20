@@ -2073,6 +2073,87 @@ function compactComment(value: unknown): unknown {
   };
 }
 
+// #14: trim ClawSweeper's own accumulated review-comment history from the prompt
+// body. Each rolling review appends a marker-backed verdict comment, so a long
+// thread balloons the review prompt with our own prior output (no added signal)
+// and is exactly the class of item most likely to needlessly trip the per-item
+// timeout escalator.
+const BOT_COMMENT_TRIM_THRESHOLD_CHARS = 20_000;
+const BOT_COMMENT_DOMINANCE_RATIO = 0.5;
+
+export interface TrimBotCommentHistoryOptions {
+  /** Total comment-thread char count above which trimming is considered. */
+  thresholdChars?: number;
+  /** ClawSweeper-comment char share above which trimming is considered. */
+  dominanceRatio?: number;
+}
+
+export interface TrimBotCommentHistoryResult {
+  comments: unknown[];
+  trimmed: boolean;
+  charsBefore: number;
+  charsAfter: number;
+  droppedCount: number;
+}
+
+function reviewCommentBodyChars(comment: Record<string, unknown>): number {
+  return typeof comment.body === "string" ? comment.body.length : 0;
+}
+
+function isClawsweeperReviewHistoryComment(comment: Record<string, unknown>): boolean {
+  return typeof comment.body === "string" && comment.body.includes(REVIEW_COMMENT_MARKER_PREFIX);
+}
+
+/**
+ * Drop ClawSweeper's own prior review comments from a comment thread when the
+ * thread is large (> thresholdChars) or its bot history dominates (> dominanceRatio
+ * of all comment chars). Human and contributor comments are kept verbatim; the
+ * single most-recent ClawSweeper comment is always kept for rolling-decision
+ * continuity. Returns the (possibly unchanged) comments plus before/after char
+ * counts for telemetry. Exported for unit tests.
+ */
+export function trimBotCommentHistory(
+  comments: readonly unknown[],
+  options: TrimBotCommentHistoryOptions = {},
+): TrimBotCommentHistoryResult {
+  const thresholdChars = options.thresholdChars ?? BOT_COMMENT_TRIM_THRESHOLD_CHARS;
+  const dominanceRatio = options.dominanceRatio ?? BOT_COMMENT_DOMINANCE_RATIO;
+  const records = comments.map(asRecord);
+  const charsBefore = records.reduce((sum, c) => sum + reviewCommentBodyChars(c), 0);
+  const botIndexes: number[] = [];
+  let botChars = 0;
+  records.forEach((c, i) => {
+    if (isClawsweeperReviewHistoryComment(c)) {
+      botIndexes.push(i);
+      botChars += reviewCommentBodyChars(c);
+    }
+  });
+  const overThreshold = charsBefore > thresholdChars;
+  const botDominant = charsBefore > 0 && botChars / charsBefore > dominanceRatio;
+  // Need at least two ClawSweeper comments to trim — the latest is always kept.
+  if ((!overThreshold && !botDominant) || botIndexes.length <= 1) {
+    return {
+      comments: [...comments],
+      trimmed: false,
+      charsBefore,
+      charsAfter: charsBefore,
+      droppedCount: 0,
+    };
+  }
+  // Drop every ClawSweeper review comment except the most recent (last in
+  // chronological order); keep all non-bot comments in place.
+  const dropIndexes = new Set(botIndexes.slice(0, -1));
+  const kept = comments.filter((_, i) => !dropIndexes.has(i));
+  const charsAfter = kept.map(asRecord).reduce((sum, c) => sum + reviewCommentBodyChars(c), 0);
+  return {
+    comments: kept,
+    trimmed: true,
+    charsBefore,
+    charsAfter,
+    droppedCount: dropIndexes.size,
+  };
+}
+
 function compactTimelineEvent(value: unknown): unknown {
   const event = asRecord(value);
   const sourceIssue = asRecord(asRecord(event.source).issue);
@@ -3874,10 +3955,23 @@ function collectItemContext(item: Item, opts: CollectItemContextOptions = {}): I
     24,
   );
   const comments = commentsWindow.items;
+  // #14: trim our own prior review comments out of the prompt-body copy when the
+  // thread is large or bot-dominated. The raw `comments` list still feeds
+  // related-item detection below; only the prompt body is trimmed.
+  const trimmedPromptComments = trimBotCommentHistory(comments);
+  if (trimmedPromptComments.trimmed) {
+    console.error(
+      `[review] ${new Date().toISOString()} trim-bot-comment-history #${item.number} prompt_comment_chars_before=${trimmedPromptComments.charsBefore} prompt_comment_chars_after=${trimmedPromptComments.charsAfter} dropped=${trimmedPromptComments.droppedCount}`,
+    );
+  }
+  const promptComments = trimmedPromptComments.comments;
+  const promptCommentsTotal = trimmedPromptComments.trimmed
+    ? promptComments.length
+    : commentsWindow.total;
   const timeline = ghPaged<unknown>(`repos/${targetRepo()}/issues/${item.number}/timeline`);
   const context: ItemContext = {
     issue: compactIssue(issue),
-    comments: compactMappedWindow(comments, commentsWindow.total, 24, compactComment),
+    comments: compactMappedWindow(promptComments, promptCommentsTotal, 24, compactComment),
     timeline: compactMappedSlice(timeline, 80, compactTimelineEvent),
     counts: {
       comments: commentsWindow.total,
