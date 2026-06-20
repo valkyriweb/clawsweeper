@@ -5180,6 +5180,14 @@ export function runClaudeCode(options: RunClaudeCodeOptions): Decision {
 
   const args: string[] = [
     "-p",
+    // `--bare` (minimal mode): skip SessionEnd/hook side-effects, LSP, plugin
+    // sync, attribution, and auto-memory. A non-interactive CI review wants one
+    // clean model call — and on the self-hosted runner an inherited SessionEnd
+    // hook (`entire ...`) was exiting nonzero and failing the whole review with
+    // exit 1 even when the model returned content (#67). `ANTHROPIC_API_KEY` /
+    // `ANTHROPIC_BASE_URL` still apply under --bare (only keychain/OAuth
+    // credential resolution is disabled), so the claude-bridge route is kept.
+    "--bare",
     "--output-format",
     "json",
     "--json-schema",
