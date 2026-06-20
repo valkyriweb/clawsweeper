@@ -8245,6 +8245,17 @@ const PATCHABLE_REVIEW_COMMENT_AUTHORS = new Set(
   ].filter((login): login is string => typeof login === "string" && login.length > 0),
 );
 
+// ClawSweeper's GitHub App bot logins follow the `{app-slug}[bot]` convention:
+// the canonical `clawsweeper[bot]`, the openclaw install `openclaw-clawsweeper[bot]`,
+// and fork installs which take the form `{org}-clawsweeper[bot]` (e.g.
+// `valkyriweb-clawsweeper[bot]`). Recognizing the App-family pattern lets a fresh
+// fork install sticky-update (patch) its own verdict comments without the operator
+// having to set CLAWSWEEPER_COMMENT_AUTHOR_LOGIN (#68). GitHub reserves the
+// trailing `[bot]` suffix for App accounts and disallows `[`/`]` in human
+// usernames, so a human cannot mint a matching login. The explicit allowlist
+// above still covers the no-suffix `clawsweeper` form and any operator override.
+const CLAWSWEEPER_APP_BOT_LOGIN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?-clawsweeper\[bot\]$/i;
+
 function commentAuthorLogin(comment: Record<string, unknown> | undefined): string | undefined {
   const user = comment?.user;
   if (!user || typeof user !== "object" || Array.isArray(user)) return undefined;
@@ -8254,7 +8265,8 @@ function commentAuthorLogin(comment: Record<string, unknown> | undefined): strin
 
 export function canPatchReviewComment(comment: Record<string, unknown> | undefined): boolean {
   const login = commentAuthorLogin(comment);
-  return Boolean(login && PATCHABLE_REVIEW_COMMENT_AUTHORS.has(login));
+  if (!login) return false;
+  return PATCHABLE_REVIEW_COMMENT_AUTHORS.has(login) || CLAWSWEEPER_APP_BOT_LOGIN.test(login);
 }
 
 export function lockedConversationApplyReason(

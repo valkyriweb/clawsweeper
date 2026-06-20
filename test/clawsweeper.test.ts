@@ -2166,6 +2166,25 @@ test("review comment patching only targets ClawSweeper-owned comments", () => {
   assert.equal(canPatchReviewComment(undefined), false);
 });
 
+test("canPatchReviewComment recognizes fork App bot logins without env override (#68)", () => {
+  const oldEnv = process.env.CLAWSWEEPER_COMMENT_AUTHOR_LOGIN;
+  delete process.env.CLAWSWEEPER_COMMENT_AUTHOR_LOGIN;
+  try {
+    // Fork installs run as `{org}-clawsweeper[bot]`; the sticky-update path must
+    // accept the fork's own bot without the operator setting
+    // CLAWSWEEPER_COMMENT_AUTHOR_LOGIN (#68).
+    assert.equal(canPatchReviewComment({ user: { login: "valkyriweb-clawsweeper[bot]" } }), true);
+    assert.equal(canPatchReviewComment({ user: { login: "some-org-clawsweeper[bot]" } }), true);
+    // Non-clawsweeper bots and look-alikes stay unpatchable.
+    assert.equal(canPatchReviewComment({ user: { login: "dependabot[bot]" } }), false);
+    assert.equal(canPatchReviewComment({ user: { login: "evilclawsweeper[bot]" } }), false);
+    assert.equal(canPatchReviewComment({ user: { login: "valkyriweb-clawsweeper" } }), false);
+  } finally {
+    if (oldEnv === undefined) delete process.env.CLAWSWEEPER_COMMENT_AUTHOR_LOGIN;
+    else process.env.CLAWSWEEPER_COMMENT_AUTHOR_LOGIN = oldEnv;
+  }
+});
+
 test("review start status comment is marker-backed and crustacean-friendly", () => {
   const comment = renderReviewStartStatusComment({
     number: 74453,
