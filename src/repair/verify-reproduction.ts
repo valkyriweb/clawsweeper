@@ -49,7 +49,8 @@ export type EnvFailureReason =
   | "app_not_initialized"
   | "autoload_missing"
   | "node_deps_missing"
-  | "tooling_missing";
+  | "tooling_missing"
+  | "php_version_too_low";
 
 const ENV_FAILURE_PATTERNS: Array<{ regex: RegExp; reason: EnvFailureReason }> = [
   // Postgres / MySQL / Redis unreachable on the standard ports, plus the
@@ -67,6 +68,14 @@ const ENV_FAILURE_PATTERNS: Array<{ regex: RegExp; reason: EnvFailureReason }> =
   {
     regex: /Class "[^"]+" not found|require\(\): Failed opening required/i,
     reason: "autoload_missing",
+  },
+  // Composer platform check: the runner's PHP minor is older than the target's
+  // composer.lock requires, so `composer install` aborts before any test runs.
+  // Without this the lane reads the nonzero composer exit as a real
+  // reproduction and dispatches intake on a false signal (#33).
+  {
+    regex: /your php version \([^)]*\) does not satisfy that requirement/i,
+    reason: "php_version_too_low",
   },
   // Node deps missing (lane should have installed them via prepare step).
   { regex: /Cannot find module|npm ERR! code ENOENT/i, reason: "node_deps_missing" },

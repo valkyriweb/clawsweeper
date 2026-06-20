@@ -193,6 +193,26 @@ test("detectEnvFailure flags missing vendor/bin tooling", () => {
   assert.equal(result?.reason, "tooling_missing");
 });
 
+test("detectEnvFailure flags Composer PHP version mismatch as an env failure (#33)", () => {
+  // Real captured output from clawsweeper run 26005788652 (target CLIP-SA/core-ai#29,
+  // 2026-05-17): the runner had PHP 8.3 but the target's composer.lock pins packages
+  // requiring PHP >=8.4, so `composer install` aborted before any test ran. The lane
+  // previously read the nonzero composer exit as `reproduced: true` and dispatched
+  // intake on a false signal. This is the regression case.
+  const output = `Installing dependencies from lock file (including require-dev)
+Verifying lock file contents can be installed on current platform.
+Your lock file does not contain a compatible set of packages. Please run composer update.
+
+  Problem 1
+    - symfony/clock is locked to version v8.0.0 and an update of this package was not requested.
+    - symfony/clock v8.0.0 requires php >=8.4 -> your php version (8.3.31) does not satisfy that requirement.`;
+
+  const result = detectEnvFailure(output);
+
+  assert.ok(result, "expected env-failure detection on composer PHP version mismatch");
+  assert.equal(result?.reason, "php_version_too_low");
+});
+
 test("detectEnvFailure returns null for genuine test failures", () => {
   // The validation command actually exercised the bug — assertions failed,
   // tests ran, no infrastructure missing. This is the case where the lane
