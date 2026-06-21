@@ -5196,35 +5196,36 @@ export function runCodexForTest(options: Parameters<typeof runCodex>[0]): Decisi
   return runCodex(options);
 }
 
-// Default impl of SpawnFn that wraps node:child_process spawnSync and narrows
-// stdio fields to plain strings (the native overload returns string | Buffer
-// depending on encoding, but our providers always pass `encoding: "utf8"`).
-function defaultSpawnFn(
-  command: string,
-  args: readonly string[],
-  opts: {
-    cwd?: string;
-    env?: NodeJS.ProcessEnv;
-    input?: string;
-    encoding: "utf8";
-    maxBuffer?: number;
-    timeout?: number;
-  },
-): ReturnType<SpawnFn> {
-  const raw = spawnSync(command, [...args], opts) as unknown as {
-    status: number | null;
-    stdout: string | Buffer | null;
-    stderr: string | Buffer | null;
-    error?: Error & { code?: string };
-  };
+// Default spawn seam for the CLI review providers (claude-code, pi). Routes the
+// child through the shared streaming activity-watchdog (runCliWithActivityWatchdog)
+// instead of a plain spawnSync total timeout, so a slow-but-actively-streaming
+// review runs to completion and only a genuinely stalled (idle) one is killed —
+// the #75 inactivity model, generalized from codex to every CLI provider. The
+// caller's `timeout` becomes the backstop base (reviewMaxTotalMs only ever
+// raises it to the generous absolute cap, never lowers it); inactivity and
+// startup grace come from the shared review knobs. Tests inject their own
+// `spawnFn` to bypass the watchdog and exercise envelope parsing directly.
+const watchdogSpawnFn: SpawnFn = (command, args, opts) => {
+  const base =
+    typeof opts.timeout === "number" && opts.timeout > 0 ? opts.timeout : REVIEW_MAX_TOTAL_MS;
+  const result = runCliWithActivityWatchdog({
+    command,
+    args: [...args],
+    cwd: opts.cwd ?? process.cwd(),
+    env: opts.env ?? process.env,
+    input: opts.input ?? "",
+    inactivityMs: reviewInactivityTimeoutMs(),
+    maxTotalMs: reviewMaxTotalMs(base),
+    startupTimeoutMs: codexStartupTimeoutMs(),
+  });
   const normalized: ReturnType<SpawnFn> = {
-    status: raw.status,
-    stdout: typeof raw.stdout === "string" ? raw.stdout : (raw.stdout?.toString("utf8") ?? ""),
-    stderr: typeof raw.stderr === "string" ? raw.stderr : (raw.stderr?.toString("utf8") ?? ""),
+    status: result.status,
+    stdout: result.stdout,
+    stderr: result.stderr,
   };
-  if (raw.error) normalized.error = raw.error;
+  if (result.error) normalized.error = result.error;
   return normalized;
-}
+};
 
 // Spawn seam shared by all CLI-spawning providers (codex, claude-code, pi).
 // Tests inject a fake matching this shape so they don't touch real binaries.
@@ -5282,7 +5283,7 @@ export type RunClaudeCodeOptions = RunCliReviewOptions;
 // + parseClaudeEnvelope. Adapted here for clawsweeper's Decision shape.
 export function runClaudeCode(options: RunClaudeCodeOptions): Decision {
   const item = options.item;
-  const spawn: SpawnFn = options.spawnFn ?? defaultSpawnFn;
+  const spawn: SpawnFn = options.spawnFn ?? watchdogSpawnFn;
 
   ensureDir(options.workDir);
   const proofScratchDir =
@@ -5489,7 +5490,7 @@ export type RunPiOptions = RunCliReviewOptions;
 // (buildPiArgs / wrapPiPrompt / parsePiEnvelope / extractPiAssistantText).
 export function runPi(options: RunPiOptions): Decision {
   const item = options.item;
-  const spawn: SpawnFn = options.spawnFn ?? defaultSpawnFn;
+  const spawn: SpawnFn = options.spawnFn ?? watchdogSpawnFn;
 
   ensureDir(options.workDir);
   const proofScratchDir =
@@ -5705,14 +5706,15 @@ function stripJsonFences(value: string): string {
   return match?.[1] ?? value;
 }
 
-interface CodexWatchdogResult {
+interface CliWatchdogResult {
   status: number | null;
   stdout: string;
   stderr: string;
   error?: Error & { code?: string };
 }
 
-function runCodexWithStartupWatchdog(options: {
+function runCliWithActivityWatchdog(options: {
+  command: string;
   args: string[];
   cwd: string;
   env: NodeJS.ProcessEnv;
@@ -5720,7 +5722,7 @@ function runCodexWithStartupWatchdog(options: {
   inactivityMs: number;
   maxTotalMs: number;
   startupTimeoutMs: number;
-}): CodexWatchdogResult {
+}): CliWatchdogResult {
   const helper = String.raw`
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
@@ -5755,8 +5757,8 @@ function noteActivity() {
   }
   if (inactivityTimer) clearTimeout(inactivityTimer);
   inactivityTimer = setTimeout(() => {
-    stderr += "\n[clawsweeper] codex inactivity timeout after " + request.inactivityMs + "ms with no stdout/stderr output\n";
-    process.stderr.write("\n[clawsweeper] codex inactivity timeout after " + request.inactivityMs + "ms with no stdout/stderr output\n");
+    stderr += "\n[clawsweeper] " + request.command + " inactivity timeout after " + request.inactivityMs + "ms with no stdout/stderr output\n";
+    process.stderr.write("\n[clawsweeper] " + request.command + " inactivity timeout after " + request.inactivityMs + "ms with no stdout/stderr output\n");
     killChild("SIGTERM");
     setTimeout(() => killChild("SIGKILL"), 5000).unref();
     finish(124);
@@ -5764,23 +5766,23 @@ function noteActivity() {
   inactivityTimer.unref();
 }
 const startupTimer = setTimeout(() => {
-  stderr += "\n[clawsweeper] codex startup timeout after " + request.startupTimeoutMs + "ms with no stdout/stderr output\n";
-  process.stderr.write("\n[clawsweeper] codex startup timeout after " + request.startupTimeoutMs + "ms with no stdout/stderr output\n");
+  stderr += "\n[clawsweeper] " + request.command + " startup timeout after " + request.startupTimeoutMs + "ms with no stdout/stderr output\n";
+  process.stderr.write("\n[clawsweeper] " + request.command + " startup timeout after " + request.startupTimeoutMs + "ms with no stdout/stderr output\n");
   killChild("SIGTERM");
   setTimeout(() => killChild("SIGKILL"), 5000).unref();
   finish(124);
 }, request.startupTimeoutMs);
 startupTimer.unref();
 const backstopTimer = setTimeout(() => {
-  stderr += "\n[clawsweeper] codex backstop timeout after " + request.maxTotalMs + "ms\n";
-  process.stderr.write("\n[clawsweeper] codex backstop timeout after " + request.maxTotalMs + "ms\n");
+  stderr += "\n[clawsweeper] " + request.command + " backstop timeout after " + request.maxTotalMs + "ms\n";
+  process.stderr.write("\n[clawsweeper] " + request.command + " backstop timeout after " + request.maxTotalMs + "ms\n");
   killChild("SIGTERM");
   setTimeout(() => killChild("SIGKILL"), 5000).unref();
   finish(124);
 }, request.maxTotalMs);
 backstopTimer.unref();
 try {
-  child = spawn("codex", request.args, {
+  child = spawn(request.command, request.args, {
     cwd: request.cwd,
     env: request.env,
     stdio: ["pipe", "pipe", "pipe"],
@@ -5810,7 +5812,7 @@ child.on("error", (error) => {
 });
 child.on("close", (code, signal) => {
   if (settled) return;
-  if (signal) stderr += "\n[clawsweeper] codex exited via signal " + signal + "\n";
+  if (signal) stderr += "\n[clawsweeper] " + request.command + " exited via signal " + signal + "\n";
   finish(code == null ? 1 : code);
 });
 child.stdin.end(request.input);
@@ -5823,7 +5825,7 @@ child.stdin.end(request.input);
     maxBuffer: 128 * 1024 * 1024,
     timeout: options.maxTotalMs + 10_000,
   });
-  const normalized: CodexWatchdogResult = {
+  const normalized: CliWatchdogResult = {
     status: result.status,
     stdout: result.stdout ?? "",
     stderr: result.stderr ?? "",
@@ -5831,10 +5833,10 @@ child.stdin.end(request.input);
   if (result.error) normalized.error = result.error as Error & { code?: string };
   if (
     normalized.status === 124 &&
-    /codex (startup|inactivity|backstop) timeout/i.test(normalized.stderr)
+    /\[clawsweeper\] \w+ (startup|inactivity|backstop) timeout/i.test(normalized.stderr)
   ) {
     normalized.error = Object.assign(
-      new Error(`spawnSync codex ETIMEDOUT after ${Date.now() - startedAt}ms`),
+      new Error(`spawnSync ${options.command} ETIMEDOUT after ${Date.now() - startedAt}ms`),
       { code: "ETIMEDOUT" },
     );
   }
@@ -5896,7 +5898,8 @@ function runCodex(options: {
     `[review] ${new Date().toISOString()} codex-streaming-watchdog #${options.item.number} startup_ms=${startupTimeoutMs} inactivity_ms=${inactivityMs} backstop_ms=${maxTotalMs}`,
   );
   const startedAt = Date.now();
-  const result = runCodexWithStartupWatchdog({
+  const result = runCliWithActivityWatchdog({
+    command: "codex",
     args: [
       "exec",
       "-m",
