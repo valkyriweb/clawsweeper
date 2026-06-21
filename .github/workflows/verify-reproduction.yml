@@ -124,15 +124,32 @@ jobs:
           filter: blob:none
           fetch-depth: 0
 
+      - name: Resolve target PHP version
+        id: php
+        # Pick the PHP version the target actually requires (composer.json
+        # config.platform.php, else the require.php lower bound) so the runner
+        # matches the target's composer.lock instead of a hardcoded pin (#34).
+        # Falls back to 8.3 for non-PHP targets or when no version is declared.
+        run: |
+          set -euo pipefail
+          composer_json="$GITHUB_WORKSPACE/target-checkout/composer.json"
+          version=""
+          if [ -f "$composer_json" ]; then
+            version="$(node dist/repair/verify-reproduction.js resolve-php-version --composer "$composer_json" || true)"
+          fi
+          echo "version=${version:-8.3}" >> "$GITHUB_OUTPUT"
+          echo "Resolved PHP version: ${version:-8.3 (default)}"
+
       - name: Setup PHP (Laravel/Composer targets)
         # The verify-reproduction lane runs the target repo's validation
-        # commands (composer install + ./vendor/bin/pest, etc.) so it needs
-        # a working PHP toolchain. ubuntu-latest ships PHP but a pinned
-        # modern version keeps results reproducible across runner image
-        # updates. Non-PHP targets ignore this; the action is cheap.
+        # commands (composer install + ./vendor/bin/pest, etc.) so it needs a
+        # working PHP toolchain. The version comes from the target's
+        # composer.json (see "Resolve target PHP version") so reproduction runs
+        # on the PHP the target's composer.lock expects, not a hardcoded pin.
+        # Non-PHP targets fall back to the default; the action is cheap.
         uses: shivammathur/setup-php@v2
         with:
-          php-version: "8.3"
+          php-version: ${{ steps.php.outputs.version }}
           extensions: mbstring, pdo_pgsql, pdo_sqlite, bcmath, intl
           coverage: none
           tools: composer:v2

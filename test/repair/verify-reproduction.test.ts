@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { applyReproductionPatch, detectEnvFailure } from "../../dist/repair/verify-reproduction.js";
+import {
+  applyReproductionPatch,
+  detectEnvFailure,
+  resolvePhpVersion,
+} from "../../dist/repair/verify-reproduction.js";
 import {
   parseReviewReport,
   reportOnlyDecision,
@@ -234,4 +238,30 @@ test("detectEnvFailure does not flag ECONNREFUSED on non-database ports", () => 
   const output = `Error: connect ECONNREFUSED 127.0.0.1:8080`;
 
   assert.equal(detectEnvFailure(output), null);
+});
+
+test("resolvePhpVersion prefers the pinned config.platform.php", () => {
+  assert.equal(
+    resolvePhpVersion({ config: { platform: { php: "8.2.0" } }, require: { php: "^8.1" } }),
+    "8.2",
+  );
+});
+
+test("resolvePhpVersion reads the lower bound of the require.php constraint", () => {
+  assert.equal(resolvePhpVersion({ require: { php: "^8.1" } }), "8.1");
+  assert.equal(resolvePhpVersion({ require: { php: ">=7.4 <8.3" } }), "7.4");
+  assert.equal(resolvePhpVersion({ require: { php: "8.2.*" } }), "8.2");
+  assert.equal(resolvePhpVersion({ require: { php: "~8.1.0" } }), "8.1");
+});
+
+test("resolvePhpVersion treats a bare major constraint as MAJOR.0", () => {
+  assert.equal(resolvePhpVersion({ require: { php: "^8" } }), "8.0");
+});
+
+test("resolvePhpVersion returns null when no concrete PHP requirement exists", () => {
+  assert.equal(resolvePhpVersion({ require: { php: "*" } }), null);
+  assert.equal(resolvePhpVersion({ require: { "ext-json": "*" } }), null);
+  assert.equal(resolvePhpVersion({}), null);
+  assert.equal(resolvePhpVersion(null), null);
+  assert.equal(resolvePhpVersion("not an object"), null);
 });

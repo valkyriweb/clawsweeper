@@ -112,6 +112,34 @@ export function detectEnvFailure(
   return null;
 }
 
+/**
+ * Resolve the PHP minor version (e.g. "8.1") a target repo expects from its
+ * composer.json — preferring the pinned `config.platform.php`, then the lower
+ * bound of the `require.php` constraint (`^8.1`, `>=7.4 <8.3`, `8.2.*`, `~8.1.0`
+ * all reduce to their first declared minor; a bare major like `^8` → `8.0`).
+ * Returns null when no concrete PHP requirement is declared so the caller can
+ * fall back to a default. Keeps the verify-reproduction runner's PHP aligned
+ * with the target's composer.lock instead of a hardcoded pin (#34). Exported
+ * for unit tests + the resolve-php-version CLI used by verify-reproduction.yml.
+ */
+export function resolvePhpVersion(composerJson: unknown): string | null {
+  if (!composerJson || typeof composerJson !== "object") return null;
+  const root = composerJson as Record<string, unknown>;
+  const config = root.config as Record<string, unknown> | undefined;
+  const platform = config?.platform as Record<string, unknown> | undefined;
+  const requireBlock = root.require as Record<string, unknown> | undefined;
+  const pinned = typeof platform?.php === "string" ? platform.php : null;
+  const required = typeof requireBlock?.php === "string" ? requireBlock.php : null;
+  for (const source of [pinned, required]) {
+    if (!source) continue;
+    const minor = source.match(/(\d+)\.(\d+)/);
+    if (minor) return `${minor[1]}.${minor[2]}`;
+    const major = source.match(/\d+/);
+    if (major) return `${major[0]}.0`;
+  }
+  return null;
+}
+
 type VerificationOutcome = {
   status: VerificationStatus;
   verified: boolean;
@@ -123,7 +151,24 @@ type VerificationOutcome = {
 function main() {
   const command = String(args._[0] ?? "run");
   if (command === "run") run();
+  else if (command === "resolve-php-version") resolvePhpVersionCommand();
   else die(`unknown command: ${command}`);
+}
+
+// Print the PHP version a target's composer.json requires (empty when none),
+// for verify-reproduction.yml to feed shivammathur/setup-php. A missing or
+// unparseable composer.json yields no output so the workflow uses its default.
+function resolvePhpVersionCommand() {
+  const composerPath = stringArg("composer");
+  if (!composerPath) die("missing --composer <path to composer.json>");
+  let parsed: unknown = null;
+  try {
+    parsed = JSON.parse(fs.readFileSync(composerPath, "utf8"));
+  } catch {
+    parsed = null;
+  }
+  const version = resolvePhpVersion(parsed);
+  if (version) process.stdout.write(version);
 }
 
 function run() {
