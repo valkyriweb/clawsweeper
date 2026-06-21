@@ -72,7 +72,12 @@ import {
   nextReviewTimeoutEscalated,
   effectiveCodexTimeoutMs,
   codexStartupTimeoutMs,
+  reviewInactivityTimeoutMs,
+  reviewMaxTotalMs,
+  codexTimeoutKind,
   CODEX_STARTUP_TIMEOUT_MS,
+  REVIEW_INACTIVITY_TIMEOUT_MS,
+  REVIEW_MAX_TOTAL_MS,
   REVIEW_TIMEOUT_ESCALATED_MS,
   renderReviewTimeoutComment,
   realBehaviorProofSufficientLabelsForTest,
@@ -3693,7 +3698,7 @@ process.exit(1);
   }
 });
 
-test("runCodex allows a silent in-progress turn until the total timeout", () => {
+test("runCodex aborts a silent in-progress turn via the inactivity watchdog", () => {
   const root = mkdtempSync(tmpPrefix);
   const openclawDir = join(root, "openclaw");
   const workDir = join(root, "codex-work");
@@ -3712,13 +3717,18 @@ setInterval(() => {}, 1000);
   chmodSync(codexPath, 0o755);
   const originalPath = process.env.PATH;
   const originalStartup = process.env.CLAWSWEEPER_CODEX_STARTUP_TIMEOUT_MS;
+  const originalInactivity = process.env.CLAWSWEEPER_REVIEW_INACTIVITY_MS;
+  const originalMaxTotal = process.env.CLAWSWEEPER_REVIEW_MAX_TOTAL_MS;
   process.env.PATH = `${binDir}${delimiter}${process.env.PATH ?? ""}`;
-  // Deterministic margins: under CPU load (parallel builds, small CI runners)
-  // spawning the fake codex node process can take >2s, which previously fired
-  // the startup watchdog before thread.started arrived and made this test flaky.
-  // Keep startup < total so the test still proves initial output cancels the
-  // startup watchdog; only the total timeout should fire after thread.started.
+  // The fake codex emits one chunk (thread.started) then goes permanently
+  // silent. Startup grace (5s) is generous so initial output reliably cancels
+  // it under CPU load; the inactivity watchdog (1s) is the one that must fire,
+  // well before the absolute backstop (8s). Baseline (pre-rework) had no
+  // inactivity timer and only killed at the total cap, so it emits
+  // "total timeout" instead — this test pins the new fail-fast-on-stall model.
   process.env.CLAWSWEEPER_CODEX_STARTUP_TIMEOUT_MS = "5000";
+  process.env.CLAWSWEEPER_REVIEW_INACTIVITY_MS = "1000";
+  process.env.CLAWSWEEPER_REVIEW_MAX_TOTAL_MS = "8000";
   try {
     assert.throws(
       () =>
@@ -3731,7 +3741,7 @@ setInterval(() => {}, 1000);
           reasoningEffort: "low",
           sandboxMode: "read-only",
           serviceTier: "",
-          timeoutMs: 8000,
+          timeoutMs: 2000,
           workDir,
           prompt: "Return a review decision.",
         }),
@@ -3740,13 +3750,168 @@ setInterval(() => {}, 1000);
     const stdout = readFileSync(join(workDir, "144.codex.stdout.log"), "utf8");
     const stderr = readFileSync(join(workDir, "144.codex.stderr.log"), "utf8");
     assert.match(stdout, /thread\.started/);
-    assert.match(stderr, /codex total timeout after 8000ms/);
-    assert.doesNotMatch(stderr, /codex startup timeout/);
+    assert.match(stderr, /codex inactivity timeout after 1000ms/);
+    assert.doesNotMatch(stderr, /codex (startup|backstop) timeout/);
   } finally {
     if (originalPath === undefined) delete process.env.PATH;
     else process.env.PATH = originalPath;
     if (originalStartup === undefined) delete process.env.CLAWSWEEPER_CODEX_STARTUP_TIMEOUT_MS;
     else process.env.CLAWSWEEPER_CODEX_STARTUP_TIMEOUT_MS = originalStartup;
+    if (originalInactivity === undefined) delete process.env.CLAWSWEEPER_REVIEW_INACTIVITY_MS;
+    else process.env.CLAWSWEEPER_REVIEW_INACTIVITY_MS = originalInactivity;
+    if (originalMaxTotal === undefined) delete process.env.CLAWSWEEPER_REVIEW_MAX_TOTAL_MS;
+    else process.env.CLAWSWEEPER_REVIEW_MAX_TOTAL_MS = originalMaxTotal;
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("runCodex lets a long but actively-streaming review run past the old total cap", () => {
+  const root = mkdtempSync(tmpPrefix);
+  const openclawDir = join(root, "openclaw");
+  const workDir = join(root, "codex-work");
+  const binDir = join(root, "bin");
+  mkdirSync(openclawDir, { recursive: true });
+  mkdirSync(binDir, { recursive: true });
+  execFileSync("git", ["init"], { cwd: openclawDir, stdio: "ignore" });
+  const codexPath = join(binDir, "codex");
+  // Heartbeat every 300ms (< the 1s inactivity window) for ~1.8s — comfortably
+  // past the 1s old total cap (timeoutMs below) — then write a valid decision
+  // and exit 0. Pre-rework the hard total cap killed this mid-stream; under the
+  // inactivity model a steadily-streaming review must survive to completion.
+  writeFileSync(
+    codexPath,
+    `#!/usr/bin/env node
+const fs = require("node:fs");
+const outputIndex = process.argv.indexOf("--output-last-message");
+if (outputIndex === -1) process.exit(2);
+let ticks = 0;
+const timer = setInterval(() => {
+  ticks += 1;
+  console.log(JSON.stringify({ type: "item.progress", tick: ticks }));
+  if (ticks >= 6) {
+    clearInterval(timer);
+    fs.writeFileSync(process.argv[outputIndex + 1], process.env.CODEX_DECISION_JSON);
+    process.exit(0);
+  }
+}, 300);
+`,
+  );
+  chmodSync(codexPath, 0o755);
+  const originalPath = process.env.PATH;
+  const originalStartup = process.env.CLAWSWEEPER_CODEX_STARTUP_TIMEOUT_MS;
+  const originalInactivity = process.env.CLAWSWEEPER_REVIEW_INACTIVITY_MS;
+  const originalMaxTotal = process.env.CLAWSWEEPER_REVIEW_MAX_TOTAL_MS;
+  const originalDecision = process.env.CODEX_DECISION_JSON;
+  process.env.PATH = `${binDir}${delimiter}${process.env.PATH ?? ""}`;
+  process.env.CLAWSWEEPER_CODEX_STARTUP_TIMEOUT_MS = "5000";
+  process.env.CLAWSWEEPER_REVIEW_INACTIVITY_MS = "1000";
+  process.env.CLAWSWEEPER_REVIEW_MAX_TOTAL_MS = "10000";
+  process.env.CODEX_DECISION_JSON = JSON.stringify(
+    closeDecision({
+      decision: "keep_open",
+      closeReason: "none",
+      confidence: "medium",
+      summary: "Active review finished after streaming for a while.",
+      bestSolution: "Review the routing invariant.",
+      closeComment: "",
+      workReason: "Maintainer review is required.",
+    }),
+  );
+  try {
+    const decision = runCodexForTest({
+      item: item({ number: 146 }),
+      context: { issue: {}, comments: [], timeline: [] },
+      git: { mainSha: "abc123", latestRelease: null },
+      model: "gpt-test",
+      openclawDir,
+      reasoningEffort: "low",
+      sandboxMode: "read-only",
+      serviceTier: "",
+      timeoutMs: 1000,
+      workDir,
+      prompt: "Return a review decision.",
+    });
+    assert.equal(decision.decision, "keep_open");
+    assert.equal(decision.summary, "Active review finished after streaming for a while.");
+    const stderr = readFileSync(join(workDir, "146.codex.stderr.log"), "utf8");
+    assert.doesNotMatch(stderr, /codex (startup|inactivity|backstop|total) timeout/);
+  } finally {
+    if (originalPath === undefined) delete process.env.PATH;
+    else process.env.PATH = originalPath;
+    if (originalStartup === undefined) delete process.env.CLAWSWEEPER_CODEX_STARTUP_TIMEOUT_MS;
+    else process.env.CLAWSWEEPER_CODEX_STARTUP_TIMEOUT_MS = originalStartup;
+    if (originalInactivity === undefined) delete process.env.CLAWSWEEPER_REVIEW_INACTIVITY_MS;
+    else process.env.CLAWSWEEPER_REVIEW_INACTIVITY_MS = originalInactivity;
+    if (originalMaxTotal === undefined) delete process.env.CLAWSWEEPER_REVIEW_MAX_TOTAL_MS;
+    else process.env.CLAWSWEEPER_REVIEW_MAX_TOTAL_MS = originalMaxTotal;
+    if (originalDecision === undefined) delete process.env.CODEX_DECISION_JSON;
+    else process.env.CODEX_DECISION_JSON = originalDecision;
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("runCodex backstop aborts a review that keeps emitting but never finishes", () => {
+  const root = mkdtempSync(tmpPrefix);
+  const openclawDir = join(root, "openclaw");
+  const workDir = join(root, "codex-work");
+  const binDir = join(root, "bin");
+  mkdirSync(openclawDir, { recursive: true });
+  mkdirSync(binDir, { recursive: true });
+  execFileSync("git", ["init"], { cwd: openclawDir, stdio: "ignore" });
+  const codexPath = join(binDir, "codex");
+  // Never idle (200ms heartbeat) and never exits: a runaway emit loop the
+  // inactivity timer can't catch. Only the absolute backstop should stop it.
+  writeFileSync(
+    codexPath,
+    `#!/usr/bin/env node
+console.log(JSON.stringify({ type: "thread.started", thread_id: "runaway" }));
+setInterval(() => {
+  console.log(JSON.stringify({ type: "item.progress" }));
+}, 200);
+`,
+  );
+  chmodSync(codexPath, 0o755);
+  const originalPath = process.env.PATH;
+  const originalStartup = process.env.CLAWSWEEPER_CODEX_STARTUP_TIMEOUT_MS;
+  const originalInactivity = process.env.CLAWSWEEPER_REVIEW_INACTIVITY_MS;
+  const originalMaxTotal = process.env.CLAWSWEEPER_REVIEW_MAX_TOTAL_MS;
+  process.env.PATH = `${binDir}${delimiter}${process.env.PATH ?? ""}`;
+  // Inactivity is high so the 200ms heartbeat keeps resetting it; the low
+  // backstop is the only timer that can fire. Baseline had no backstop and
+  // killed at the total cap (timeoutMs) with a "total timeout" marker instead.
+  process.env.CLAWSWEEPER_CODEX_STARTUP_TIMEOUT_MS = "5000";
+  process.env.CLAWSWEEPER_REVIEW_INACTIVITY_MS = "10000";
+  process.env.CLAWSWEEPER_REVIEW_MAX_TOTAL_MS = "1500";
+  try {
+    assert.throws(
+      () =>
+        runCodexForTest({
+          item: item({ number: 147 }),
+          context: { issue: {}, comments: [], timeline: [] },
+          git: { mainSha: "abc123", latestRelease: null },
+          model: "gpt-test",
+          openclawDir,
+          reasoningEffort: "low",
+          sandboxMode: "read-only",
+          serviceTier: "",
+          timeoutMs: 1500,
+          workDir,
+          prompt: "Return a review decision.",
+        }),
+      /ETIMEDOUT/,
+    );
+    const stderr = readFileSync(join(workDir, "147.codex.stderr.log"), "utf8");
+    assert.match(stderr, /codex backstop timeout after 1500ms/);
+    assert.doesNotMatch(stderr, /codex (startup|inactivity) timeout/);
+  } finally {
+    if (originalPath === undefined) delete process.env.PATH;
+    else process.env.PATH = originalPath;
+    if (originalStartup === undefined) delete process.env.CLAWSWEEPER_CODEX_STARTUP_TIMEOUT_MS;
+    else process.env.CLAWSWEEPER_CODEX_STARTUP_TIMEOUT_MS = originalStartup;
+    if (originalInactivity === undefined) delete process.env.CLAWSWEEPER_REVIEW_INACTIVITY_MS;
+    else process.env.CLAWSWEEPER_REVIEW_INACTIVITY_MS = originalInactivity;
+    if (originalMaxTotal === undefined) delete process.env.CLAWSWEEPER_REVIEW_MAX_TOTAL_MS;
+    else process.env.CLAWSWEEPER_REVIEW_MAX_TOTAL_MS = originalMaxTotal;
     rmSync(root, { recursive: true, force: true });
   }
 });
@@ -5036,6 +5201,44 @@ test("codexStartupTimeoutMs defaults to the production startup watchdog and acce
   }
 });
 
+test("reviewInactivityTimeoutMs defaults to the production inactivity watchdog and accepts test override", () => {
+  const original = process.env.CLAWSWEEPER_REVIEW_INACTIVITY_MS;
+  try {
+    delete process.env.CLAWSWEEPER_REVIEW_INACTIVITY_MS;
+    assert.equal(reviewInactivityTimeoutMs(), REVIEW_INACTIVITY_TIMEOUT_MS);
+    process.env.CLAWSWEEPER_REVIEW_INACTIVITY_MS = "1234";
+    assert.equal(reviewInactivityTimeoutMs(), 1234);
+    process.env.CLAWSWEEPER_REVIEW_INACTIVITY_MS = "0";
+    assert.equal(reviewInactivityTimeoutMs(), REVIEW_INACTIVITY_TIMEOUT_MS);
+    process.env.CLAWSWEEPER_REVIEW_INACTIVITY_MS = "not-a-number";
+    assert.equal(reviewInactivityTimeoutMs(), REVIEW_INACTIVITY_TIMEOUT_MS);
+  } finally {
+    if (original === undefined) delete process.env.CLAWSWEEPER_REVIEW_INACTIVITY_MS;
+    else process.env.CLAWSWEEPER_REVIEW_INACTIVITY_MS = original;
+  }
+});
+
+test("reviewMaxTotalMs prefers an explicit override and otherwise floors at the per-item budget", () => {
+  const original = process.env.CLAWSWEEPER_REVIEW_MAX_TOTAL_MS;
+  try {
+    delete process.env.CLAWSWEEPER_REVIEW_MAX_TOTAL_MS;
+    // No override: generous default, never below the caller's per-item budget.
+    assert.equal(reviewMaxTotalMs(600_000), REVIEW_MAX_TOTAL_MS);
+    assert.equal(reviewMaxTotalMs(REVIEW_MAX_TOTAL_MS + 60_000), REVIEW_MAX_TOTAL_MS + 60_000);
+    // Explicit override wins exactly.
+    process.env.CLAWSWEEPER_REVIEW_MAX_TOTAL_MS = "4321";
+    assert.equal(reviewMaxTotalMs(600_000), 4321);
+    // Invalid / non-positive override falls back to the floored default.
+    process.env.CLAWSWEEPER_REVIEW_MAX_TOTAL_MS = "nope";
+    assert.equal(reviewMaxTotalMs(600_000), REVIEW_MAX_TOTAL_MS);
+    process.env.CLAWSWEEPER_REVIEW_MAX_TOTAL_MS = "0";
+    assert.equal(reviewMaxTotalMs(600_000), REVIEW_MAX_TOTAL_MS);
+  } finally {
+    if (original === undefined) delete process.env.CLAWSWEEPER_REVIEW_MAX_TOTAL_MS;
+    else process.env.CLAWSWEEPER_REVIEW_MAX_TOTAL_MS = original;
+  }
+});
+
 function claudeOptionsForTest(
   overrides: Partial<Parameters<typeof runClaude>[0]> = {},
 ): Parameters<typeof runClaude>[0] {
@@ -5547,6 +5750,27 @@ test("isCodexTimeoutError flags spawnSync ETIMEDOUT and 'timed out' messages", (
   assert.equal(isCodexTimeoutError("Rate limit reached for gpt-5.5 on tokens per min"), false);
   assert.equal(isCodexTimeoutError(undefined), false);
   assert.equal(isCodexTimeoutError(null), false);
+});
+
+test("codexTimeoutKind sub-classifies watchdog timeout markers", () => {
+  assert.equal(
+    codexTimeoutKind(
+      "[clawsweeper] codex startup timeout after 60000ms with no stdout/stderr output",
+    ),
+    "startup",
+  );
+  assert.equal(
+    codexTimeoutKind(
+      "[clawsweeper] codex inactivity timeout after 120000ms with no stdout/stderr output",
+    ),
+    "inactivity",
+  );
+  assert.equal(
+    codexTimeoutKind("[clawsweeper] codex backstop timeout after 2700000ms"),
+    "backstop",
+  );
+  assert.equal(codexTimeoutKind("spawnSync codex ETIMEDOUT after 5000ms"), "unknown");
+  assert.equal(codexTimeoutKind(""), "unknown");
 });
 
 // =====================================================================

@@ -4511,6 +4511,20 @@ export function isCodexTimeoutError(value: unknown): boolean {
   return /\bETIMEDOUT\b|\btimed out\b/i.test(message);
 }
 
+export type CodexTimeoutKind = "startup" | "inactivity" | "backstop" | "unknown";
+
+// Sub-classifies a Codex timeout from the watchdog stderr markers so telemetry
+// and operators can tell *why* a review was killed: startup (no first output),
+// inactivity (went silent mid-review), or backstop (ran past the absolute cap).
+// All three still classify as "timeout" upstream (keep_open/low fallback) — this
+// is a finer-grained reason, not a new outcome.
+export function codexTimeoutKind(stderr: string): CodexTimeoutKind {
+  if (/codex startup timeout/i.test(stderr)) return "startup";
+  if (/codex inactivity timeout/i.test(stderr)) return "inactivity";
+  if (/codex backstop timeout/i.test(stderr)) return "backstop";
+  return "unknown";
+}
+
 // Per-item Codex timeout escalator (slice B).
 //
 // Outlier items that exhaust the shard-wide cap (default 600s) get exactly
@@ -4519,6 +4533,17 @@ export function isCodexTimeoutError(value: unknown): boolean {
 // it again until a successful review clears the failure state.
 export const REVIEW_TIMEOUT_ESCALATED_MS = 1_200_000;
 export const CODEX_STARTUP_TIMEOUT_MS = 60_000;
+// Inactivity (idle) watchdog: kill a review subprocess that emits NO stdout or
+// stderr for this long. This is the primary stall detector — a slow-but-active
+// review runs as long as it keeps streaming, and only a genuinely silent
+// (wedged) review is killed, fast. Override: CLAWSWEEPER_REVIEW_INACTIVITY_MS.
+export const REVIEW_INACTIVITY_TIMEOUT_MS = 120_000;
+// Absolute backstop: kill even a continuously-emitting review after this long.
+// A pure inactivity timer can't catch a runaway that keeps printing, so this is
+// the guardrail against an endless emit loop. Deliberately generous (45m) so it
+// almost never fires for a legitimate long review; inactivity is what should
+// normally trip first. Override: CLAWSWEEPER_REVIEW_MAX_TOTAL_MS.
+export const REVIEW_MAX_TOTAL_MS = 2_700_000;
 
 export type ReviewFailureReason = "none" | "timeout" | "other";
 
@@ -4584,6 +4609,26 @@ export function codexStartupTimeoutMs(): number {
   if (!raw) return CODEX_STARTUP_TIMEOUT_MS;
   const value = Number.parseInt(raw, 10);
   return Number.isFinite(value) && value > 0 ? value : CODEX_STARTUP_TIMEOUT_MS;
+}
+
+export function reviewInactivityTimeoutMs(): number {
+  const raw = process.env.CLAWSWEEPER_REVIEW_INACTIVITY_MS;
+  if (!raw) return REVIEW_INACTIVITY_TIMEOUT_MS;
+  const value = Number.parseInt(raw, 10);
+  return Number.isFinite(value) && value > 0 ? value : REVIEW_INACTIVITY_TIMEOUT_MS;
+}
+
+// Absolute backstop in ms. An explicit CLAWSWEEPER_REVIEW_MAX_TOTAL_MS override
+// wins; otherwise default to the generous REVIEW_MAX_TOTAL_MS but never below the
+// caller's configured per-item budget, so a deliberately long --codex-timeout-ms
+// still raises (never lowers) the backstop.
+export function reviewMaxTotalMs(baseTimeoutMs: number): number {
+  const raw = process.env.CLAWSWEEPER_REVIEW_MAX_TOTAL_MS;
+  if (raw) {
+    const value = Number.parseInt(raw, 10);
+    if (Number.isFinite(value) && value > 0) return value;
+  }
+  return Math.max(baseTimeoutMs, REVIEW_MAX_TOTAL_MS);
 }
 
 function reviewTimeoutCommentMarker(number: number): string {
@@ -5672,7 +5717,8 @@ function runCodexWithStartupWatchdog(options: {
   cwd: string;
   env: NodeJS.ProcessEnv;
   input: string;
-  timeoutMs: number;
+  inactivityMs: number;
+  maxTotalMs: number;
   startupTimeoutMs: number;
 }): CodexWatchdogResult {
   const helper = String.raw`
@@ -5692,18 +5738,30 @@ function killChild(signal) {
     try { child.kill(signal); } catch {}
   }
 }
+let inactivityTimer = null;
 function finish(code) {
   if (settled) return;
   settled = true;
-  clearTimeout(totalTimer);
   clearTimeout(startupTimer);
+  clearTimeout(backstopTimer);
+  if (inactivityTimer) clearTimeout(inactivityTimer);
   process.exitCode = code;
 }
 let sawOutput = false;
-function noteOutput() {
-  if (sawOutput) return;
-  sawOutput = true;
-  clearTimeout(startupTimer);
+function noteActivity() {
+  if (!sawOutput) {
+    sawOutput = true;
+    clearTimeout(startupTimer);
+  }
+  if (inactivityTimer) clearTimeout(inactivityTimer);
+  inactivityTimer = setTimeout(() => {
+    stderr += "\n[clawsweeper] codex inactivity timeout after " + request.inactivityMs + "ms with no stdout/stderr output\n";
+    process.stderr.write("\n[clawsweeper] codex inactivity timeout after " + request.inactivityMs + "ms with no stdout/stderr output\n");
+    killChild("SIGTERM");
+    setTimeout(() => killChild("SIGKILL"), 5000).unref();
+    finish(124);
+  }, request.inactivityMs);
+  inactivityTimer.unref();
 }
 const startupTimer = setTimeout(() => {
   stderr += "\n[clawsweeper] codex startup timeout after " + request.startupTimeoutMs + "ms with no stdout/stderr output\n";
@@ -5713,14 +5771,14 @@ const startupTimer = setTimeout(() => {
   finish(124);
 }, request.startupTimeoutMs);
 startupTimer.unref();
-const totalTimer = setTimeout(() => {
-  stderr += "\n[clawsweeper] codex total timeout after " + request.timeoutMs + "ms\n";
-  process.stderr.write("\n[clawsweeper] codex total timeout after " + request.timeoutMs + "ms\n");
+const backstopTimer = setTimeout(() => {
+  stderr += "\n[clawsweeper] codex backstop timeout after " + request.maxTotalMs + "ms\n";
+  process.stderr.write("\n[clawsweeper] codex backstop timeout after " + request.maxTotalMs + "ms\n");
   killChild("SIGTERM");
   setTimeout(() => killChild("SIGKILL"), 5000).unref();
   finish(124);
-}, request.timeoutMs);
-totalTimer.unref();
+}, request.maxTotalMs);
+backstopTimer.unref();
 try {
   child = spawn("codex", request.args, {
     cwd: request.cwd,
@@ -5737,13 +5795,13 @@ child.stdout.on("data", (chunk) => {
   const text = chunk.toString("utf8");
   stdout += text;
   process.stdout.write(text);
-  noteOutput();
+  noteActivity();
 });
 child.stderr.on("data", (chunk) => {
   const text = chunk.toString("utf8");
   stderr += text;
   process.stderr.write(text);
-  noteOutput();
+  noteActivity();
 });
 child.on("error", (error) => {
   stderr += String(error && error.message ? error.message : error);
@@ -5763,7 +5821,7 @@ child.stdin.end(request.input);
     encoding: "utf8",
     input: JSON.stringify(options),
     maxBuffer: 128 * 1024 * 1024,
-    timeout: options.timeoutMs + 10_000,
+    timeout: options.maxTotalMs + 10_000,
   });
   const normalized: CodexWatchdogResult = {
     status: result.status,
@@ -5771,7 +5829,10 @@ child.stdin.end(request.input);
     stderr: result.stderr ?? "",
   };
   if (result.error) normalized.error = result.error as Error & { code?: string };
-  if (normalized.status === 124 && /codex (startup|total) timeout/i.test(normalized.stderr)) {
+  if (
+    normalized.status === 124 &&
+    /codex (startup|inactivity|backstop) timeout/i.test(normalized.stderr)
+  ) {
     normalized.error = Object.assign(
       new Error(`spawnSync codex ETIMEDOUT after ${Date.now() - startedAt}ms`),
       { code: "ETIMEDOUT" },
@@ -5829,8 +5890,10 @@ function runCodex(options: {
   ];
   if (options.serviceTier) codexConfig.splice(1, 0, `service_tier="${options.serviceTier}"`);
   const startupTimeoutMs = codexStartupTimeoutMs();
+  const inactivityMs = reviewInactivityTimeoutMs();
+  const maxTotalMs = reviewMaxTotalMs(options.timeoutMs);
   console.error(
-    `[review] ${new Date().toISOString()} codex-streaming-watchdog #${options.item.number} startup_ms=${startupTimeoutMs} total_ms=${options.timeoutMs}`,
+    `[review] ${new Date().toISOString()} codex-streaming-watchdog #${options.item.number} startup_ms=${startupTimeoutMs} inactivity_ms=${inactivityMs} backstop_ms=${maxTotalMs}`,
   );
   const startedAt = Date.now();
   const result = runCodexWithStartupWatchdog({
@@ -5858,7 +5921,8 @@ function runCodex(options: {
       CLAWSWEEPER_PROOF_SCRATCH_DIR: proofScratchDir,
     },
     input: prompt,
-    timeoutMs: options.timeoutMs,
+    inactivityMs,
+    maxTotalMs,
     startupTimeoutMs,
   });
   const elapsedMs = Date.now() - startedAt;
@@ -5936,10 +6000,22 @@ function runCodex(options: {
   if (result.error) {
     const timedOut = (result.error as NodeJS.ErrnoException).code === "ETIMEDOUT";
     emitUsage(timedOut ? "timeout" : "failed");
-    const failureMessage =
-      timedOut && /codex startup timeout/i.test(result.stderr)
-        ? `startup watchdog fired after ${startupTimeoutMs}ms with no initial Codex output`
-        : result.error.message;
+    let failureMessage = result.error.message;
+    if (timedOut) {
+      const kind = codexTimeoutKind(result.stderr);
+      console.error(
+        `[review] ${new Date().toISOString()} codex-timeout #${options.item.number} kind=${kind} startup_ms=${startupTimeoutMs} inactivity_ms=${inactivityMs} backstop_ms=${maxTotalMs}`,
+      );
+      // Startup failures keep their distinct message (codex never produced any
+      // output). Inactivity/backstop kills fall through to the raw ETIMEDOUT
+      // message so isCodexTimeoutError / codexFailureReason still classify them
+      // as "timeout" (keep_open/low fallback) — the same path as the old total
+      // timeout they replace. The specific kind is in the stderr tail + the log
+      // line above (and codexTimeoutKind()).
+      if (kind === "startup") {
+        failureMessage = `startup watchdog fired after ${startupTimeoutMs}ms with no initial Codex output`;
+      }
+    }
     throw new Error(
       `Codex review failed for #${options.item.number}: ${failureMessage}\n${
         safeOutputTail(result.stderr) || safeOutputTail(result.stdout) || "No output."

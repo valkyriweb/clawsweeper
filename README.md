@@ -271,8 +271,13 @@ Review is proposal-only. It never closes items.
 - Manual runs can pass `item_number` or comma-separated `item_numbers` to review
   exact Audit Health findings without scanning for a normal batch.
 - Each shard checks out the selected target repository at `main`.
-- Codex reviews with `gpt-5.5`, high reasoning, the default service tier, and a
-  10-minute per-item timeout.
+- Codex reviews with `gpt-5.5`, high reasoning, the default service tier, and an
+  activity-based watchdog. A review is aborted only if Codex goes silent for the
+  inactivity window (default 2m, `CLAWSWEEPER_REVIEW_INACTIVITY_MS`) or runs past
+  a generous absolute backstop (default 45m, `CLAWSWEEPER_REVIEW_MAX_TOTAL_MS`),
+  with a separate startup grace for a process that never emits (default 1m,
+  `CLAWSWEEPER_CODEX_STARTUP_TIMEOUT_MS`). A slow-but-streaming review runs to
+  completion; only a stalled (no-output) review is killed quickly.
 - Each item becomes a flat report under
   `records/<repo-slug>/items/<number>.md` with the decision, evidence,
   Codex `/review`-style PR findings, suggested comment, runtime metadata, and
