@@ -3965,6 +3965,174 @@ setInterval(() => {}, 1000);
   }
 });
 
+// =====================================================================
+// runClaudeCode / runPi streaming activity-watchdog (#75 PR-2)
+//
+// claude-code and pi now route through the SAME inactivity/backstop watchdog as
+// codex (runCliWithActivityWatchdog via the default watchdogSpawnFn) instead of
+// a plain spawnSync total timeout. Each test drives a fake `claude`/`pi` CLI on
+// PATH (no injected spawnFn) so the REAL watchdog subprocess runs. The fake
+// emits heartbeats to STDERR so STDOUT stays a clean provider envelope, and
+// writes its success envelope with a write-callback exit so stdout flushes
+// before the process exits.
+//
+// Baseline (pre-PR-2, plain spawnSync timeout) fails every case below:
+//   - inactivity/backstop: the old code had no idle/runaway timer, so the fake
+//     ran to a successful finish instead of being killed (no throw);
+//   - survive: the old hard total cap killed the still-streaming fake at the
+//     low per-item timeout (threw instead of returning a Decision).
+// =====================================================================
+
+function writeWatchdogFakeCli(path: string, provider: "claude" | "pi"): void {
+  const emitSuccess =
+    provider === "claude"
+      ? `process.stdout.write(JSON.stringify({ type: "result", is_error: false, result: process.env.FAKE_DECISION_JSON }), () => process.exit(0));`
+      : `process.stdout.write(JSON.stringify({ text: process.env.FAKE_DECISION_JSON }) + "\\n", () => process.exit(0));`;
+  writeFileSync(
+    path,
+    `#!/usr/bin/env node
+process.stdin.on("data", () => {});
+const mode = process.env.FAKE_MODE;
+const hb = () => process.stderr.write("[fake] heartbeat\\n");
+function emitSuccess() { ${emitSuccess} }
+if (mode === "inactivity") {
+  // One chunk, then permanently silent until a late would-be-successful finish:
+  // the inactivity timer must fire long before that 3s finish.
+  hb();
+  setTimeout(emitSuccess, 3000);
+} else if (mode === "survive") {
+  // Steadily streaming (200ms heartbeat) past the low total cap, then succeeds.
+  let n = 0;
+  const t = setInterval(() => { hb(); if (++n >= 6) { clearInterval(t); emitSuccess(); } }, 200);
+} else if (mode === "backstop") {
+  // Never idle (150ms heartbeat) so only the absolute backstop — not inactivity
+  // — can stop it; the success finish (3s) is later than the backstop.
+  setInterval(hb, 150);
+  setTimeout(emitSuccess, 3000);
+} else {
+  emitSuccess();
+}
+`,
+  );
+  chmodSync(path, 0o755);
+}
+
+function withWatchdogFakeCli(
+  provider: "claude" | "pi",
+  env: Record<string, string | undefined>,
+  body: (ctx: { openclawDir: string; workDir: string }) => void,
+): void {
+  const root = mkdtempSync(tmpPrefix);
+  const openclawDir = join(root, "openclaw");
+  const workDir = join(root, `${provider}-work`);
+  const binDir = join(root, "bin");
+  mkdirSync(openclawDir, { recursive: true });
+  mkdirSync(binDir, { recursive: true });
+  writeWatchdogFakeCli(join(binDir, provider), provider);
+  const saved: Record<string, string | undefined> = { PATH: process.env.PATH };
+  process.env.PATH = `${binDir}${delimiter}${process.env.PATH ?? ""}`;
+  for (const [key, value] of Object.entries(env)) {
+    saved[key] = process.env[key];
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+  try {
+    body({ openclawDir, workDir });
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function watchdogReviewOptions(
+  provider: "claude" | "pi",
+  openclawDir: string,
+  workDir: string,
+  timeoutMs: number,
+): Parameters<typeof runClaudeCode>[0] {
+  return {
+    item: item({ number: provider === "claude" ? 75201 : 75301 }) as never,
+    context: {} as never,
+    git: {} as never,
+    model: provider === "claude" ? "claude-sonnet-4-6" : "pi-test",
+    openclawDir,
+    reasoningEffort: "low",
+    sandboxMode: "read-only",
+    serviceTier: "",
+    timeoutMs,
+    workDir,
+    prompt: "Return a review decision.",
+  };
+}
+
+for (const provider of ["claude", "pi"] as const) {
+  const run = provider === "claude" ? runClaudeCode : runPi;
+  const label = provider === "claude" ? "runClaudeCode" : "runPi";
+
+  test(`${label} kills a review that goes silent mid-stream via the inactivity watchdog`, () => {
+    withWatchdogFakeCli(
+      provider,
+      {
+        FAKE_MODE: "inactivity",
+        FAKE_DECISION_JSON: JSON.stringify(closeDecision()),
+        CLAWSWEEPER_REVIEW_INACTIVITY_MS: "800",
+        CLAWSWEEPER_REVIEW_MAX_TOTAL_MS: "8000",
+      },
+      ({ openclawDir, workDir }) => {
+        // New: inactivity (800ms) kills the silent turn before its 3s finish.
+        // Baseline: the 10s total cap let it run to a successful finish.
+        assert.throws(
+          () => run(watchdogReviewOptions(provider, openclawDir, workDir, 10_000)),
+          /timed out after/,
+        );
+      },
+    );
+  });
+
+  test(`${label} lets a long but actively-streaming review run past the old total cap`, () => {
+    withWatchdogFakeCli(
+      provider,
+      {
+        FAKE_MODE: "survive",
+        FAKE_DECISION_JSON: JSON.stringify(closeDecision()),
+        CLAWSWEEPER_REVIEW_INACTIVITY_MS: "2000",
+        CLAWSWEEPER_REVIEW_MAX_TOTAL_MS: "15000",
+      },
+      ({ openclawDir, workDir }) => {
+        // New: a steadily-streaming review survives well past the 700ms per-item
+        // cap (inactivity never trips, backstop is generous) and returns a
+        // Decision. Baseline: the hard 700ms total cap killed it mid-stream.
+        const decision = run(watchdogReviewOptions(provider, openclawDir, workDir, 700));
+        assert.equal(decision.decision, "close");
+      },
+    );
+  });
+
+  test(`${label} backstop aborts a review that keeps emitting but never finishes in time`, () => {
+    withWatchdogFakeCli(
+      provider,
+      {
+        FAKE_MODE: "backstop",
+        FAKE_DECISION_JSON: JSON.stringify(closeDecision()),
+        CLAWSWEEPER_REVIEW_INACTIVITY_MS: "10000",
+        CLAWSWEEPER_REVIEW_MAX_TOTAL_MS: "1200",
+      },
+      ({ openclawDir, workDir }) => {
+        // New: the never-idle review is stopped by the 1.2s backstop before its
+        // 3s finish (inactivity is held off by the 150ms heartbeat). Baseline:
+        // no backstop existed, so the 10s total cap let it finish successfully.
+        assert.throws(
+          () => run(watchdogReviewOptions(provider, openclawDir, workDir, 10_000)),
+          /timed out after/,
+        );
+      },
+    );
+  });
+}
+
 test("decision parser enforces required schema-shaped evidence", () => {
   assert.equal(parseDecision(closeDecision()).decision, "close");
   assert.equal(parseDecision(closeDecision({ itemCategory: "skill" })).itemCategory, "skill");
