@@ -4501,7 +4501,9 @@ test("commit review workflow settles and reviews from the target's configured br
   assert.match(workflow, /sleep "\$SETTLE_SECONDS"/);
   // The accepted branch is resolved per target (default refs/heads/main) and
   // threaded through the gate, fetch, and checkout instead of being hardcoded.
-  assert.match(workflow, /commit-review-ref "\$TARGET_REPO"/);
+  // The CLI takes the repo via --target-repo (same shape as review-provider);
+  // a positional arg silently resolves to nothing and breaks the gate.
+  assert.match(workflow, /commit-review-ref --target-repo "\$TARGET_REPO"/);
   assert.match(workflow, /BRANCH="\$\{ALLOWED_REF#refs\/heads\/\}"/);
   assert.match(workflow, /Check out target branch/);
   assert.match(workflow, /checkout -B "\$BRANCH" "refs\/remotes\/origin\/\$BRANCH"/);
