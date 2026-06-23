@@ -28,6 +28,28 @@ test("commitReviewRefForTarget returns the per-target override or the main defau
   assert.equal(commitReviewRefForTarget("valkyriweb/pi-mono"), "refs/heads/main");
 });
 
+test("commit-review-ref CLI resolves the target via --target-repo, as the workflow invokes it", () => {
+  // commit-review.yml calls `workflow -- commit-review-ref --target-repo "$TARGET_REPO"`.
+  // A positional arg parses to no target and exits non-zero, which is exactly the
+  // failure that broke paperclip's commit-review gate after the per-target ref shipped.
+  const output = execFileSync(
+    process.execPath,
+    ["dist/repair/workflow-utils.js", "commit-review-ref", "--target-repo", "valkyriweb/paperclip"],
+    { cwd: process.cwd(), encoding: "utf8" },
+  );
+  assert.equal(output, "refs/heads/bermont");
+
+  assert.throws(
+    () =>
+      execFileSync(
+        process.execPath,
+        ["dist/repair/workflow-utils.js", "commit-review-ref", "valkyriweb/paperclip"],
+        { cwd: process.cwd(), encoding: "utf8", stdio: "pipe" },
+      ),
+    /--target-repo is required/,
+  );
+});
+
 test("workflow utilities expose automation limits", () => {
   assert.equal(
     automationLimit("review_shards.normal_default"),

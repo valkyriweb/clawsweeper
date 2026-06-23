@@ -185,7 +185,7 @@ jobs:
           # Resolve the branch this target ships from (default refs/heads/main).
           # Emitted before the enabled-gate early-exit so review/publish always
           # see it; manual dispatch (no client_payload.ref) trusts this ref.
-          ALLOWED_REF="$(pnpm --dir clawsweeper run --silent workflow -- commit-review-ref "$TARGET_REPO")"
+          ALLOWED_REF="$(pnpm --dir clawsweeper run --silent workflow -- commit-review-ref --target-repo "$TARGET_REPO")"
           BRANCH="${ALLOWED_REF#refs/heads/}"
           echo "commit_review_ref=$ALLOWED_REF" >> "$GITHUB_OUTPUT"
           if [ -z "$SOURCE_REF" ]; then
