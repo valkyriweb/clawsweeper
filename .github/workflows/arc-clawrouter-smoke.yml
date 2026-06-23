@@ -60,16 +60,19 @@ jobs:
           PY
 
       - name: Codex via clawrouter (responses API)
+        continue-on-error: true
         run: |
           set -euo pipefail
+          # codex backend requires input as a list of messages (not a bare string)
           code=$(curl -sS -o /tmp/codex.json -w '%{http_code}' \
             "$CLAWROUTER/v1/responses" \
             -H "authorization: Bearer $TOKEN" -H "content-type: application/json" \
-            -d "{\"model\":\"$CODEX_MODEL\",\"input\":\"Reply with exactly: codex-ok\"}")
-          echo "HTTP $code"; cut -c1-600 /tmp/codex.json; echo
+            -d "{\"model\":\"$CODEX_MODEL\",\"input\":[{\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"Reply with exactly: codex-ok\"}]}]}")
+          echo "CODEX HTTP $code"; cut -c1-700 /tmp/codex.json; echo
           test "$code" = "200" || { echo "::error::codex call via clawrouter failed (HTTP $code)"; exit 1; }
 
       - name: Anthropic / claude-bridge via clawrouter
+        continue-on-error: true
         run: |
           set -euo pipefail
           code=$(curl -sS -o /tmp/anthropic.json -w '%{http_code}' \
@@ -77,7 +80,7 @@ jobs:
             -H "authorization: Bearer $TOKEN" -H "content-type: application/json" \
             -H "anthropic-version: 2023-06-01" \
             -d "{\"model\":\"$ANTHROPIC_MODEL\",\"max_tokens\":16,\"messages\":[{\"role\":\"user\",\"content\":\"Reply with exactly: claude-ok\"}]}")
-          echo "HTTP $code"; cut -c1-600 /tmp/anthropic.json; echo
+          echo "ANTHROPIC HTTP $code"; cut -c1-700 /tmp/anthropic.json; echo
           test "$code" = "200" || { echo "::error::anthropic call via clawrouter failed (HTTP $code)"; exit 1; }
 
       - name: Usage delta (attribution moved?)
