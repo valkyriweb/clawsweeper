@@ -67,7 +67,7 @@ jobs:
           code=$(curl -sS -o /tmp/codex.json -w '%{http_code}' \
             "$CLAWROUTER/v1/responses" \
             -H "authorization: Bearer $TOKEN" -H "content-type: application/json" \
-            -d "{\"model\":\"$CODEX_MODEL\",\"input\":[{\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"Reply with exactly: codex-ok\"}]}]}")
+            -d "{\"model\":\"$CODEX_MODEL\",\"store\":false,\"input\":[{\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"Reply with exactly: codex-ok\"}]}]}")
           echo "CODEX HTTP $code"; cut -c1-700 /tmp/codex.json; echo
           test "$code" = "200" || { echo "::error::codex call via clawrouter failed (HTTP $code)"; exit 1; }
 
