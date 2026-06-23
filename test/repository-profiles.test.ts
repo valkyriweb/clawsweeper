@@ -42,6 +42,15 @@ test("repositoryProfileFor carries service-area routing notes", () => {
   ]);
 });
 
+test("valkyriweb/paperclip scopes commit-review to its bermont production branch", () => {
+  const paperclip = repositoryProfileFor("valkyriweb/paperclip");
+  assert.equal(paperclip.commitReviewRef, "refs/heads/bermont");
+
+  // Targets that ship from main leave the field unset; the default applies downstream.
+  const piMono = repositoryProfileFor("valkyriweb/pi-mono");
+  assert.equal(piMono.commitReviewRef, undefined);
+});
+
 test("valkyriweb/pi-mono profile carries pi service-area routing notes", () => {
   const profile = repositoryProfileFor("valkyriweb/pi-mono");
 
