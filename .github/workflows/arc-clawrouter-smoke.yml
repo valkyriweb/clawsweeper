@@ -1,0 +1,95 @@
+name: ARC clawrouter smoke
+
+# Throwaway PoC. Proves an ARC pod (lue-clawsweeper-arc) can reach clawrouter and
+# authenticate for BOTH Codex (responses API) and Anthropic/claude-bridge, with
+# central metering/attribution visible in /v1/usage. Delete once validated.
+#
+# Requires repo secrets: CLAWROUTER_BASE_URL (e.g. http://100.75.234.50:8789), CLAWROUTER_TOKEN
+# Optional repo vars (or dispatch inputs) to override model/route guesses:
+#   CLAWROUTER_CODEX_MODEL, CLAWROUTER_ANTHROPIC_PATH, CLAWROUTER_ANTHROPIC_MODEL
+
+on:
+  workflow_dispatch:
+    inputs:
+      codex_model:
+        description: "Codex model id (overrides var)"
+        required: false
+        default: ""
+      anthropic_path:
+        description: "clawrouter Anthropic route, e.g. /v1/messages (overrides var)"
+        required: false
+        default: ""
+      anthropic_model:
+        description: "Anthropic model id (overrides var)"
+        required: false
+        default: ""
+
+jobs:
+  smoke:
+    runs-on: lue-clawsweeper-arc        # forces an ARC pod to spin → proves scale-up
+    timeout-minutes: 10
+    env:
+      CLAWROUTER: ${{ secrets.CLAWROUTER_BASE_URL }}
+      TOKEN: ${{ secrets.CLAWROUTER_TOKEN }}
+      CODEX_MODEL: ${{ github.event.inputs.codex_model || vars.CLAWROUTER_CODEX_MODEL || 'gpt-5-codex' }}
+      ANTHROPIC_PATH: ${{ github.event.inputs.anthropic_path || vars.CLAWROUTER_ANTHROPIC_PATH || '/v1/messages' }}
+      ANTHROPIC_MODEL: ${{ github.event.inputs.anthropic_model || vars.CLAWROUTER_ANTHROPIC_MODEL || 'claude-sonnet-4-20250514' }}
+    steps:
+      - name: Pod identity (confirm Linux ARC pod + tooling)
+        run: |
+          set -euo pipefail
+          echo "host=$(uname -srm)"; echo "user=$(whoami)"; echo "runner=${RUNNER_NAME:-?}"
+          for b in curl python3; do command -v "$b" >/dev/null && echo "have $b" || echo "MISSING $b"; done
+
+      - name: Guard — secrets present
+        run: |
+          set -euo pipefail
+          test -n "${CLAWROUTER:-}" || { echo "::error::CLAWROUTER_BASE_URL secret not set"; exit 1; }
+          test -n "${TOKEN:-}"      || { echo "::error::CLAWROUTER_TOKEN secret not set"; exit 1; }
+          echo "clawrouter base = ${CLAWROUTER}   codex=${CODEX_MODEL}  anthropic=${ANTHROPIC_PATH}:${ANTHROPIC_MODEL}"
+
+      - name: Usage baseline
+        run: |
+          set -euo pipefail
+          curl -fsS "$CLAWROUTER/v1/usage" -H "authorization: Bearer $TOKEN" -o /tmp/u0.json
+          python3 - <<'PY'
+          import json
+          d=json.load(open('/tmp/u0.json'))
+          b=d.get('budget',{}); u=d.get('usage',{}).get('summary',{})
+          print('BASELINE spentMicros',b.get('spentMicros'),'requests',u.get('requestCount'),'remaining',b.get('remainingMicros'))
+          PY
+
+      - name: Codex via clawrouter (responses API)
+        run: |
+          set -euo pipefail
+          code=$(curl -sS -o /tmp/codex.json -w '%{http_code}' \
+            "$CLAWROUTER/v1/responses" \
+            -H "authorization: Bearer $TOKEN" -H "content-type: application/json" \
+            -d "{\"model\":\"$CODEX_MODEL\",\"input\":\"Reply with exactly: codex-ok\"}")
+          echo "HTTP $code"; cut -c1-600 /tmp/codex.json; echo
+          test "$code" = "200" || { echo "::error::codex call via clawrouter failed (HTTP $code)"; exit 1; }
+
+      - name: Anthropic / claude-bridge via clawrouter
+        run: |
+          set -euo pipefail
+          code=$(curl -sS -o /tmp/anthropic.json -w '%{http_code}' \
+            "$CLAWROUTER$ANTHROPIC_PATH" \
+            -H "authorization: Bearer $TOKEN" -H "content-type: application/json" \
+            -H "anthropic-version: 2023-06-01" \
+            -d "{\"model\":\"$ANTHROPIC_MODEL\",\"max_tokens\":16,\"messages\":[{\"role\":\"user\",\"content\":\"Reply with exactly: claude-ok\"}]}")
+          echo "HTTP $code"; cut -c1-600 /tmp/anthropic.json; echo
+          test "$code" = "200" || { echo "::error::anthropic call via clawrouter failed (HTTP $code)"; exit 1; }
+
+      - name: Usage delta (attribution moved?)
+        if: always()
+        run: |
+          set -euo pipefail
+          curl -fsS "$CLAWROUTER/v1/usage" -H "authorization: Bearer $TOKEN" -o /tmp/u1.json || exit 0
+          python3 - <<'PY'
+          import json
+          a=json.load(open('/tmp/u0.json')); b=json.load(open('/tmp/u1.json'))
+          def g(d): return (d.get('budget',{}).get('spentMicros') or 0, (d.get('usage',{}).get('summary',{}).get('requestCount') or 0))
+          s0,r0=g(a); s1,r1=g(b)
+          print('AFTER spentMicros',s1,'requests',r1)
+          print('DELTA spentMicros',s1-s0,'requests',r1-r0)
+          PY
