@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import { parseArgs } from "./lib.js";
 import { isJsonObject } from "./json-types.js";
 import {
+  DEFAULT_COMMIT_REVIEW_REF,
   repositoryProfileFor,
   resolveRepositoryReviewProvider,
   reviewModelForProvider,
@@ -77,6 +78,9 @@ function runCli(): void {
       break;
     case "review-model":
       process.stdout.write(reviewModelForTarget(requiredString("target-repo")));
+      break;
+    case "commit-review-ref":
+      process.stdout.write(commitReviewRefForTarget(requiredString("target-repo")));
       break;
     case "proposed-item-numbers":
       process.stdout.write(proposedItemNumbers(proposedItemOptions()).join(","));
@@ -186,6 +190,10 @@ export function reviewProviderForTarget(targetRepo: string): ReviewProvider {
 
 export function reviewModelForTarget(targetRepo: string): string {
   return reviewModelForProvider(reviewProviderForTarget(targetRepo));
+}
+
+export function commitReviewRefForTarget(targetRepo: string): string {
+  return repositoryProfileFor(targetRepo).commitReviewRef ?? DEFAULT_COMMIT_REVIEW_REF;
 }
 
 function reviewModelFromPlan(plan: LooseRecord): string {

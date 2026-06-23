@@ -77,6 +77,7 @@ jobs:
     outputs:
       create_checks: ${{ steps.mode.outputs.create_checks }}
       enabled: ${{ steps.mode.outputs.enabled }}
+      commit_review_ref: ${{ steps.select.outputs.commit_review_ref }}
       has_more: ${{ steps.select.outputs.has_more }}
       matrix: ${{ steps.select.outputs.matrix }}
       next_offset: ${{ steps.select.outputs.next_offset }}
@@ -175,11 +176,29 @@ jobs:
           BEFORE_SHA: ${{ github.event.inputs.before_sha || github.event.client_payload.before_sha || '' }}
           COMMIT_OFFSET: ${{ github.event.inputs.commit_offset || github.event.client_payload.commit_offset || '0' }}
           ENABLED: ${{ steps.mode.outputs.enabled }}
-          SOURCE_REF: ${{ github.event.client_payload.ref || 'refs/heads/main' }}
+          EVENT_NAME: ${{ github.event_name }}
+          SOURCE_REF: ${{ github.event.client_payload.ref || '' }}
           SETTLE_SECONDS: ${{ vars.CLAWSWEEPER_COMMIT_REVIEW_SETTLE_SECONDS || '60' }}
           PAGE_SIZE: ${{ vars.CLAWSWEEPER_COMMIT_REVIEW_PAGE_SIZE || '' }}
         run: |
           set -euo pipefail
+          # Resolve the branch this target ships from (default refs/heads/main).
+          # Emitted before the enabled-gate early-exit so review/publish always
+          # see it; manual dispatch (no client_payload.ref) trusts this ref.
+          ALLOWED_REF="$(pnpm --dir clawsweeper run --silent workflow -- commit-review-ref "$TARGET_REPO")"
+          BRANCH="${ALLOWED_REF#refs/heads/}"
+          echo "commit_review_ref=$ALLOWED_REF" >> "$GITHUB_OUTPUT"
+          if [ -z "$SOURCE_REF" ]; then
+            # Manual dispatch carries no source ref → trust the target's configured
+            # branch. A repository_dispatch with no client_payload.ref is malformed
+            # and must fail closed rather than be treated like a manual run.
+            if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+              SOURCE_REF="$ALLOWED_REF"
+            else
+              echo "repository_dispatch requires client_payload.ref" >&2
+              exit 1
+            fi
+          fi
           active_runs_json() {
             {
               for run_status in in_progress pending queued waiting requested; do
@@ -259,8 +278,8 @@ jobs:
             echo "Invalid commit offset: $COMMIT_OFFSET" >&2
             exit 1
           fi
-          if [ "$SOURCE_REF" != "refs/heads/main" ]; then
-            echo "Commit review only accepts main branch pushes; got $SOURCE_REF" >&2
+          if [ "$SOURCE_REF" != "$ALLOWED_REF" ]; then
+            echo "Commit review for $TARGET_REPO only accepts $ALLOWED_REF pushes; got $SOURCE_REF" >&2
             exit 1
           fi
           if [ -z "$COMMIT_SHA" ]; then
@@ -290,16 +309,16 @@ jobs:
             PAGE_SIZE="$page_size_hard_cap"
           fi
           if [ "$SETTLE_SECONDS" -gt 0 ]; then
-            echo "Waiting ${SETTLE_SECONDS}s for target main to settle before selecting commits."
+            echo "Waiting ${SETTLE_SECONDS}s for target ${BRANCH} to settle before selecting commits."
             sleep "$SETTLE_SECONDS"
           fi
           url="https://x-access-token:${TARGET_TOKEN}@github.com/${TARGET_REPO}.git"
           rm -rf "$TARGET_NAME" # self-hosted workspaces persist; a leftover dir from a failed run breaks clone
           git clone --filter=blob:none --no-checkout "$url" "$TARGET_NAME"
-          git -C "$TARGET_NAME" fetch --no-tags origin main --depth=1000
+          git -C "$TARGET_NAME" fetch --no-tags origin "$BRANCH" --depth=1000
           git -C "$TARGET_NAME" fetch --no-tags origin "$COMMIT_SHA" --depth=200
-          if ! git -C "$TARGET_NAME" merge-base --is-ancestor "$COMMIT_SHA" refs/remotes/origin/main; then
-            echo "Commit $COMMIT_SHA is not reachable from origin/main in the fetched history." >&2
+          if ! git -C "$TARGET_NAME" merge-base --is-ancestor "$COMMIT_SHA" "refs/remotes/origin/$BRANCH"; then
+            echo "Commit $COMMIT_SHA is not reachable from origin/$BRANCH in the fetched history." >&2
             exit 1
           fi
           if [ -n "$BEFORE_SHA" ] && ! printf '%s' "$BEFORE_SHA" | grep -Eq '^0{40}$'; then
@@ -401,28 +420,30 @@ jobs:
           auth-mode: subscription
           login-status: "true"
 
-      - name: Check out target main
+      - name: Check out target branch
         env:
           TARGET_REPO: ${{ needs.plan.outputs.target_repo }}
           TARGET_NAME: ${{ needs.plan.outputs.target_checkout_dir }}
           TARGET_TOKEN: ${{ steps.target-read-token.outputs.token }}
           COMMIT_SHA: ${{ matrix.sha }}
+          COMMIT_REVIEW_REF: ${{ needs.plan.outputs.commit_review_ref }}
         run: |
           set -euo pipefail
+          BRANCH="${COMMIT_REVIEW_REF#refs/heads/}"
           url="https://x-access-token:${TARGET_TOKEN}@github.com/${TARGET_REPO}.git"
           rm -rf "$TARGET_NAME" # self-hosted workspaces persist; a leftover dir from a failed run breaks clone
           git clone --filter=blob:none --no-checkout "$url" "$TARGET_NAME"
-          git -C "$TARGET_NAME" fetch --no-tags origin main --depth=1000
-          git -C "$TARGET_NAME" checkout -B main refs/remotes/origin/main
+          git -C "$TARGET_NAME" fetch --no-tags origin "$BRANCH" --depth=1000
+          git -C "$TARGET_NAME" checkout -B "$BRANCH" "refs/remotes/origin/$BRANCH"
           git -C "$TARGET_NAME" fetch --no-tags origin "$COMMIT_SHA" --depth=200
           if ! git -C "$TARGET_NAME" merge-base --is-ancestor "$COMMIT_SHA" HEAD; then
-            echo "Commit $COMMIT_SHA is not reachable from the checked-out origin/main history." >&2
+            echo "Commit $COMMIT_SHA is not reachable from the checked-out origin/$BRANCH history." >&2
             exit 1
           fi
           if ! git -C "$TARGET_NAME" rev-parse --verify "$COMMIT_SHA^" >/dev/null 2>&1; then
-            git -C "$TARGET_NAME" fetch --deepen=500 origin main || true
+            git -C "$TARGET_NAME" fetch --deepen=500 origin "$BRANCH" || true
           fi
-          echo "Target main head: $(git -C "$TARGET_NAME" rev-parse --short HEAD)"
+          echo "Target $BRANCH head: $(git -C "$TARGET_NAME" rev-parse --short HEAD)"
           echo "Commit under review: $(git -C "$TARGET_NAME" rev-parse --short "$COMMIT_SHA")"
 
       - name: Review commit
@@ -612,13 +633,14 @@ jobs:
           NEXT_OFFSET: ${{ needs.plan.outputs.next_offset }}
           CREATE_CHECKS: ${{ needs.plan.outputs.create_checks }}
           ADDITIONAL_PROMPT: ${{ github.event.inputs.additional_prompt || github.event.client_payload.additional_prompt || '' }}
+          COMMIT_REVIEW_REF: ${{ needs.plan.outputs.commit_review_ref }}
         run: |
           set -euo pipefail
           payload="$(jq -nc \
             --arg target_repo "$TARGET_REPO" \
             --arg before_sha "$BEFORE_SHA" \
             --arg after_sha "$AFTER_SHA" \
-            --arg ref "refs/heads/main" \
+            --arg ref "$COMMIT_REVIEW_REF" \
             --arg additional_prompt "$ADDITIONAL_PROMPT" \
             --argjson commit_offset "$NEXT_OFFSET" \
             --argjson create_checks "$CREATE_CHECKS" \

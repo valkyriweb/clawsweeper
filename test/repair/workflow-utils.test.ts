@@ -9,6 +9,7 @@ import {
   artifactItemNumbers,
   automationLimit,
   commentSyncBatchOutput,
+  commitReviewRefForTarget,
   countActions,
   countCommandActions,
   countRequeueRequired,
@@ -19,6 +20,13 @@ import {
   writeCommentSyncCursor,
 } from "../../dist/repair/workflow-utils.js";
 import { AUTOMATION_LIMITS, WORKER_CONFIG, workerLimit } from "../../dist/repair/limits.js";
+
+test("commitReviewRefForTarget returns the per-target override or the main default", () => {
+  // paperclip ships from its bermont production overlay, not main.
+  assert.equal(commitReviewRefForTarget("valkyriweb/paperclip"), "refs/heads/bermont");
+  // A target with no override falls back to the shared main default.
+  assert.equal(commitReviewRefForTarget("valkyriweb/pi-mono"), "refs/heads/main");
+});
 
 test("workflow utilities expose automation limits", () => {
   assert.equal(

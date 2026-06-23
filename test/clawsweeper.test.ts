@@ -4494,13 +4494,18 @@ test("review prompts require reproduction and solution assessment details", () =
   assert.match(commitPrompt, /Is this the best way to solve the issue\?/);
 });
 
-test("commit review workflow settles and reviews from target main", () => {
+test("commit review workflow settles and reviews from the target's configured branch", () => {
   const workflow = readWorkflowFixture("commit-review.yml");
 
   assert.match(workflow, /CLAWSWEEPER_COMMIT_REVIEW_SETTLE_SECONDS \|\| '60'/);
   assert.match(workflow, /sleep "\$SETTLE_SECONDS"/);
-  assert.match(workflow, /Check out target main/);
-  assert.match(workflow, /checkout -B main refs\/remotes\/origin\/main/);
+  // The accepted branch is resolved per target (default refs/heads/main) and
+  // threaded through the gate, fetch, and checkout instead of being hardcoded.
+  assert.match(workflow, /commit-review-ref "\$TARGET_REPO"/);
+  assert.match(workflow, /BRANCH="\$\{ALLOWED_REF#refs\/heads\/\}"/);
+  assert.match(workflow, /Check out target branch/);
+  assert.match(workflow, /checkout -B "\$BRANCH" "refs\/remotes\/origin\/\$BRANCH"/);
+  assert.doesNotMatch(workflow, /checkout -B main refs\/remotes\/origin\/main/);
   assert.doesNotMatch(workflow, /checkout --detach "\$COMMIT_SHA"/);
 });
 

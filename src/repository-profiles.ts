@@ -39,6 +39,12 @@ export interface RepositoryProfile {
   // on their own items. `CLAWSWEEPER_INCLUDE_MAINTAINER_AUTHORED=true` is a
   // fleet-wide override.
   includeMaintainerAuthored?: boolean;
+  // Per-target git ref whose pushes commit-review accepts. Most repos ship from
+  // `main`, so the absent default is `DEFAULT_COMMIT_REVIEW_REF`. Production
+  // overlays that deploy from a non-default branch (e.g. paperclip's `bermont`)
+  // set this so commit-review runs on the branch that actually ships instead of
+  // being rejected at the branch gate. Full ref form: `refs/heads/<branch>`.
+  commitReviewRef?: string;
 }
 
 interface TargetRepositoryConfig {
@@ -62,7 +68,13 @@ interface ConfiguredRepositoryProfile {
   applyCloseRules: Partial<Record<RepositoryItemKind, readonly RepositoryCloseReason[]>>;
   reviewProvider?: ReviewProvider;
   includeMaintainerAuthored?: boolean;
+  commitReviewRef?: string;
 }
+
+// Branch whose pushes commit-review accepts when a target sets no explicit
+// `commitReviewRef`. Single source of truth shared by the profile loader and
+// the workflow CLI (`commit-review-ref`) so the YAML and TS agree on the default.
+export const DEFAULT_COMMIT_REVIEW_REF = "refs/heads/main";
 
 // Exported so clawsweeper.ts can use a single source of truth for the
 // supported provider id set (validation in `resolveReviewProvider`).
@@ -192,6 +204,7 @@ function configuredRepositoryProfile(profile: ConfiguredRepositoryProfile): Repo
   if (profile.includeMaintainerAuthored !== undefined) {
     result.includeMaintainerAuthored = profile.includeMaintainerAuthored;
   }
+  if (profile.commitReviewRef) result.commitReviewRef = profile.commitReviewRef;
   return result;
 }
 
@@ -335,6 +348,12 @@ function validateConfiguredRepositoryProfile(
     }
     result.includeMaintainerAuthored = profile.include_maintainer_authored;
   }
+  if (profile.commit_review_ref !== undefined) {
+    result.commitReviewRef = branchRefValue(
+      profile.commit_review_ref,
+      `${label}.commit_review_ref`,
+    );
+  }
   return result;
 }
 
@@ -389,6 +408,30 @@ function repoValue(value: unknown, label: string): string {
   const repo = normalizeRepo(stringValue(value, label));
   if (!/^[a-z0-9_.-]+\/[a-z0-9_.-]+$/.test(repo)) throw new Error(`${label} must be owner/repo`);
   return repo;
+}
+
+function branchRefValue(value: unknown, label: string): string {
+  const ref = stringValue(value, label);
+  const prefix = "refs/heads/";
+  if (!ref.startsWith(prefix)) throw new Error(`${label} must be a refs/heads/<branch> ref`);
+  // The stripped branch flows into `git fetch origin "$BRANCH"` in the workflow.
+  // Beyond shell-safe characters, reject names Git treats specially or as an
+  // option (leading `-` → `--upload-pack` confusion), and enforce the subset of
+  // git-check-ref-format rules that matter here so a bad config value fails
+  // closed at load time rather than at the fetch.
+  const branch = ref.slice(prefix.length);
+  const safe =
+    branch !== "HEAD" &&
+    !branch.startsWith("-") &&
+    !branch.startsWith("/") &&
+    !branch.endsWith("/") &&
+    !branch.endsWith(".") &&
+    !branch.includes("//") &&
+    !branch.includes("..") &&
+    /^[A-Za-z0-9._/-]+$/.test(branch) &&
+    branch.split("/").every((part) => part && !part.startsWith(".") && !part.endsWith(".lock"));
+  if (!safe) throw new Error(`${label} must be a safe refs/heads/<branch> ref`);
+  return ref;
 }
 
 function pathSegmentValue(value: unknown, label: string): string {
