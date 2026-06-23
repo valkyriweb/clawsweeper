@@ -161,7 +161,7 @@ jobs:
   event-review-apply:
     name: Review, comment, and apply event item
     if: ${{ github.event_name == 'repository_dispatch' }}
-    runs-on: ${{ vars.CLAWSWEEPER_RUNNER_LABELS && fromJson(vars.CLAWSWEEPER_RUNNER_LABELS) || fromJson('["self-hosted", "macOS", "ARM64", "mac-mini"]') }}
+    runs-on: ${{ vars.CLAWSWEEPER_RUNNER_LABELS && (startsWith(vars.CLAWSWEEPER_RUNNER_LABELS, '[') && fromJson(vars.CLAWSWEEPER_RUNNER_LABELS) || vars.CLAWSWEEPER_RUNNER_LABELS) || fromJson('["self-hosted", "macOS", "ARM64", "mac-mini"]') }}
     timeout-minutes: 120
     permissions:
       actions: write
@@ -535,7 +535,7 @@ jobs:
   plan:
     name: Plan review candidates
     if: ${{ github.event_name != 'repository_dispatch' && !(github.event_name == 'workflow_dispatch' && (github.event.inputs.apply_existing == 'true' || github.event.inputs.audit_dashboard == 'true')) }}
-    runs-on: ${{ vars.CLAWSWEEPER_RUNNER_LABELS && fromJson(vars.CLAWSWEEPER_RUNNER_LABELS) || fromJson('["self-hosted", "macOS", "ARM64", "mac-mini"]') }}
+    runs-on: ${{ vars.CLAWSWEEPER_RUNNER_LABELS && (startsWith(vars.CLAWSWEEPER_RUNNER_LABELS, '[') && fromJson(vars.CLAWSWEEPER_RUNNER_LABELS) || vars.CLAWSWEEPER_RUNNER_LABELS) || fromJson('["self-hosted", "macOS", "ARM64", "mac-mini"]') }}
     timeout-minutes: 30
     outputs:
       batch_size: ${{ steps.mode.outputs.batch_size }}
@@ -900,7 +900,7 @@ jobs:
   review:
     name: Review shard ${{ matrix.shard }}
     needs: plan
-    runs-on: ${{ vars.CLAWSWEEPER_REVIEW_RUNNER && fromJson(vars.CLAWSWEEPER_REVIEW_RUNNER) || vars.CLAWSWEEPER_RUNNER_LABELS && fromJson(vars.CLAWSWEEPER_RUNNER_LABELS) || fromJson('["self-hosted", "macOS", "ARM64", "mac-mini"]') }}
+    runs-on: ${{ vars.CLAWSWEEPER_REVIEW_RUNNER && (startsWith(vars.CLAWSWEEPER_REVIEW_RUNNER, '[') && fromJson(vars.CLAWSWEEPER_REVIEW_RUNNER) || vars.CLAWSWEEPER_REVIEW_RUNNER) || vars.CLAWSWEEPER_RUNNER_LABELS && (startsWith(vars.CLAWSWEEPER_RUNNER_LABELS, '[') && fromJson(vars.CLAWSWEEPER_RUNNER_LABELS) || vars.CLAWSWEEPER_RUNNER_LABELS) || fromJson('["self-hosted", "macOS", "ARM64", "mac-mini"]') }}
     timeout-minutes: 75
     continue-on-error: true
     permissions:
@@ -1158,7 +1158,7 @@ jobs:
     name: Publish review artifacts
     needs: [plan, review]
     if: ${{ always() && needs.plan.result == 'success' && needs.review.result != 'cancelled' && needs.plan.outputs.target_repo != '' && github.event_name != 'repository_dispatch' && !(github.event_name == 'workflow_dispatch' && (github.event.inputs.apply_existing == 'true' || github.event.inputs.audit_dashboard == 'true')) }}
-    runs-on: ${{ vars.CLAWSWEEPER_RUNNER_LABELS && fromJson(vars.CLAWSWEEPER_RUNNER_LABELS) || fromJson('["self-hosted", "macOS", "ARM64", "mac-mini"]') }}
+    runs-on: ${{ vars.CLAWSWEEPER_RUNNER_LABELS && (startsWith(vars.CLAWSWEEPER_RUNNER_LABELS, '[') && fromJson(vars.CLAWSWEEPER_RUNNER_LABELS) || vars.CLAWSWEEPER_RUNNER_LABELS) || fromJson('["self-hosted", "macOS", "ARM64", "mac-mini"]') }}
     timeout-minutes: 60
     steps:
       - name: Sanitize workspace (read-only residue from prior codex runs)
@@ -1542,7 +1542,7 @@ jobs:
     name: Recover failed review shards
     needs: [plan, review, publish]
     if: ${{ always() && needs.plan.result == 'success' && needs.review.result != 'skipped' && !contains(github.event.inputs.additional_prompt || '', '[clawsweeper-recovery-attempt=1]') && needs.plan.outputs.planned_item_numbers != '' && github.event_name != 'repository_dispatch' }}
-    runs-on: ${{ vars.CLAWSWEEPER_RUNNER_LABELS && fromJson(vars.CLAWSWEEPER_RUNNER_LABELS) || fromJson('["self-hosted", "macOS", "ARM64", "mac-mini"]') }}
+    runs-on: ${{ vars.CLAWSWEEPER_RUNNER_LABELS && (startsWith(vars.CLAWSWEEPER_RUNNER_LABELS, '[') && fromJson(vars.CLAWSWEEPER_RUNNER_LABELS) || vars.CLAWSWEEPER_RUNNER_LABELS) || fromJson('["self-hosted", "macOS", "ARM64", "mac-mini"]') }}
     timeout-minutes: 10
     permissions:
       actions: write
@@ -1635,7 +1635,7 @@ jobs:
   audit-dashboard:
     name: Audit state
     if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.audit_dashboard == 'true' }}
-    runs-on: ${{ vars.CLAWSWEEPER_RUNNER_LABELS && fromJson(vars.CLAWSWEEPER_RUNNER_LABELS) || fromJson('["self-hosted", "macOS", "ARM64", "mac-mini"]') }}
+    runs-on: ${{ vars.CLAWSWEEPER_RUNNER_LABELS && (startsWith(vars.CLAWSWEEPER_RUNNER_LABELS, '[') && fromJson(vars.CLAWSWEEPER_RUNNER_LABELS) || vars.CLAWSWEEPER_RUNNER_LABELS) || fromJson('["self-hosted", "macOS", "ARM64", "mac-mini"]') }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
@@ -1748,7 +1748,7 @@ jobs:
   apply-existing:
     name: Apply close proposals
     if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.apply_existing == 'true' }}
-    runs-on: ${{ vars.CLAWSWEEPER_RUNNER_LABELS && fromJson(vars.CLAWSWEEPER_RUNNER_LABELS) || fromJson('["self-hosted", "macOS", "ARM64", "mac-mini"]') }}
+    runs-on: ${{ vars.CLAWSWEEPER_RUNNER_LABELS && (startsWith(vars.CLAWSWEEPER_RUNNER_LABELS, '[') && fromJson(vars.CLAWSWEEPER_RUNNER_LABELS) || vars.CLAWSWEEPER_RUNNER_LABELS) || fromJson('["self-hosted", "macOS", "ARM64", "mac-mini"]') }}
     timeout-minutes: 360
     steps:
       - name: Sanitize workspace (read-only residue from prior codex runs)
