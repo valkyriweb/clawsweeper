@@ -223,6 +223,28 @@
         "issue": ["duplicate_or_superseded", "cannot_reproduce", "not_actionable_in_repo"],
         "pull_request": ["duplicate_or_superseded", "cannot_reproduce", "not_actionable_in_repo"]
       }
+    },
+    {
+      "target_repo": "valkyriweb/paperclip",
+      "display_name": "Paperclip (bermont production overlay)",
+      "checkout_dir": "paperclip",
+      "include_maintainer_authored": true,
+      "prompt_note": "Luke's fork of paperclipai/paperclip — a billing/budget-governed AI agent platform deployed to the lue-kube cluster at https://paperclip.bermont.digital. Branch topology: `master` mirrors upstream paperclipai/paperclip (only `upstream-sync.yml` is Luke-custom there); `bermont` is the long-lived production overlay (master + bermont Docker/k8s wiring + the required-skill contract) and is the deployable branch. Review and commit-review are scoped to `bermont` — that is what ships to production; PRs into `master` are upstream syncs and are not reviewed here. Service areas: `area:server` (server/ routes, health, middleware, auth), `area:cli` (cli/ commands, onboarding, project-goal/company context), `area:packages` (packages/* — db, adapters/openclaw-gateway, billing), `area:ui` (ui/ React components), `area:docker` (docker/ agent-runtime images, onboarding smoke), `area:ci` (.github/workflows: release/e2e/smoke/docker), `area:docs`. Use at most two area tags; `area:cross-cutting` when it spans many. Paperclip-specific review focus: cost_events idempotency, budget enforcement fallbacks, approval-flow locking, billing-data exposure, budget bypass, and tenant isolation. **CRITICAL: do NOT propose closing PRs as `implemented_on_main` — the bermont overlay carries patches that are not on upstream master; treat overlay/carry-forward changes as long-lived.** Validation: `pnpm install --frozen-lockfile && pnpm build`; `pnpm test` for unit tests, narrowed to the changed package where possible.",
+      "apply_close_rules": {
+        "issue": [
+          "duplicate_or_superseded",
+          "cannot_reproduce",
+          "incoherent",
+          "not_actionable_in_repo",
+          "stale_insufficient_info"
+        ],
+        "pull_request": [
+          "duplicate_or_superseded",
+          "cannot_reproduce",
+          "incoherent",
+          "not_actionable_in_repo"
+        ]
+      }
     }
   ]
 }
