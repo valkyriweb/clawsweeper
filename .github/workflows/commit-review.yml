@@ -369,6 +369,8 @@ jobs:
     timeout-minutes: 45
     permissions:
       contents: read
+    env:
+      CLAWSWEEPER_USAGE_OTLP_HEADERS: ${{ secrets.CLAWSWEEPER_USAGE_OTLP_HEADERS || vars.CLAWSWEEPER_USAGE_OTLP_HEADERS || vars.OTEL_EXPORTER_OTLP_HEADERS || '' }}
     strategy:
       fail-fast: false
       matrix:

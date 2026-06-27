@@ -168,6 +168,8 @@ jobs:
       contents: write
       issues: write
       pull-requests: write
+    env:
+      CLAWSWEEPER_USAGE_OTLP_HEADERS: ${{ secrets.CLAWSWEEPER_USAGE_OTLP_HEADERS || vars.CLAWSWEEPER_USAGE_OTLP_HEADERS || vars.OTEL_EXPORTER_OTLP_HEADERS || '' }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -907,6 +909,8 @@ jobs:
       contents: read
       issues: read
       pull-requests: read
+    env:
+      CLAWSWEEPER_USAGE_OTLP_HEADERS: ${{ secrets.CLAWSWEEPER_USAGE_OTLP_HEADERS || vars.CLAWSWEEPER_USAGE_OTLP_HEADERS || vars.OTEL_EXPORTER_OTLP_HEADERS || '' }}
     strategy:
       fail-fast: false
       matrix:
