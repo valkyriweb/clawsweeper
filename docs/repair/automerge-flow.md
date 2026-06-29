@@ -156,6 +156,44 @@ That wording is reserved for completed terminal failures. Misclassifying
 `IN_PROGRESS` as failure causes unnecessary repair runs and delays an otherwise
 merge-ready PR.
 
+## Base Moves While CI Is Running
+
+When `main` moves while a PR is already running checks, do not reflexively push a
+rebase commit and restart the whole review/build loop. Prefer the least-wasteful
+authority for the repo:
+
+1. **GitHub merge queue enabled:** let the queue prove the PR against the current
+   future base via `merge_group` checks. Repository workflows that are required
+   for merge must trigger on both `pull_request` and `merge_group`; otherwise the
+   queue can wait forever for a required status that never reports. ClawSweeper
+   should treat pending `merge_group` checks as wait states, not repair inputs.
+2. **No merge queue:** a live `BEHIND`, `DIRTY`, or conflict state can use the
+   deterministic base-sync fast path, but only after the current exact-head
+   checks/review state is classified. Do not spawn a Codex repair merely because
+   `main` advanced while Actions are still in progress.
+3. **Terminal failure after base movement:** inspect the failing check logs and
+   distinguish a real branch failure from a current-`main` outage. Repair the PR
+   branch only when the failure is attributable to the PR or its merge with the
+   latest base.
+
+GitHub Actions concurrency should reduce waste around this loop:
+
+- PR workflows should usually cancel stale runs for older commits on the same PR
+  branch, for example with a group based on workflow plus PR number/ref and
+  `cancel-in-progress: ${{ github.event_name == 'pull_request' }}`.
+- Required `merge_group` runs are authoritative pre-merge proof and should not be
+  casually cancelled by the same PR concurrency group.
+- Shared deployment or environment workflows should serialize with `queue: max`
+  instead of canceling older runs when each queued deployment is still meaningful.
+- GitHub Actions parallel/background steps can shorten one workflow's wall-clock
+  time, but they do not replace merge queues or exact-head gating.
+
+Large-scale merge systems use the same shape: trunk stays green through a merge
+queue or train, CI is scoped with affected-target/cached builds, and speculative
+or batched queue validation is introduced only when queue wait time becomes the
+bottleneck. ClawSweeper should optimize for fewer obsolete runs, not for pushing
+rebases as quickly as possible.
+
 ## Two Wait Windows
 
 There are two independent wait windows because the system can be woken from two
