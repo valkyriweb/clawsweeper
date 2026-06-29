@@ -4444,6 +4444,20 @@ test("issue implementation workflow lets job intent choose dispatch capacity", (
   assert.doesNotMatch(workflow, /worker-limit issue_implementation/);
 });
 
+test("comment router preserves JSON runner inputs for worker dispatch", () => {
+  const workflow = readWorkflowFixture("repair-comment-router.yml");
+
+  assert.match(workflow, /ROUTER_RUNNER: \$\{\{ github\.event_name == 'workflow_dispatch' && inputs\.runner/);
+  assert.match(workflow, /ROUTER_EXECUTION_RUNNER: \$\{\{ github\.event_name == 'workflow_dispatch' && inputs\.execution_runner/);
+  assert.match(workflow, /runner="\$ROUTER_RUNNER"/);
+  assert.match(workflow, /execution_runner="\$ROUTER_EXECUTION_RUNNER"/);
+  assert.doesNotMatch(workflow, /runner="\$\{\{ github\.event_name == 'workflow_dispatch' && inputs\.runner/);
+  assert.doesNotMatch(
+    workflow,
+    /execution_runner="\$\{\{ github\.event_name == 'workflow_dispatch' && inputs\.execution_runner/,
+  );
+});
+
 test("review prompt asks for concise non-overlapping public review fields", () => {
   const prompt = readFileSync("prompts/review-item.md", "utf8");
 
