@@ -24,6 +24,7 @@ import {
   autoRepairHeadKey,
   automergeChangelogBlockReason,
   automergeFailedChecksRepairReason,
+  automergePendingChecksWaitReason,
   automergeActivationRepairReason,
   automergeGateBlockReason,
   automergeClusterId,
@@ -543,10 +544,11 @@ function classifyCommand(command: LooseRecord): JsonValue {
     if (stoppedReason) return { ...next, status: "skipped", reason: stoppedReason };
     const pauseLabels = pauseLabelsOn(target);
     const failedChecksRepairReason = automergeFailedChecksRepairReason(target.checks);
-    const rebaseRepairReason = automergeRebaseRepairReason(target);
+    const pendingChecksWaitReason = failedChecksRepairReason
+      ? null
+      : automergePendingChecksWaitReason(target.checks);
     const activationRepairReason =
       failedChecksRepairReason ??
-      rebaseRepairReason ??
       automergeActivationRepairReason({
         intent: command.intent,
         repo: command.repo,
@@ -554,6 +556,7 @@ function classifyCommand(command: LooseRecord): JsonValue {
         files: target.files,
         target,
       });
+    if (pendingChecksWaitReason) return automergeBlocked(next, pendingChecksWaitReason);
     if (
       command.trusted_bot &&
       command.automation_source === "repair_loop_label_sweep" &&

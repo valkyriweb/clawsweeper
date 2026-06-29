@@ -475,6 +475,12 @@ export function automergeFailedChecksRepairReason(checks: LooseRecord = {}): str
   return `current checks are failing: ${failedCheckBlockers.slice(0, 5).join(", ")}`;
 }
 
+export function automergePendingChecksWaitReason(checks: LooseRecord = {}): string | null {
+  const pendingChecks = Array.isArray(checks.pending) ? checks.pending.filter(Boolean) : [];
+  if (pendingChecks.length === 0) return null;
+  return `waiting for required checks: ${pendingChecks.slice(0, 5).join(", ")}`;
+}
+
 export function automergeRebaseRepairReason(target: LooseRecord = {}): string | null {
   const mergeStateStatus = String(target.merge_state_status ?? target.mergeStateStatus ?? "")
     .trim()
@@ -501,6 +507,8 @@ export function automergeActivationRepairReason({
 }: LooseRecord): string | null {
   const failedChecksRepairReason = automergeFailedChecksRepairReason(target.checks ?? {});
   if (failedChecksRepairReason) return failedChecksRepairReason;
+
+  if (automergePendingChecksWaitReason(target.checks ?? {})) return null;
 
   const rebaseRepairReason = automergeRebaseRepairReason(target);
   if (rebaseRepairReason) return rebaseRepairReason;
