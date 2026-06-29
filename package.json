@@ -83,7 +83,8 @@
     "format:check": "oxfmt --check src scripts test dashboard convex/*.ts package.json tsconfig.json tsconfig.repair.json tsconfig.dashboard.json tsconfig.convex.json tsconfig.scripts.json .oxfmtrc.json config schema .github/actions .github/workflows",
     "oxformat": "pnpm run format",
     "oxformat:check": "pnpm run format:check",
-    "check": "pnpm run check:active-surface && pnpm run check:limits && pnpm run build:all && pnpm run typecheck:scripts && pnpm run lint && pnpm run test:unit && pnpm run test:repair && pnpm run test:coverage:changed && pnpm run test:coverage && pnpm run format:check"
+    "check": "pnpm run check:active-surface && pnpm run check:limits && pnpm run build:all && pnpm run typecheck:scripts && pnpm run lint && pnpm run test:unit && pnpm run test:repair && pnpm run test:coverage:changed && pnpm run test:coverage && pnpm run format:check",
+    "repair:conflict-self-heal": "node dist/repair/conflict-self-heal.js"
   },
   "dependencies": {
     "convex": "^1.41.0",

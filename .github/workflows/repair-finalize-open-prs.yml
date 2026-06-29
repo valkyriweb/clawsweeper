@@ -16,12 +16,12 @@ on:
       runner:
         description: "Runner label for cluster planning/review work"
         required: true
-        default: blacksmith-4vcpu-ubuntu-2404
+        default: '["self-hosted","macOS","ARM64","mac-mini"]'
         type: string
       execution_runner:
         description: "Runner label for fix/apply execution work"
         required: true
-        default: blacksmith-16vcpu-ubuntu-2404
+        default: '["self-hosted","macOS","ARM64","mac-mini"]'
         type: string
 
 permissions:
@@ -39,7 +39,7 @@ concurrency:
 
 jobs:
   finalize:
-    runs-on: ${{ inputs.runner }}
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - name: Create GitHub App token
