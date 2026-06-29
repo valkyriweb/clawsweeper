@@ -289,6 +289,21 @@ test("summarizeChecks separates pending checks from terminal blockers", () => {
   assert.deepEqual(checks.terminalBlockers, ["failed-required:FAILURE"]);
 });
 
+test("summarizeChecks treats pending merge_group checks as wait states", () => {
+  const checks = summarizeChecks([
+    {
+      name: "merge_group / pnpm check",
+      workflowName: "CI",
+      status: "QUEUED",
+      conclusion: "",
+    },
+  ]);
+
+  assert.deepEqual(checks.blockers, ["merge_group / pnpm check:QUEUED"]);
+  assert.deepEqual(checks.pending, ["merge_group / pnpm check:QUEUED"]);
+  assert.deepEqual(checks.terminalBlockers, []);
+});
+
 test("summarizeChecks uses the latest run for duplicate check names", () => {
   const checks = summarizeChecks([
     {

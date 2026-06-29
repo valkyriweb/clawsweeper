@@ -11,6 +11,7 @@ import {
   automergeActivationRepairReason,
   automergeChangelogBlockReason,
   automergeFailedChecksRepairReason,
+  automergePendingChecksWaitReason,
   automergeClusterId,
   automergeRequestedByFromComments,
   automergeRequestedByFromBody,
@@ -1932,6 +1933,71 @@ test("automerge failed checks become repair reasons", () => {
       blockers: ["auto-response:CANCELLED", "label:SKIPPED"],
     }),
     null,
+  );
+});
+
+test("automerge waits for pending PR checks instead of repairing stale base", () => {
+  const target = {
+    merge_state_status: "BEHIND",
+    checks: {
+      blockers: ["required-ci:IN_PROGRESS"],
+      pending: ["required-ci:IN_PROGRESS"],
+      terminalBlockers: [],
+    },
+  };
+
+  assert.equal(automergeFailedChecksRepairReason(target.checks), null);
+  assert.equal(
+    automergePendingChecksWaitReason(target.checks),
+    "waiting for required checks: required-ci:IN_PROGRESS",
+  );
+  assert.equal(automergeActivationRepairReason({ intent: "automerge", target }), null);
+});
+
+test("automerge waits for pending merge_group checks instead of repairing stale base", () => {
+  const target = {
+    merge_state_status: "BEHIND",
+    checks: {
+      blockers: ["merge_group / pnpm check:QUEUED"],
+      pending: ["merge_group / pnpm check:QUEUED"],
+      terminalBlockers: [],
+    },
+  };
+
+  assert.equal(
+    automergePendingChecksWaitReason(target.checks),
+    "waiting for required checks: merge_group / pnpm check:QUEUED",
+  );
+  assert.equal(automergeActivationRepairReason({ intent: "automerge", target }), null);
+});
+
+test("automerge terminal required-check failures still repair", () => {
+  assert.equal(
+    automergeActivationRepairReason({
+      intent: "automerge",
+      target: {
+        merge_state_status: "BEHIND",
+        checks: {
+          blockers: ["required-ci:FAILURE"],
+          pending: [],
+          terminalBlockers: ["required-ci:FAILURE"],
+        },
+      },
+    }),
+    "current checks are failing: required-ci:FAILURE",
+  );
+});
+
+test("automerge behind without pending checks can still base-sync repair", () => {
+  assert.equal(
+    automergeActivationRepairReason({
+      intent: "automerge",
+      target: {
+        merge_state_status: "BEHIND",
+        checks: { blockers: [], pending: [], terminalBlockers: [] },
+      },
+    }),
+    "PR is behind the base branch and needs a cloud rebase repair before automerge",
   );
 });
 

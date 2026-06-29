@@ -28,7 +28,8 @@ The loop is intentionally small:
 6. ClawSweeper reviews the updated PR again.
 
 For the full automerge state machine, including exact-head gating, pending
-check handling, shepherd waits, router waits, and operator replay, see
+check handling, base movement while CI is running, GitHub Actions concurrency,
+shepherd waits, router waits, and operator replay, see
 [`automerge-flow.md`](automerge-flow.md).
 
 ## Trust Model
