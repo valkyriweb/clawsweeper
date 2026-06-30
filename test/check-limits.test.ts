@@ -42,6 +42,7 @@ test("deriveAutomationLimits scales every limit from workers.max", () => {
       hard_cap: 100,
       automerge_default: 40,
       issue_implementation_default: 40,
+      docs_maintenance_default: 25,
     },
     issue_implementation: { dispatches_per_sweep_default: 4 },
   });
@@ -61,6 +62,7 @@ test("deriveAutomationLimits scales every limit from workers.max", () => {
       hard_cap: 10,
       automerge_default: 4,
       issue_implementation_default: 4,
+      docs_maintenance_default: 2,
     },
     issue_implementation: { dispatches_per_sweep_default: 1 },
   });
