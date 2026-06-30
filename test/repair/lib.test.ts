@@ -39,7 +39,47 @@ test("renderPrompt loads tracked repair prompt templates", () => {
   assert.match(prompt, /Repair smoke\./);
 });
 
-test("validateJob rejects unknown canonical job intents", () => {
+test("renderPrompt routes docs maintenance jobs to their bounded docs prompt", () => {
+  const frontmatter = parseSimpleYaml(`repo: openclaw/openclaw
+cluster_id: docs-maintenance-openclaw-openclaw-1
+mode: autonomous
+job_intent: docs_maintenance
+allowed_actions:
+  - comment
+  - fix
+  - raise_pr
+candidates:
+  - "#1"
+`);
+  const prompt = renderPrompt(
+    {
+      raw: '---\nrepo: openclaw/openclaw\ncluster_id: docs-maintenance-openclaw-openclaw-1\nmode: autonomous\njob_intent: docs_maintenance\nallowed_actions:\n  - comment\n  - fix\n  - raise_pr\ncandidates:\n  - "#1"\n---\nDocs prompt body.',
+      frontmatter,
+      body: "Docs prompt body.",
+    },
+    "autonomous",
+    { targetCheckout: "/tmp/target" },
+  );
+
+  assert.match(prompt, /Docs prompt body\./);
+  assert.match(prompt, /Target checkout: `\/tmp\/target`/);
+  assert.doesNotMatch(prompt, /## Dedupe policy/);
+});
+
+test("validateJob accepts docs maintenance jobs and rejects unknown canonical job intents", () => {
+  const docsMaintenance = parseSimpleYaml(`repo: openclaw/openclaw
+cluster_id: docs-maintenance-openclaw-openclaw-1
+mode: autonomous
+job_intent: docs_maintenance
+allowed_actions:
+  - comment
+  - fix
+  - raise_pr
+candidates:
+  - "#1"
+`);
+  assert.deepEqual(validateJob({ frontmatter: docsMaintenance }), []);
+
   const frontmatter = parseSimpleYaml(`repo: openclaw/openclaw
 cluster_id: smoke
 mode: autonomous

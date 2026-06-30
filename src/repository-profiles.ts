@@ -18,6 +18,21 @@ export type ReviewProvider = "codex" | "claude-bridge" | "claude-code" | "pi";
 
 export type ReviewProviderModels = Record<ReviewProvider, string>;
 
+export type DocsMaintainerMode = "autofix" | "precheck";
+
+export interface DocsMaintainerMapEntry {
+  code: readonly string[];
+  docs: readonly string[];
+}
+
+export interface DocsMaintainerConfig {
+  enabled: boolean;
+  ownedDocs: readonly string[];
+  docsMap: readonly DocsMaintainerMapEntry[];
+  skipLabels: readonly string[];
+  mode: DocsMaintainerMode;
+}
+
 export interface RepositoryProfile {
   targetRepo: string;
   slug: string;
@@ -27,6 +42,7 @@ export interface RepositoryProfile {
   communityUrl?: string;
   promptNote: string;
   applyCloseRules: Partial<Record<RepositoryItemKind, readonly RepositoryCloseReason[]>>;
+  docsMaintainer: DocsMaintainerConfig;
   // Optional per-target override of the review provider. Highest-precedence
   // input to `resolveReviewProvider()`; lets one repo opt out of (or back
   // into) the global default without touching the workflow or the repo var.
@@ -66,6 +82,7 @@ interface ConfiguredRepositoryProfile {
   communityUrl?: string;
   promptNote: string;
   applyCloseRules: Partial<Record<RepositoryItemKind, readonly RepositoryCloseReason[]>>;
+  docsMaintainer: DocsMaintainerConfig;
   reviewProvider?: ReviewProvider;
   includeMaintainerAuthored?: boolean;
   commitReviewRef?: string;
@@ -114,6 +131,33 @@ const OPENCLAW_CLOSE_REASONS: readonly RepositoryCloseReason[] = [
 const ALL_CLOSE_REASONS: readonly RepositoryCloseReason[] = [...OPENCLAW_CLOSE_REASONS, "none"];
 const CLOSE_REASON_SET = new Set<RepositoryCloseReason>(ALL_CLOSE_REASONS);
 const ITEM_KIND_SET = new Set<RepositoryItemKind>(["issue", "pull_request"]);
+const DOCS_MAINTAINER_MODE_SET = new Set<DocsMaintainerMode>(["autofix", "precheck"]);
+
+export const DEFAULT_DOCS_MAINTAINER_CONFIG: DocsMaintainerConfig = {
+  enabled: false,
+  ownedDocs: ["README.md", "CHANGELOG.md", "docs/**/*.md", ".env.example"],
+  docsMap: [
+    {
+      code: [
+        ".env*",
+        "config/**",
+        ".github/workflows/**",
+        "docker/**",
+        "Dockerfile*",
+        "compose*.yml",
+        "k8s/**",
+        "helm/**",
+      ],
+      docs: ["README.md", "docs/**/*.md", ".env.example"],
+    },
+    {
+      code: ["routes/**", "src/api/**", "app/api/**", "pages/api/**", "server/routes/**"],
+      docs: ["README.md", "docs/**/*.md"],
+    },
+  ],
+  skipLabels: ["skip-docs-check", "docs-not-needed"],
+  mode: "autofix",
+};
 
 export const DEFAULT_TARGET_REPO = "openclaw/openclaw";
 
@@ -130,6 +174,7 @@ const CORE_OPENCLAW_PROFILE: RepositoryProfile = {
     issue: OPENCLAW_CLOSE_REASONS,
     pull_request: OPENCLAW_CLOSE_REASONS.filter((reason) => reason !== "stale_insufficient_info"),
   },
+  docsMaintainer: DEFAULT_DOCS_MAINTAINER_CONFIG,
 };
 
 const TARGET_REPOSITORY_CONFIG = readTargetRepositoryConfig();
@@ -197,6 +242,7 @@ function configuredRepositoryProfile(profile: ConfiguredRepositoryProfile): Repo
     checkoutDir: profile.checkoutDir,
     promptNote: profile.promptNote,
     applyCloseRules: profile.applyCloseRules,
+    docsMaintainer: profile.docsMaintainer,
   };
   if (profile.docsUrl) result.docsUrl = profile.docsUrl;
   if (profile.communityUrl) result.communityUrl = profile.communityUrl;
@@ -226,6 +272,7 @@ function fallbackRepositoryProfile(normalizedTargetRepo: string): RepositoryProf
       .replaceAll("{target_repo}", normalizedTargetRepo)
       .replaceAll("{repo_name}", repoName),
     applyCloseRules: fallback.applyCloseRules,
+    docsMaintainer: DEFAULT_DOCS_MAINTAINER_CONFIG,
   };
 }
 
@@ -326,6 +373,10 @@ function validateConfiguredRepositoryProfile(
     checkoutDir: pathSegmentValue(profile.checkout_dir, `${label}.checkout_dir`),
     promptNote: stringValue(profile.prompt_note, `${label}.prompt_note`),
     applyCloseRules: closeRulesValue(profile.apply_close_rules, `${label}.apply_close_rules`),
+    docsMaintainer: docsMaintainerConfigValue(
+      profile.docs_maintainer ?? profile.docsMaintainer,
+      `${label}.docs_maintainer`,
+    ),
   };
   if (profile.docs_url !== undefined) {
     result.docsUrl = stringValue(profile.docs_url, `${label}.docs_url`);
@@ -378,6 +429,76 @@ function validateOpenClawFallbackConfig(value: unknown): OpenClawFallbackConfig 
       "openclaw_fallback.apply_close_rules",
     ),
   };
+}
+
+function docsMaintainerConfigValue(value: unknown, label: string): DocsMaintainerConfig {
+  if (value === undefined) return DEFAULT_DOCS_MAINTAINER_CONFIG;
+  const config = record(value, label);
+  const result: DocsMaintainerConfig = {
+    ...DEFAULT_DOCS_MAINTAINER_CONFIG,
+    docsMap: DEFAULT_DOCS_MAINTAINER_CONFIG.docsMap.map((entry) => ({
+      code: [...entry.code],
+      docs: [...entry.docs],
+    })),
+  };
+  if (config.enabled !== undefined) {
+    if (typeof config.enabled !== "boolean") throw new Error(`${label}.enabled must be a boolean`);
+    result.enabled = config.enabled;
+  }
+  if (config.owned_docs !== undefined || config.ownedDocs !== undefined) {
+    result.ownedDocs = globListValue(config.owned_docs ?? config.ownedDocs, `${label}.owned_docs`);
+  }
+  if (config.docs_map !== undefined || config.docsMap !== undefined) {
+    result.docsMap = arrayValue(config.docs_map ?? config.docsMap, `${label}.docs_map`).map(
+      (entry, index) => docsMaintainerMapEntryValue(entry, `${label}.docs_map[${index}]`),
+    );
+  }
+  if (config.skip_labels !== undefined || config.skipLabels !== undefined) {
+    result.skipLabels = arrayValue(
+      config.skip_labels ?? config.skipLabels,
+      `${label}.skip_labels`,
+    ).map((entry, index) => stringValue(entry, `${label}.skip_labels[${index}]`));
+  }
+  if (config.mode !== undefined) {
+    const mode = stringValue(config.mode, `${label}.mode`);
+    if (!DOCS_MAINTAINER_MODE_SET.has(mode as DocsMaintainerMode)) {
+      throw new Error(`${label}.mode must be one of: ${[...DOCS_MAINTAINER_MODE_SET].join(", ")}`);
+    }
+    result.mode = mode as DocsMaintainerMode;
+  }
+  return result;
+}
+
+function docsMaintainerMapEntryValue(value: unknown, label: string): DocsMaintainerMapEntry {
+  const entry = record(value, label);
+  return {
+    code: globListValue(entry.code, `${label}.code`),
+    docs: globListValue(entry.docs, `${label}.docs`),
+  };
+}
+
+function globListValue(value: unknown, label: string): readonly string[] {
+  return arrayValue(value, label).map((entry, index) => safeGlobValue(entry, `${label}[${index}]`));
+}
+
+function safeGlobValue(value: unknown, label: string): string {
+  const glob = stringValue(value, label).trim();
+  if (
+    glob.startsWith("/") ||
+    glob.includes("..") ||
+    hasControlCharacter(glob) ||
+    /^(?:~|[A-Za-z]:)/.test(glob)
+  ) {
+    throw new Error(`${label} must be a repo-relative safe glob`);
+  }
+  return glob;
+}
+
+function hasControlCharacter(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    if (value.charCodeAt(index) < 32) return true;
+  }
+  return false;
 }
 
 function closeRulesValue(

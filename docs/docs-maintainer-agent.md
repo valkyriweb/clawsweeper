@@ -2,7 +2,7 @@
 
 ## Status
 
-Draft design. Source of truth lives in ClawSweeper as a reusable GitHub maintenance lane. Core Wholesale should be the first adopter via target-repository config, not a bespoke implementation.
+Implementation in progress. The reusable ClawSweeper lane now has target-repository config parsing, Core Wholesale first-adopter config, a deterministic precheck/job creator, bounded prompt assembly, and a durable `docs_maintenance` worker lane. Safe apply/publish still uses deterministic TypeScript boundaries; broad scheduled sweeps remain deferred.
 
 ## Goal
 
@@ -65,11 +65,7 @@ Suggested shape:
 {
   "docsMaintainer": {
     "enabled": true,
-    "ownedDocs": [
-      "README.md",
-      "docs/**/*.md",
-      ".env.example"
-    ],
+    "ownedDocs": ["README.md", "docs/**/*.md", ".env.example"],
     "docsMap": [
       {
         "code": ["src/api/**", "app/Http/Controllers/**", "routes/**"],
@@ -81,17 +77,16 @@ Suggested shape:
       }
     ],
     "skipLabels": ["skip-docs-check", "docs-not-needed"],
-    "maxTurns": 15,
     "mode": "autofix"
   }
 }
 ```
 
-Defaults should include common docs and config surfaces, but target repos can narrow the owned docs list to reduce noise.
+Defaults should include common docs and config surfaces, but target repos can narrow the owned docs list to reduce noise. `ownedDocs` may use globs; `docsMap[*].docs` should name concrete docs files so precheck and fix artifacts stay narrow.
 
 ### Editing policy
 
-The agent may improve docs, but only inside configured owned docs and only when the PR creates a plausible docs obligation.
+The agent may improve docs, but only inside configured owned docs and only when the PR creates a plausible docs obligation. `fix_artifact.likely_files` must contain concrete owned docs paths, never wildcard patterns.
 
 Allowed:
 
@@ -132,7 +127,7 @@ Never merge. Never approve its own work. Never bypass maintainer review.
 - Skip bot-authored PRs from ClawSweeper/docs-maintainer/GitHub Actions unless explicitly commanded.
 - Respect skip labels.
 - One in-flight docs-maintainer run per PR.
-- Max model turns and timeout per run.
+- Worker timeout is the shared repair-worker subprocess cap; docs-maintainer does not define a separate timeout or fake turn budget.
 - Deterministic code owns auth, repo allowlists, push/PR/comment mutations, worker caps, and final status.
 - Model output must be applied through safe patch/commit code, not arbitrary shell mutation.
 - Route security-sensitive items through the existing ClawSweeper security boundary.
@@ -145,7 +140,7 @@ Add a new job intent:
 
 Worker lane:
 
-- `docs_maintenance` with its own capacity cap and cost budget.
+- `docs_maintenance` with its own capacity cap and cost budget (`repair_live_runs.docs_maintenance_default`).
 
 Suggested stages:
 
@@ -153,14 +148,18 @@ Suggested stages:
    - Fetch PR metadata/diff.
    - Load target docs-maintainer config.
    - Decide skip/run and identify candidate docs.
+   - Command: `pnpm run docs-maintainer:precheck -- --repo <owner/repo> --pr <number>`.
 2. `docs-maintainer:create-job`
-   - Write a durable job with PR metadata, candidate docs, docs map, and mutation mode.
+   - Write a durable `job_intent: docs_maintenance` job with PR metadata, concrete candidate docs, docs map, and mutation mode.
+   - Command: `pnpm run docs-maintainer:create-job -- --repo <owner/repo> --pr <number>`.
 3. `docs-maintainer:worker`
-   - Run the agent in a bounded workspace.
-   - Produce a patch and summary.
+   - Dispatch the durable job through `repair-cluster-worker.yml`.
+   - Use the shared Pi repair worker. Default model is `medium`, override with `CLAWSWEEPER_MODEL`; broader repo/docs reading should use cheap/fast `explore` subagents.
+   - `job_intent: docs_maintenance` skips generic cluster planning and renders the bounded docs-maintainer prompt from the job body.
+   - The agent returns the existing repair result schema with a `build_fix_artifact` + `fix_artifact` when docs changes are needed.
 4. `docs-maintainer:apply`
-   - Deterministically apply allowed docs changes.
-   - Push branch / open companion PR / post patch comment.
+   - Reuse the existing deterministic repair executor/applicator: `repair_contributor_branch` for safe same-repo heads, `new_fix_pr` for companion PRs, and blocked comment actions for high-confidence unpushable cases.
+   - Deterministic code still owns branch push, companion PR creation, public comments, and durable result publishing.
 5. `docs-maintainer:publish`
    - Post concise summary only if changes or high-confidence blockage occurred.
    - Write ledger state for dashboard/audit.

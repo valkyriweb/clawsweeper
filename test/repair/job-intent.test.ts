@@ -25,5 +25,6 @@ test("frontmatter job intent owns worker lane selection", () => {
   );
   assert.equal(workerLaneForRepairJobIntent("automerge_pr"), "automerge_repair");
   assert.equal(workerLaneForRepairJobIntent("implement_issue"), "issue_implementation");
+  assert.equal(workerLaneForRepairJobIntent("docs_maintenance"), "docs_maintenance");
   assert.equal(workerLaneForRepairJobIntent("low_signal_pr_cleanup"), "repair");
 });

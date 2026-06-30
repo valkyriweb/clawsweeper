@@ -61,6 +61,37 @@
       "target_repo": "CLIP-SA/core-wholesale",
       "display_name": "Core Wholesale",
       "checkout_dir": "core-wholesale",
+      "docs_maintainer": {
+        "enabled": true,
+        "owned_docs": [
+          "README.md",
+          "CHANGELOG.md",
+          "docs/**/*.md",
+          ".env.example",
+          "NextJS-Frontend/AGENTS.md"
+        ],
+        "docs_map": [
+          {
+            "code": [
+              "NextJS-Frontend/app/**",
+              "NextJS-Frontend/pages/**",
+              "NextJS-Frontend/components/**",
+              "NextJS-Frontend/src/**"
+            ],
+            "docs": ["README.md", "docs/caching.md", "NextJS-Frontend/AGENTS.md"]
+          },
+          {
+            "code": ["**/routes/**", "**/controllers/**", "**/api/**", "wordpress/**/*.php"],
+            "docs": ["README.md", "docs/OPERATIONS.md", "docs/observability.md"]
+          },
+          {
+            "code": ["config/**", ".github/workflows/**", "docker/**", "Dockerfile*", ".env*"],
+            "docs": ["README.md", "docs/OPERATIONS.md", "docs/RELEASING.md", ".env.example"]
+          }
+        ],
+        "skip_labels": ["skip-docs-check", "docs-not-needed"],
+        "mode": "autofix"
+      },
       "prompt_note": "Core Wholesale is a multi-stack ecommerce platform. Service areas: `area:next-frontend` (Next.js storefront, React components, pages), `area:woocommerce` (WooCommerce plugin customisations, hooks, REST API extensions), `area:wordpress` (WordPress core customisations, themes, ACF, plugin integrations), `area:mysql` (database schema, queries, migrations, performance), `area:openclaw-integration` (OpenClaw agent/AI integration, tool dispatch, session management). Use at most two area tags. When the item spans multiple areas, use `area:cross-cutting`. Validation: appropriate per area — PHP unit tests for WP/WC, `pnpm build` for Next.js, SQL migration checks for MySQL.",
       "apply_close_rules": {
         "issue": [

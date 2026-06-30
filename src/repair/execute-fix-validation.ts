@@ -2,6 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 
 import type { JsonValue, LooseRecord } from "./json-types.js";
+import { repositoryProfileFor } from "../repository-profiles.js";
+import { repairJobIntentForFrontmatter } from "./job-intent.js";
 import { GITHUB_PR_TITLE_MAX_LENGTH } from "./pr-title.js";
 
 const REPAIR_STRATEGIES = new Set([
@@ -113,6 +115,9 @@ export function validateAutonomousFixScope({
   maxAutonomousFixFiles,
   maxAutonomousFixSurfaces,
 }: LooseRecord): LooseRecord | null {
+  if (repairJobIntentForFrontmatter(job.frontmatter ?? {}) === "docs_maintenance") {
+    return validateDocsMaintenanceFixScope({ job, fixArtifact });
+  }
   if (allowBroadFixArtifacts || job.frontmatter.allow_broad_fix_artifacts === true) return null;
   if (isTrustedAdoptedBranchRepair({ job, fixArtifact })) return null;
 
@@ -156,6 +161,76 @@ export function validateAutonomousFixScope({
       `sample_files=${likelyFiles.slice(0, 8).join(", ")}`,
     ],
   };
+}
+
+function validateDocsMaintenanceFixScope({ job, fixArtifact }: LooseRecord): LooseRecord | null {
+  const profile = repositoryProfileFor(String(job.frontmatter?.repo ?? ""));
+  const ownedDocs = profile.docsMaintainer.ownedDocs;
+  const likelyFiles = (fixArtifact.likely_files ?? []).map((file: JsonValue) =>
+    String(file ?? "").trim(),
+  );
+  const blocked = likelyFiles.filter(
+    (file: string) => !isSafeOwnedDocsMaintainerPath(file, ownedDocs),
+  );
+  if (blocked.length === 0) return null;
+  return {
+    reason: "docs maintenance fix artifact includes files outside configured owned docs",
+    evidence: [
+      `job_intent=docs_maintenance`,
+      `owned_docs=${ownedDocs.join(", ")}`,
+      `blocked_files=${blocked.join(", ")}`,
+    ],
+  };
+}
+
+function isSafeOwnedDocsMaintainerPath(file: string, ownedDocs: readonly string[]): boolean {
+  if (
+    !file ||
+    file.startsWith("/") ||
+    file.includes("..") ||
+    /^(?:~|[A-Za-z]:)/.test(file) ||
+    docsMaintainerHasGlobMagic(file)
+  ) {
+    return false;
+  }
+  return ownedDocs.some((pattern) => docsMaintainerGlobMatches(pattern, file));
+}
+
+function docsMaintainerHasGlobMagic(value: string): boolean {
+  return /[*?[\]{}]/.test(value);
+}
+
+function docsMaintainerGlobMatches(pattern: string, file: string): boolean {
+  const normalizedPattern = pattern.replaceAll("\\", "/").replace(/^\.\//, "");
+  const normalizedFile = file.replaceAll("\\", "/").replace(/^\.\//, "");
+  return new RegExp(`^${docsMaintainerGlobToRegExp(normalizedPattern)}$`).test(normalizedFile);
+}
+
+function docsMaintainerGlobToRegExp(pattern: string): string {
+  let out = "";
+  for (let index = 0; index < pattern.length; index += 1) {
+    const char = pattern[index];
+    const next = pattern[index + 1];
+    if (char === "*" && next === "*") {
+      const after = pattern[index + 2];
+      if (after === "/") {
+        out += "(?:.*/)?";
+        index += 2;
+      } else {
+        out += ".*";
+        index += 1;
+      }
+    } else if (char === "*") {
+      out += "[^/]*";
+    } else {
+      out += docsMaintainerEscapeRegExp(char ?? "");
+    }
+  }
+  return out;
+}
+
+function docsMaintainerEscapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function isTrustedAdoptedBranchRepair({ job, fixArtifact }: LooseRecord): boolean {

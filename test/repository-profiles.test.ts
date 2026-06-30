@@ -15,6 +15,10 @@ test("repositoryProfileFor matches mixed-case input against private target profi
   assert.equal(profile.targetRepo, "clip-sa/core-wholesale");
   assert.equal(profile.slug, "clip-sa-core-wholesale");
   assert.equal(profile.checkoutDir, "core-wholesale");
+  assert.equal(profile.docsMaintainer.enabled, true);
+  assert.deepEqual(profile.docsMaintainer.skipLabels, ["skip-docs-check", "docs-not-needed"]);
+  assert.equal(profile.docsMaintainer.mode, "autofix");
+  assert.match(profile.docsMaintainer.ownedDocs.join("\n"), /NextJS-Frontend\/AGENTS\.md/);
 });
 
 test("repositoryProfileFor carries service-area routing notes", () => {

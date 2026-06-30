@@ -11,7 +11,7 @@ private key material, and one-off execution windows out of this file.
 
 ClawSweeper is a conservative, targeted automation layer for OpenClaw issue and
 PR maintenance. It does not scan the whole backlog by itself. It takes a known
-cluster, hydrates current GitHub state, asks Codex for a structured decision,
+cluster, hydrates current GitHub state, asks Pi for a structured decision,
 then lets deterministic scripts perform the allowed writes.
 
 The core invariants:
@@ -19,7 +19,7 @@ The core invariants:
 - One cluster maps to one job file.
 - One implementation path maps to one branch: `clawsweeper/<cluster-id>`.
 - One branch should produce or update one PR.
-- Codex workers do not get GitHub write tokens.
+- Model workers do not get GitHub write tokens.
 - GitHub writes happen through deterministic scripts with live-state checks.
 - Merge stays closed unless a maintainer explicitly opens the merge gate.
 - Security-sensitive work is out of scope and must be routed elsewhere.
@@ -49,25 +49,25 @@ Path: `.clawsweeper-repair/runs/<run>/cluster-plan.json`
 
 Created by `scripts/plan-cluster.ts`. It hydrates the listed GitHub refs,
 linked refs, labels, bodies, comments, PR files, PR reviews, PR review
-comments, checks, and current `main` state. The Codex worker receives this as
+comments, checks, and current `main` state. The Pi worker receives this as
 its live evidence bundle.
 
 ### Worker Result
 
 Path: `.clawsweeper-repair/runs/<run>/result.json`
 
-Created by `scripts/run-worker.ts` via `codex exec` using
+Created by `scripts/run-worker.ts` via the Pi CLI using
 `schema/repair/codex-result.schema.json`. The worker can recommend actions and fix
 artifacts, but it must not mutate GitHub directly.
 
 `scripts/review-results.ts` validates the result before any follow-up lane
 trusts it.
 
-Long Codex calls emit periodic `[clawsweeper repair] ... still running` log
-lines from the wrapper process. This covers both the planning worker and
-execute-side edit, review, rebase-reconcile, and write-preflight subprocesses,
+Long model calls emit periodic `[clawsweeper repair] ... still running` log
+lines from the wrapper process. This covers the Pi planning worker plus
+execute-side Codex edit, review, rebase-reconcile, and write-preflight subprocesses,
 so GitHub Actions does not kill otherwise healthy repair jobs for lack of output
-before the debug artifact collection steps can run.
+before debug artifact collection steps can run.
 
 ### Codex Debug Artifacts
 

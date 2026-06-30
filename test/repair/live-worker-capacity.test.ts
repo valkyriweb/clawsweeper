@@ -39,6 +39,10 @@ test("repair run names match workflow dispatch titles", () => {
   );
   assert.equal(repairRunNamePrefixForJob("jobs/openclaw/inbox/cluster-abc.md"), "repair cluster ");
   assert.equal(
+    repairRunNameForJob("jobs/CLIP-SA/inbox/docs-maintenance-clip-sa-core-wholesale-42.md"),
+    "docs maintenance jobs/CLIP-SA/inbox/docs-maintenance-clip-sa-core-wholesale-42.md",
+  );
+  assert.equal(
     repairRunNameForJob("jobs/openclaw/inbox/automerge-openclaw-openclaw-75363.md", "auto "),
     "auto jobs/openclaw/inbox/automerge-openclaw-openclaw-75363.md",
   );

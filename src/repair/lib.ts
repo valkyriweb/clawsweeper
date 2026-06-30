@@ -3,7 +3,7 @@ import path from "node:path";
 import { repoRoot } from "./paths.js";
 import type { JsonValue, LooseRecord } from "./json-types.js";
 import { isRepairMode, type RepairJobFrontmatter } from "./domain-types.js";
-import { isRepairJobIntent } from "./job-intent.js";
+import { isRepairJobIntent, repairJobIntentForFrontmatter } from "./job-intent.js";
 
 export { repoRoot } from "./paths.js";
 export type {
@@ -231,6 +231,17 @@ export function renderPrompt(
   context: LooseRecord = {},
 ) {
   const mode = requestedMode ?? job.frontmatter.mode;
+  if (repairJobIntentForFrontmatter(job.frontmatter) === "docs_maintenance") {
+    const parts = [
+      readText("instructions/security-boundary.md"),
+      job.body,
+      context.targetCheckout
+        ? `Target checkout: \`${context.targetCheckout}\`. Inspect repository files there. The ClawSweeper checkout is only the automation harness.`
+        : "",
+      "Required final output: return JSON matching `schema/repair/codex-result.schema.json` and nothing else.",
+    ];
+    return parts.filter(Boolean).join("\n\n");
+  }
   const modePrompt =
     mode === "autonomous"
       ? "prompts/repair/autonomous.md"

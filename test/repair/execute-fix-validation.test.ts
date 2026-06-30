@@ -87,6 +87,61 @@ test("autonomous scope validation still blocks adopted repairs outside ClawSweep
   assert.match(block.reason, /too broad for autonomous execution/);
 });
 
+test("docs maintenance scope validation allows only configured owned docs", () => {
+  const docsArtifact = {
+    ...broadBranchRepairArtifact(),
+    repair_strategy: "repair_contributor_branch",
+    pr_title: "docs: update Core Wholesale API docs",
+    summary: "Update mapped docs for a Core Wholesale API PR.",
+    pr_body: "Docs-only follow-up for source PR.",
+    affected_surfaces: ["docs"],
+    likely_files: ["README.md", "docs/api/orders.md", ".env.example"],
+    source_prs: ["https://github.com/CLIP-SA/core-wholesale/pull/42"],
+  };
+
+  assert.equal(
+    validate(
+      {
+        frontmatter: {
+          repo: "CLIP-SA/core-wholesale",
+          job_intent: "docs_maintenance",
+          allowed_actions: ["fix", "raise_pr"],
+        },
+      },
+      docsArtifact,
+    ),
+    null,
+  );
+
+  const block = validate(
+    {
+      frontmatter: {
+        repo: "CLIP-SA/core-wholesale",
+        job_intent: "docs_maintenance",
+        allowed_actions: ["fix", "raise_pr"],
+      },
+    },
+    { ...docsArtifact, likely_files: ["src/api/orders.ts", "docs/api/orders.md"] },
+  );
+
+  assert.match(block.reason, /outside configured owned docs/);
+  assert.match(block.evidence.join("\n"), /src\/api\/orders\.ts/);
+
+  const globBlock = validate(
+    {
+      frontmatter: {
+        repo: "CLIP-SA/core-wholesale",
+        job_intent: "docs_maintenance",
+        allowed_actions: ["fix", "raise_pr"],
+      },
+    },
+    { ...docsArtifact, likely_files: ["docs/**/*.md"] },
+  );
+
+  assert.match(globBlock.reason, /outside configured owned docs/);
+  assert.match(globBlock.evidence.join("\n"), /docs\/\*\*\/\*\.md/);
+});
+
 test("repair pause labels block live branch mutation", () => {
   assert.equal(repairPauseLabel(["bug", HUMAN_REVIEW_LABEL]), HUMAN_REVIEW_LABEL);
   assert.equal(
