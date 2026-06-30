@@ -11,8 +11,8 @@ name: telemetry egress check
 # probed the backends; this does.
 
 on:
-  schedule:
-    - cron: "*/30 * * * *"
+  # Manual-only: scheduled probes created noisy OpenClaw incidents when downstream
+  # telemetry backends briefly returned 5xx. Keep the guard available on demand.
   workflow_dispatch: {}
 
 permissions:
