@@ -1,6 +1,6 @@
 name: repair cluster worker
 
-run-name: ${{ contains(inputs.job, '/inbox/automerge-') && format('automerge repair {0}', inputs.job) || format('repair cluster {0}', inputs.job) }}
+run-name: ${{ contains(inputs.job, '/inbox/automerge-') && format('automerge repair {0}', inputs.job) || contains(inputs.job, '/inbox/docs-maintenance-') && format('docs maintenance {0}', inputs.job) || format('repair cluster {0}', inputs.job) }}
 
 on:
   workflow_dispatch:
@@ -29,12 +29,12 @@ on:
         default: '["self-hosted","macOS","ARM64","mac-mini"]'
         type: string
       model:
-        description: "Codex model"
+        description: "Pi repair worker model alias"
         required: true
-        default: gpt-5.5
+        default: medium
         type: string
       dry_run:
-        description: "Render prompt and write a dry result without invoking Codex"
+        description: "Render prompt and write a dry result without invoking the model worker"
         required: true
         default: false
         type: boolean
@@ -83,10 +83,8 @@ jobs:
       CLAWSWEEPER_MAX_COMMENTS_PER_ITEM: ${{ vars.CLAWSWEEPER_MAX_COMMENTS_PER_ITEM || '30' }}
       CLAWSWEEPER_MAX_LINKED_REFS: ${{ vars.CLAWSWEEPER_MAX_LINKED_REFS || '20' }}
       CLAWSWEEPER_MAX_REVIEW_COMMENTS_PER_PR: ${{ vars.CLAWSWEEPER_MAX_REVIEW_COMMENTS_PER_PR || '50' }}
-      CLAWSWEEPER_CODEX_TIMEOUT_MS: ${{ vars.CLAWSWEEPER_CODEX_TIMEOUT_MS || '1800000' }}
-      CLAWSWEEPER_CODEX_REASONING_EFFORT: ${{ vars.CLAWSWEEPER_CODEX_REASONING_EFFORT || 'high' }}
-      CLAWSWEEPER_MODEL: ${{ inputs.model || vars.CLAWSWEEPER_MODEL || 'gpt-5.5' }}
-      CODEX_CLI_VERSION: ${{ vars.CLAWSWEEPER_CODEX_CLI_VERSION || '0.130.0' }}
+      CLAWSWEEPER_WORKER_TIMEOUT_MS: ${{ vars.CLAWSWEEPER_WORKER_TIMEOUT_MS || vars.CLAWSWEEPER_CODEX_TIMEOUT_MS || '1800000' }}
+      CLAWSWEEPER_MODEL: ${{ inputs.model || vars.CLAWSWEEPER_MODEL || 'medium' }}
       OPENCLAW_LOCAL_CHECK: "0"
     steps:
       - uses: actions/checkout@v5
@@ -153,12 +151,6 @@ jobs:
         with:
           build-script: build:repair
 
-      - uses: ./.github/actions/setup-codex
-        if: ${{ steps.check_job.outputs.job_exists == '1' }}
-        with:
-          version: ${{ env.CODEX_CLI_VERSION }}
-          auth-mode: subscription
-
       - name: Verify GitHub read token
         if: ${{ steps.check_job.outputs.job_exists == '1' }}
         env:
@@ -196,29 +188,6 @@ jobs:
           if find .clawsweeper-repair/runs -name result.json -print -quit | grep -q .; then
             pnpm run repair:review-results -- .clawsweeper-repair/runs
           fi
-
-      - name: Collect Codex debug logs
-        if: ${{ always() && steps.check_job.outputs.job_exists == '1' }}
-        env:
-          CLAWSWEEPER_CODEX_DEBUG_SINCE_MINUTES: ${{ vars.CLAWSWEEPER_CODEX_DEBUG_SINCE_MINUTES || '240' }}
-        run: |
-          if [ -f dist/repair/collect-codex-debug.js ]; then
-            node dist/repair/collect-codex-debug.js \
-              --out .clawsweeper-repair/codex-debug/cluster \
-              --label cluster \
-              --since-minutes "${CLAWSWEEPER_CODEX_DEBUG_SINCE_MINUTES}"
-          else
-            echo "::notice title=No Codex debug collector::dist/repair/collect-codex-debug.js is missing."
-          fi
-
-      - name: Upload Codex debug logs
-        if: ${{ always() && steps.check_job.outputs.job_exists == '1' }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: clawsweeper-codex-debug-cluster-${{ github.run_id }}-${{ github.run_attempt }}
-          path: .clawsweeper-repair/codex-debug/cluster/**
-          if-no-files-found: warn
-          retention-days: 7
 
       - name: Upload cluster usage telemetry
         if: ${{ always() && steps.check_job.outputs.job_exists == '1' }}
@@ -266,7 +235,7 @@ jobs:
       CLAWSWEEPER_FIX_TIMEOUT_RESERVE_MS: ${{ vars.CLAWSWEEPER_FIX_TIMEOUT_RESERVE_MS || '300000' }}
       CLAWSWEEPER_FIX_PREFLIGHT_TIMEOUT_MS: ${{ vars.CLAWSWEEPER_FIX_PREFLIGHT_TIMEOUT_MS || '120000' }}
       CLAWSWEEPER_RESOLVE_REVIEW_THREADS: ${{ vars.CLAWSWEEPER_RESOLVE_REVIEW_THREADS || '1' }}
-      CLAWSWEEPER_MODEL: ${{ inputs.model || vars.CLAWSWEEPER_MODEL || 'gpt-5.5' }}
+      CLAWSWEEPER_MODEL: ${{ vars.CLAWSWEEPER_FIX_MODEL || vars.CLAWSWEEPER_MODEL || 'gpt-5.5' }}
       CLAWSWEEPER_TARGET_VALIDATION_MODE: ${{ vars.CLAWSWEEPER_TARGET_VALIDATION_MODE || 'changed-only' }}
       CLAWSWEEPER_POST_FLIGHT_IGNORE_CHECKS: ${{ vars.CLAWSWEEPER_POST_FLIGHT_IGNORE_CHECKS || 'auto-response,Labeler,Stale' }}
       CLAWSWEEPER_MAX_ACTIVE_PRS_PER_AREA: ${{ vars.CLAWSWEEPER_MAX_ACTIVE_PRS_PER_AREA || '50' }}

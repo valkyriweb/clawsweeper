@@ -9,6 +9,7 @@ export const REPAIR_JOB_INTENTS = [
   "implement_issue",
   "commit_finding",
   "low_signal_pr_cleanup",
+  "docs_maintenance",
 ] as const;
 
 export type RepairJobIntent = (typeof REPAIR_JOB_INTENTS)[number];
@@ -36,6 +37,7 @@ export function repairJobIntentFromSource(source: JsonValue): RepairJobIntent {
   if (normalized === "pr_automerge") return "automerge_pr";
   if (normalized === "issue_implementation") return "implement_issue";
   if (normalized === "clawsweeper_commit") return "commit_finding";
+  if (normalized === "docs_maintenance") return "docs_maintenance";
   return "repair_cluster";
 }
 
@@ -52,6 +54,7 @@ export function workerLaneForRepairJobIntent(intent: RepairJobIntent): WorkerLan
   if (intent === "pr_repair") return "automerge_repair";
   if (intent === "clawsweeper_self_rebase") return "automerge_repair";
   if (intent === "implement_issue") return "issue_implementation";
+  if (intent === "docs_maintenance") return "docs_maintenance";
   return "repair";
 }
 

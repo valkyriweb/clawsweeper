@@ -27,6 +27,7 @@ Current intents:
 - `implement_issue`: ClawSweeper-generated issue implementation PR lane
 - `commit_finding`: repair job created from a ClawSweeper commit finding
 - `low_signal_pr_cleanup`: narrow stale/low-signal PR cleanup
+- `docs_maintenance`: PR-scoped docs-maintainer work for configured targets
 
 Older `source` values remain for compatibility, but new code should make
 decisions from `job_intent` first and only fall back to `source` for legacy
@@ -38,6 +39,7 @@ jobs. Unknown intents fail job validation.
 
 - `automerge_pr` -> `automerge_repair`
 - `implement_issue` -> `issue_implementation`
+- `docs_maintenance` -> `docs_maintenance`
 - all other repair jobs -> `repair`
 
 `repair:dispatch` derives the default live-worker cap from the job intent when

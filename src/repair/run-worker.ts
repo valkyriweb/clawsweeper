@@ -14,24 +14,23 @@ import {
   repoRoot,
   validateJob,
 } from "./lib.js";
+import { repairJobIntentForFrontmatter } from "./job-intent.js";
 import {
   appendUsageEventJsonl,
   buildUsageTelemetryEvent,
-  parseCodexTokenUsageFromJsonl,
   type UsageStatus,
 } from "../usage-telemetry.js";
-import {
-  codexSubprocessEnv,
-  repairCodexReasoningEffort,
-  repairCodexServiceTier,
-} from "./process-env.js";
 
 const args = parseArgs(process.argv.slice(2));
 const jobPath = args._[0];
 const mode = args.mode ?? "plan";
 const dryRun = Boolean(args["dry-run"] || process.env.CLAWSWEEPER_DRY_RUN === "1");
-const model = args.model ?? process.env.CLAWSWEEPER_MODEL ?? "gpt-5.5";
-const codexTimeoutMs = Number(process.env.CLAWSWEEPER_CODEX_TIMEOUT_MS ?? 30 * 60 * 1000);
+const piModel = args.model ?? process.env.CLAWSWEEPER_MODEL ?? process.env.PI_MODEL ?? "medium";
+const workerTimeoutMs = Number(
+  process.env.CLAWSWEEPER_WORKER_TIMEOUT_MS ??
+    process.env.CLAWSWEEPER_CODEX_TIMEOUT_MS ??
+    30 * 60 * 1000,
+);
 const resultRepairAttempts = Math.max(
   0,
   Number(process.env.CLAWSWEEPER_RESULT_REPAIR_ATTEMPTS ?? 1),
@@ -39,13 +38,24 @@ const resultRepairAttempts = Math.max(
 const resultRepairTimeoutMs = Number(
   process.env.CLAWSWEEPER_RESULT_REPAIR_TIMEOUT_MS ?? 10 * 60 * 1000,
 );
-const codexReasoningEffort = repairCodexReasoningEffort();
-const codexServiceTier = repairCodexServiceTier();
-const codexStdioMaxBuffer =
-  Math.max(1, Number(process.env.CLAWSWEEPER_CODEX_STDIO_MAX_BUFFER_MB ?? 128)) * 1024 * 1024;
-const codexHeartbeatMs = Math.max(
+const workerStdioMaxBuffer =
+  Math.max(
+    1,
+    Number(
+      process.env.CLAWSWEEPER_WORKER_STDIO_MAX_BUFFER_MB ??
+        process.env.CLAWSWEEPER_CODEX_STDIO_MAX_BUFFER_MB ??
+        128,
+    ),
+  ) *
+  1024 *
+  1024;
+const workerHeartbeatMs = Math.max(
   10_000,
-  Number(process.env.CLAWSWEEPER_CODEX_HEARTBEAT_MS ?? 60_000),
+  Number(
+    process.env.CLAWSWEEPER_WORKER_HEARTBEAT_MS ??
+      process.env.CLAWSWEEPER_CODEX_HEARTBEAT_MS ??
+      60_000,
+  ),
 );
 
 if (!jobPath) {
@@ -60,6 +70,8 @@ if (!["plan", "execute", "autonomous"].includes(mode)) {
 }
 
 const job = parseJob(jobPath);
+const docsMaintenanceJob = repairJobIntentForFrontmatter(job.frontmatter) === "docs_maintenance";
+const effectiveWorkerTimeoutMs = workerTimeoutMs;
 const errors = validateJob(job);
 if (errors.length > 0) {
   console.error(errors.join("\n"));
@@ -80,7 +92,7 @@ if ((mode === "execute" || mode === "autonomous") && !dryRun) {
 const runDir = makeRunDir(job, mode);
 const promptPath = path.join(runDir, "prompt.md");
 const resultPath = path.join(runDir, "result.json");
-const transcriptPath = path.join(runDir, "codex.jsonl");
+const transcriptPath = path.join(runDir, "pi.stdout.log");
 const usageEventsPath = path.join(runDir, "usage-events.jsonl");
 const promptContext: Record<string, string> = {};
 const targetCheckout = dryRun ? "" : prepareTargetCheckout(job);
@@ -89,7 +101,7 @@ if (targetCheckout) {
   promptContext.targetCheckout = targetCheckout;
 }
 
-if (!dryRun) {
+if (!dryRun && !docsMaintenanceJob) {
   const plannerArgs = [
     path.join(repoRoot(), "dist/repair/plan-cluster.js"),
     jobPath,
@@ -117,7 +129,7 @@ if (!dryRun) {
     console.log(`result: ${path.relative(repoRoot(), resultPath)}`);
     process.exit(0);
   }
-} else if (mode === "autonomous") {
+} else if (mode === "autonomous" && !docsMaintenanceJob) {
   const plannerArgs = [
     path.join(repoRoot(), "dist/repair/plan-cluster.js"),
     jobPath,
@@ -148,7 +160,7 @@ if (dryRun) {
     repo: job.frontmatter.repo,
     cluster_id: job.frontmatter.cluster_id,
     mode,
-    summary: "dry run only; prompt rendered but Codex was not invoked",
+    summary: `dry run only; prompt rendered but ${workerLabel()} was not invoked`,
     actions: [],
     prompt_path: path.relative(repoRoot(), promptPath),
   };
@@ -157,44 +169,46 @@ if (dryRun) {
   process.exit(0);
 }
 
-const child = await runCodex({
+const child = await runPi({
   input: prompt,
   outputPath: resultPath,
   transcriptPath,
-  stderrPath: path.join(runDir, "codex.stderr.log"),
-  timeoutMs: codexTimeoutMs,
+  stderrPath: path.join(runDir, "pi.stderr.log"),
+  timeoutMs: effectiveWorkerTimeoutMs,
 });
-emitCodexUsage({
+emitWorkerUsage({
   phase: "primary",
   transcriptPath,
-  stderrPath: path.join(runDir, "codex.stderr.log"),
-  timeoutMs: codexTimeoutMs,
+  stderrPath: path.join(runDir, "pi.stderr.log"),
+  timeoutMs: effectiveWorkerTimeoutMs,
   result: child,
-  status: codexUsageStatus(child, resultPath, "success"),
+  status: workerUsageStatus(child, resultPath, "success"),
 });
 
 if ((child.error as JsonValue)?.code === "ETIMEDOUT") {
-  writeBlockedResult(`Codex worker timed out after ${codexTimeoutMs}ms`);
-  console.error(`Codex worker timed out after ${codexTimeoutMs}ms`);
+  writeBlockedResult(`${workerLabel()} worker timed out after ${effectiveWorkerTimeoutMs}ms`);
+  console.error(`${workerLabel()} worker timed out after ${effectiveWorkerTimeoutMs}ms`);
   process.exit(0);
 }
 
 if (child.error) {
   const detail = child.error.message || String(child.error);
-  writeBlockedResult(`Codex worker failed: ${detail}`);
+  writeBlockedResult(`${workerLabel()} worker failed: ${detail}`);
   console.error(detail);
   process.exit(0);
 }
 
 if (child.status !== 0) {
-  const detail = child.stderr || child.stdout || `Codex worker exited ${child.status}`;
+  const detail = child.stderr || child.stdout || `${workerLabel()} worker exited ${child.status}`;
   writeBlockedResult(detail.trim());
   console.error(detail);
   process.exit(0);
 }
 
 if (!fs.existsSync(resultPath)) {
-  writeBlockedResult("Codex worker completed without a structured result.json artifact.");
+  writeBlockedResult(
+    `${workerLabel()} worker completed without a structured result.json artifact.`,
+  );
 }
 await repairResultIfNeeded();
 
@@ -211,42 +225,49 @@ function readDeterministicResultIfAvailable({
   return deterministicAutomergeResult({ job, mode, clusterPlan });
 }
 
-function runCodex({
+function runPi({
   input,
   outputPath,
-  transcriptPath: codexTranscriptPath,
+  transcriptPath: piTranscriptPath,
   stderrPath,
   timeoutMs,
 }: LooseRecord) {
-  const codexArgs = [
-    "exec",
-    "--cd",
-    codexWorkspaceRoot(),
+  const piPrompt = [
+    String(input ?? ""),
+    "",
+    "Pi worker constraints:",
+    "- Use cheap/fast explore subagents for repository and docs reading whenever broader context is needed; keep the main worker on the medium model for final judgment.",
+    "- Return only JSON matching schema/repair/codex-result.schema.json; no Markdown fences, no prose outside JSON.",
+  ].join("\n");
+  const piArgs = [
+    "--print",
+    "--no-session",
+    "--source",
+    "child-agent",
     "--model",
-    model,
-    "--sandbox",
-    "read-only",
-    ...codexConfigArgs(),
-    "--output-schema",
-    path.join(repoRoot(), "schema", "repair", "codex-result.schema.json"),
-    "--output-last-message",
-    outputPath,
-    "--ephemeral",
-    "--json",
-    "-",
+    piModel,
+    "--thinking",
+    "medium",
+    "--tools",
+    "read,grep,Glob,ls,Agent",
+    "--mode",
+    "text",
   ];
 
-  return spawnCodexWithHeartbeat({
-    args: codexArgs,
-    cwd: codexWorkspaceRoot(),
-    input: String(input ?? ""),
-    transcriptPath: codexTranscriptPath,
+  return spawnWorkerWithHeartbeat({
+    command: "pi",
+    args: piArgs,
+    cwd: piWorkspaceRoot(),
+    input: piPrompt,
+    transcriptPath: piTranscriptPath,
     stderrPath,
     timeoutMs: Number(timeoutMs),
+    outputPath,
+    stdoutToOutputPath: true,
   });
 }
 
-function codexUsageStatus(
+function workerUsageStatus(
   result: LooseRecord,
   outputPath: string,
   successStatus: UsageStatus,
@@ -260,38 +281,36 @@ function codexUsageStatus(
   return successStatus;
 }
 
-function emitCodexUsage({
+function emitWorkerUsage({
   phase,
-  transcriptPath: codexTranscriptPath,
+  transcriptPath: workerTranscriptPath,
   stderrPath,
   timeoutMs,
   result,
   status,
 }: LooseRecord & { status: UsageStatus }) {
   try {
-    const parsed = parseCodexTokenUsageFromJsonl(String(result.stdout ?? ""));
-
     appendUsageEventJsonl(
       usageEventsPath,
       buildUsageTelemetryEvent({
         workflow: "repair-worker",
         mode,
         phase: String(phase ?? "primary"),
+        provider: "pi",
         target_repo: stringValue(job.frontmatter.repo),
         cluster_id: stringValue(job.frontmatter.cluster_id),
         job_path: job.relativePath,
-        model,
-        reasoning_effort: codexReasoningEffort,
-        service_tier: codexServiceTier,
+        model: workerModel(),
+        reasoning_effort: "medium",
         sandbox: "read-only",
         timeout_ms: Number(timeoutMs),
         elapsed_ms: Number(result.elapsedMs ?? 0),
-        transcript_path: path.relative(runDir, String(codexTranscriptPath)),
+        transcript_path: path.relative(runDir, String(workerTranscriptPath)),
         ...(fs.existsSync(String(stderrPath))
           ? { stderr_path: path.relative(runDir, String(stderrPath)) }
           : {}),
         status,
-        tokens: parsed?.tokens ?? null,
+        tokens: null,
       }),
     );
   } catch {
@@ -299,13 +318,16 @@ function emitCodexUsage({
   }
 }
 
-function spawnCodexWithHeartbeat({
+function spawnWorkerWithHeartbeat({
+  command,
   args: commandArgs,
   cwd,
   input,
-  transcriptPath: codexTranscriptPath,
+  transcriptPath: workerTranscriptPath,
   stderrPath,
   timeoutMs,
+  outputPath,
+  stdoutToOutputPath = false,
 }: LooseRecord): Promise<LooseRecord> {
   return new Promise((resolve) => {
     const startedAt = Date.now();
@@ -317,9 +339,9 @@ function spawnCodexWithHeartbeat({
     let timeoutError: Error | null = null;
     let bufferError: Error | null = null;
 
-    const child = spawn("codex", commandArgs, {
+    const child = spawn(String(command), commandArgs, {
       cwd,
-      env: codexEnv(),
+      env: workerEnv(),
       stdio: ["pipe", "pipe", "pipe"],
     });
 
@@ -329,11 +351,11 @@ function spawnCodexWithHeartbeat({
     const heartbeat = setInterval(() => {
       const elapsedSeconds = Math.round((Date.now() - startedAt) / 1000);
       console.log(
-        `[clawsweeper repair] ${new Date().toISOString()} Codex worker still running (${elapsedSeconds}s elapsed)`,
+        `[clawsweeper repair] ${new Date().toISOString()} ${workerLabel()} worker still running (${elapsedSeconds}s elapsed)`,
       );
-    }, codexHeartbeatMs);
+    }, workerHeartbeatMs);
     const timeout = setTimeout(() => {
-      timeoutError = new Error(`Codex worker timed out after ${timeoutMs}ms`);
+      timeoutError = new Error(`${workerLabel()} worker timed out after ${timeoutMs}ms`);
       (timeoutError as LooseRecord).code = "ETIMEDOUT";
       child.kill("SIGTERM");
       setTimeout(() => {
@@ -346,7 +368,11 @@ function spawnCodexWithHeartbeat({
       settled = true;
       clearInterval(heartbeat);
       clearTimeout(timeout);
-      fs.writeFileSync(codexTranscriptPath, stdout);
+      fs.writeFileSync(workerTranscriptPath, stdout);
+      if (stdoutToOutputPath && !fs.existsSync(String(outputPath))) {
+        const extracted = extractJsonObject(stdout);
+        if (extracted) fs.writeFileSync(String(outputPath), `${extracted}\n`);
+      }
       if (stderr) fs.writeFileSync(stderrPath, stderr);
       resolve({ ...result, elapsedMs: Date.now() - startedAt });
     };
@@ -361,8 +387,8 @@ function spawnCodexWithHeartbeat({
         stderr += text;
         stderrBytes += bytes;
       }
-      if (stdoutBytes + stderrBytes > codexStdioMaxBuffer && !bufferError) {
-        bufferError = new Error(`Codex output exceeded ${codexStdioMaxBuffer} bytes`);
+      if (stdoutBytes + stderrBytes > workerStdioMaxBuffer && !bufferError) {
+        bufferError = new Error(`${workerLabel()} output exceeded ${workerStdioMaxBuffer} bytes`);
         (bufferError as LooseRecord).code = "ENOBUFS";
         child.kill("SIGTERM");
       }
@@ -382,21 +408,13 @@ function spawnCodexWithHeartbeat({
         error: timeoutError ?? bufferError ?? undefined,
       });
     });
+
     child.stdin.end(input);
   });
 }
 
-function codexWorkspaceRoot(): string {
+function piWorkspaceRoot(): string {
   return targetCheckout || repoRoot();
-}
-
-function codexConfigArgs() {
-  const configs = [
-    'approval_policy="never"',
-    `model_reasoning_effort=${JSON.stringify(codexReasoningEffort)}`,
-  ];
-  if (codexServiceTier) configs.push(`service_tier=${JSON.stringify(codexServiceTier)}`);
-  return configs.flatMap((config: JsonValue) => ["-c", config]);
 }
 
 async function repairResultIfNeeded() {
@@ -434,30 +452,30 @@ async function repairResultIfNeeded() {
       "```",
     ].join("\n");
 
-    const repairTranscriptPath = path.join(runDir, `codex-repair-${attempt}.jsonl`);
-    const repairStderrPath = path.join(runDir, `codex-repair-${attempt}.stderr.log`);
-    const repair = await runCodex({
+    const repairTranscriptPath = path.join(runDir, `pi-repair-${attempt}.stdout.log`);
+    const repairStderrPath = path.join(runDir, `pi-repair-${attempt}.stderr.log`);
+    const repair = await runPi({
       input: repairPrompt,
       outputPath: resultPath,
       transcriptPath: repairTranscriptPath,
       stderrPath: repairStderrPath,
       timeoutMs: resultRepairTimeoutMs,
     });
-    emitCodexUsage({
+    emitWorkerUsage({
       phase: "result_repair",
       transcriptPath: repairTranscriptPath,
       stderrPath: repairStderrPath,
       timeoutMs: resultRepairTimeoutMs,
       result: repair,
-      status: codexUsageStatus(repair, resultPath, "result_repair"),
+      status: workerUsageStatus(repair, resultPath, "result_repair"),
     });
     if ((repair.error as JsonValue)?.code === "ETIMEDOUT") {
-      console.error(`Codex result repair timed out after ${resultRepairTimeoutMs}ms`);
+      console.error(`${workerLabel()} result repair timed out after ${resultRepairTimeoutMs}ms`);
       return;
     }
     if (repair.status !== 0) {
       console.error(
-        repair.stderr || repair.stdout || `Codex result repair exited ${repair.status}`,
+        repair.stderr || repair.stdout || `${workerLabel()} result repair exited ${repair.status}`,
       );
       return;
     }
@@ -476,8 +494,37 @@ function reviewResult() {
   );
 }
 
-function codexEnv() {
-  return codexSubprocessEnv();
+function workerEnv() {
+  return process.env;
+}
+
+function workerLabel(): string {
+  return "Pi";
+}
+
+function workerModel(): string {
+  return piModel;
+}
+
+function extractJsonObject(text: string): string | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  try {
+    JSON.parse(trimmed);
+    return trimmed;
+  } catch {
+    // Pi should return JSON only, but tolerate accidental surrounding logs/prose.
+  }
+  const start = trimmed.indexOf("{");
+  const end = trimmed.lastIndexOf("}");
+  if (start < 0 || end <= start) return null;
+  const candidate = trimmed.slice(start, end + 1);
+  try {
+    JSON.parse(candidate);
+    return candidate;
+  } catch {
+    return null;
+  }
 }
 
 function prepareTargetCheckout(job: LooseRecord): string {

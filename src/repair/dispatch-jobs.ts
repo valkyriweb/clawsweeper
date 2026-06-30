@@ -174,5 +174,6 @@ function strongestWorkerLane(jobPaths: JsonValue[]): WorkerLane {
   const lanes = new Set(jobPaths.map((jobPath) => jobWorkerLanes.get(String(jobPath))));
   if (lanes.has("automerge_repair")) return "automerge_repair";
   if (lanes.has("issue_implementation")) return "issue_implementation";
+  if (lanes.has("docs_maintenance")) return "docs_maintenance";
   return "repair";
 }

@@ -84,6 +84,10 @@ test("worker scheduler lets background lanes yield to active work", () => {
   assert.equal(workerLimit("commit_review"), AUTOMATION_LIMITS.commit_review.page_size_default);
   assert.equal(workerLimit("commit_review", { activeCritical: 49 }), 1);
   assert.equal(workerLimit("repair"), AUTOMATION_LIMITS.repair_live_runs.default);
+  assert.equal(
+    workerLimit("docs_maintenance"),
+    AUTOMATION_LIMITS.repair_live_runs.docs_maintenance_default,
+  );
 });
 
 test("workflow utilities derive artifact item numbers and action counts", () => {

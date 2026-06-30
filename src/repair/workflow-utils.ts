@@ -111,6 +111,7 @@ function requiredWorkerLane(value: string): WorkerLane {
     "repair",
     "automerge_repair",
     "issue_implementation",
+    "docs_maintenance",
     "exact_item",
   ]);
   if (allowed.has(value as WorkerLane)) return value as WorkerLane;

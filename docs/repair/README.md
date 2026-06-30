@@ -4,7 +4,7 @@
 
 ClawSweeper is a conservative OpenClaw maintainer tool for one-cluster issue and PR cleanup.
 
-It takes a curated GitHub issue/PR cluster, asks a Codex worker to classify the items, and applies only narrow, auditable cleanup actions when the evidence is strong. It shares the same ClawSweeper repo and GitHub App as the commit and backlog sweepers, but runs as a separate repair lane with stricter mutation gates.
+It takes a curated GitHub issue/PR cluster, asks a Pi worker to classify the items, and applies only narrow, auditable cleanup actions when the evidence is strong. It shares the same ClawSweeper repo and GitHub App as the commit and backlog sweepers, but runs as a separate repair lane with stricter mutation gates.
 
 For the canonical repair `job_intent` contract and workflow/TypeScript boundary,
 see [`docs/orchestration.md`](../orchestration.md).
@@ -238,7 +238,8 @@ pnpm run repair:import-gitcrawl-low-signal -- --limit 20 --batch-size 5 --mode a
 pnpm run repair:import-gitcrawl -- --from-gitcrawl --limit 40 --mode autonomous --suffix autonomous-smoke --allow-instant-close --allow-merge --allow-fix-pr --allow-post-merge-close
 
 # Dispatch reviewed jobs. Dispatch derives its default live-worker cap from the
-# job's job_intent and config/automation-limits.json. Tune the global budget
+# job's job_intent and config/automation-limits.json, including the docs_maintenance
+# lane created by docs-maintainer:create-job. Tune the global budget
 # there first, or use CLAWSWEEPER_MAX_LIVE_WORKERS/--max-live-workers for a
 # one-lane override. With --wait-for-capacity, dispatch can drain a larger file
 # list in capacity-sized waves instead of refusing the whole batch.
@@ -265,6 +266,13 @@ CLAWSWEEPER_ALLOW_EXECUTE=1 CLAWSWEEPER_ALLOW_FIX_PR=1 pnpm run repair:execute-f
 
 # Rebuild the open ClawSweeper PR finalization report without mutating GitHub.
 pnpm run repair:finalize-open-prs -- --write-report
+
+# Precheck a PR for configured docs maintenance and create a durable docs_maintenance job.
+# Candidate docs and fix_artifact.likely_files are concrete owned docs paths; owned_docs may be globbed.
+# create-job honors docs-maintainer mode before queuing; docs jobs use the shared repair-worker timeout.
+# Repair planning uses Pi (`CLAWSWEEPER_MODEL`, default medium); docs reading should fan out to cheap/fast explore subagents.
+pnpm run docs-maintainer:precheck -- --repo CLIP-SA/core-wholesale --pr 123
+pnpm run docs-maintainer:create-job -- --repo CLIP-SA/core-wholesale --pr 123
 
 # Dry-run maintainer comment routing. Recognizes `/clawsweeper ...`,
 # `@clawsweeper ...`, and `@openclaw-clawsweeper ...` in recent issue/PR comments.
@@ -322,21 +330,19 @@ git diff --check
 
 The workflow needs:
 
-- Codex/OpenAI authentication for model execution
+- Pi CLI access for repair-worker planning and Codex/OpenAI authentication for fix execution
 - a read-only GitHub token for worker inspection
 - a separate write-scoped GitHub token for the deterministic applicator
 - execution gates that default closed: set `CLAWSWEEPER_ALLOW_EXECUTE=1` and `CLAWSWEEPER_ALLOW_FIX_PR=1` only for an intentional execution window; otherwise execute/autonomous dispatches render plan-only output and skip mutation steps
 - merge is separately gated by `CLAWSWEEPER_ALLOW_MERGE`, which defaults to `0`; merge-ready PRs are labeled `clawsweeper:human-review` and `clawsweeper:merge-ready` for a maintainer to merge manually when the global gate is closed
 - optional `CLAWSWEEPER_CODEX_CLI_VERSION` variable to pin and refresh the cached Codex CLI
-- optional `CLAWSWEEPER_MODEL` override for dispatch scripts; default Codex
-  model is `gpt-5.5`; repair workers default to high reasoning on the fast
-  service tier, and accidental `xhigh` reasoning overrides are normalized back
-  to `high`
+- optional `CLAWSWEEPER_MODEL` override for Pi repair-worker planning; default is `medium`, and broad repo/docs reading should be delegated to cheap/fast explore subagents from the Pi worker prompt
+- optional `CLAWSWEEPER_FIX_MODEL` override for the Codex-based deterministic fix executor; default is `gpt-5.5`
 - optional `CLAWSWEEPER_MAX_LIVE_WORKERS` variable for dispatch/requeue/self-heal worker fan-out; dispatch defaults are derived from `job_intent` and `workers.max`
 - optional `CLAWSWEEPER_MAX_ACTIVE_PRS_PER_AREA` variable for replacement PR backpressure; default is `50` open ClawSweeper PRs per touched area, `0` disables the area cap, and common changelog/release-note files are ignored for this check
 - ClawSweeper commit-finding repair PRs are labeled `clawsweeper:commit-finding`
-- optional `CLAWSWEEPER_CODEX_TIMEOUT_MS`, `CLAWSWEEPER_FIX_CODEX_TIMEOUT_MS`,
-  and `CLAWSWEEPER_FIX_STEP_TIMEOUT_MS` variables; worker planning defaults to
+- optional `CLAWSWEEPER_WORKER_TIMEOUT_MS`, `CLAWSWEEPER_FIX_CODEX_TIMEOUT_MS`,
+  and `CLAWSWEEPER_FIX_STEP_TIMEOUT_MS` variables; Pi worker planning defaults to
   30 minutes, while fix execution defaults to a 20 minute per-Codex-call budget
   inside a 40 minute executor budget. The cluster execute job keeps a 45 minute
   timeout and a 40 minute execute-step cap so long edit/test passes still leave

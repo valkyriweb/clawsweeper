@@ -28,6 +28,7 @@ export type AutomationLimits = {
     hard_cap: number;
     automerge_default: number;
     issue_implementation_default: number;
+    docs_maintenance_default: number;
   };
   issue_implementation: {
     dispatches_per_sweep_default: number;
@@ -41,6 +42,7 @@ export type WorkerLane =
   | "repair"
   | "automerge_repair"
   | "issue_implementation"
+  | "docs_maintenance"
   | "exact_item";
 
 export const WORKER_CONFIG = readWorkerConfig();
@@ -72,6 +74,7 @@ export function deriveAutomationLimits(config: WorkerConfig): AutomationLimits {
       hard_cap: max,
       automerge_default: percent(max, 40),
       issue_implementation_default: percent(max, 40),
+      docs_maintenance_default: percent(max, 25),
     },
     issue_implementation: {
       dispatches_per_sweep_default: percent(max, 4),
@@ -99,6 +102,8 @@ export function workerLimit(
     return priorityLimit(limits.repair_live_runs.automerge_default, activeCritical);
   if (lane === "issue_implementation")
     return priorityLimit(limits.repair_live_runs.issue_implementation_default, activeCritical);
+  if (lane === "docs_maintenance")
+    return priorityLimit(limits.repair_live_runs.docs_maintenance_default, activeCritical);
   if (lane === "commit_review")
     return backgroundLimit(
       limits.commit_review.page_size_default,

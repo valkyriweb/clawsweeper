@@ -29,6 +29,7 @@ export type AutomationLimits = {
     hard_cap: number;
     automerge_default: number;
     issue_implementation_default: number;
+    docs_maintenance_default: number;
   };
   issue_implementation: {
     dispatches_per_sweep_default: number;
@@ -60,6 +61,7 @@ export function deriveAutomationLimits(workerConfig: WorkerConfig): AutomationLi
       hard_cap: max,
       automerge_default: percent(max, 40),
       issue_implementation_default: percent(max, 40),
+      docs_maintenance_default: percent(max, 25),
     },
     issue_implementation: {
       dispatches_per_sweep_default: percent(max, 4),
