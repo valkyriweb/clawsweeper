@@ -78,21 +78,48 @@
               "NextJS-Frontend/components/**",
               "NextJS-Frontend/src/**"
             ],
-            "docs": ["README.md", "docs/caching.md", "NextJS-Frontend/AGENTS.md"]
+            "docs": [
+              "README.md",
+              "docs/caching.md",
+              "NextJS-Frontend/AGENTS.md"
+            ]
           },
           {
-            "code": ["**/routes/**", "**/controllers/**", "**/api/**", "wordpress/**/*.php"],
-            "docs": ["README.md", "docs/OPERATIONS.md", "docs/observability.md"]
+            "code": [
+              "**/routes/**",
+              "**/controllers/**",
+              "**/api/**",
+              "wordpress/**/*.php"
+            ],
+            "docs": [
+              "README.md",
+              "docs/OPERATIONS.md",
+              "docs/observability.md"
+            ]
           },
           {
-            "code": ["config/**", ".github/workflows/**", "docker/**", "Dockerfile*", ".env*"],
-            "docs": ["README.md", "docs/OPERATIONS.md", "docs/RELEASING.md", ".env.example"]
+            "code": [
+              "config/**",
+              ".github/workflows/**",
+              "docker/**",
+              "Dockerfile*",
+              ".env*"
+            ],
+            "docs": [
+              "README.md",
+              "docs/OPERATIONS.md",
+              "docs/RELEASING.md",
+              ".env.example"
+            ]
           }
         ],
-        "skip_labels": ["skip-docs-check", "docs-not-needed"],
+        "skip_labels": [
+          "skip-docs-check",
+          "docs-not-needed"
+        ],
         "mode": "autofix"
       },
-      "prompt_note": "Core Wholesale is a multi-stack ecommerce platform. Service areas: `area:next-frontend` (Next.js storefront, React components, pages), `area:woocommerce` (WooCommerce plugin customisations, hooks, REST API extensions), `area:wordpress` (WordPress core customisations, themes, ACF, plugin integrations), `area:mysql` (database schema, queries, migrations, performance), `area:openclaw-integration` (OpenClaw agent/AI integration, tool dispatch, session management). Use at most two area tags. When the item spans multiple areas, use `area:cross-cutting`. Validation: appropriate per area — PHP unit tests for WP/WC, `pnpm build` for Next.js, SQL migration checks for MySQL.",
+      "prompt_note": "Core Wholesale is a multi-stack ecommerce platform. Service areas: `area:next-frontend` (Next.js storefront, React components, pages), `area:woocommerce` (WooCommerce plugin customisations, hooks, REST API extensions), `area:wordpress` (WordPress core customisations, themes, ACF, plugin integrations), `area:mysql` (database schema, queries, migrations, performance), `area:openclaw-integration` (OpenClaw agent/AI integration, tool dispatch, session management). Use at most two area tags. When the item spans multiple areas, use `area:cross-cutting`. Validation: appropriate per area \u2014 PHP unit tests for WP/WC, `pnpm build` for Next.js, SQL migration checks for MySQL.",
       "apply_close_rules": {
         "issue": [
           "implemented_on_main",
@@ -135,6 +162,55 @@
           "incoherent",
           "not_actionable_in_repo"
         ]
+      },
+      "docs_maintainer": {
+        "enabled": true,
+        "owned_docs": [
+          "README.md",
+          "FORK-CHANGELOG.md",
+          "packages/*/CHANGELOG.md",
+          "packages/coding-agent/docs/**/*.md"
+        ],
+        "docs_map": [
+          {
+            "code": [
+              "packages/coding-agent/src/**"
+            ],
+            "docs": [
+              "packages/coding-agent/CHANGELOG.md",
+              "packages/coding-agent/docs/**/*.md"
+            ]
+          },
+          {
+            "code": [
+              "packages/agent/src/**",
+              "packages/ai/src/**",
+              "packages/tui/src/**",
+              "packages/orchestrator/src/**"
+            ],
+            "docs": [
+              "packages/agent/CHANGELOG.md",
+              "packages/ai/CHANGELOG.md",
+              "packages/tui/CHANGELOG.md",
+              "packages/orchestrator/CHANGELOG.md"
+            ]
+          },
+          {
+            "code": [
+              ".github/workflows/**",
+              "scripts/**"
+            ],
+            "docs": [
+              "README.md",
+              "FORK-CHANGELOG.md"
+            ]
+          }
+        ],
+        "skip_labels": [
+          "skip-docs-check",
+          "docs-not-needed"
+        ],
+        "mode": "autofix"
       }
     },
     {
@@ -143,7 +219,7 @@
       "checkout_dir": "my-pi",
       "include_maintainer_authored": true,
       "review_provider": "pi",
-      "prompt_note": "my-pi is Luke's personal Pi extension and harness lab: custom extensions (pi-memory, dream-memory, claude-bridge markers, native-tool-overrides), the my-pi-full profile package, the Pi Setup Registry catalog, and memory/cache/context-strategy docs. It customizes Pi (forked at valkyriweb/pi-mono, local `~/Projects/personal/pi-mono-fork/`) via extensions/packages first; core fork patches only when documented APIs cannot achieve the behavior. The local checkout lives at `~/Projects/personal/my-pi/`; the GitHub repo is `valkyriweb/my-pi`. Service areas: `area:extensions` (extension packages + lifecycle), `area:packages` (my-pi-full profile + package metadata), `area:memory` (pi-memory/dream-memory architecture, recall, consolidation), `area:cache` (prompt-cache stability; system-prompt/tools byte-stability), `area:setup` (docs/pi-setup catalog YAML; generated registry), `area:docs` (markdown docs, ADRs), `area:tests` (extension-gate, evals). Use at most two area tags; `area:cross-cutting` when it spans many. Cache stability is a BLOCKING concern for any prompt-prefix/tools/messages change; pure TUI rendering is cache-irrelevant. Validation: `npm run test:extension-gate` for extension/profile/cache changes, `npm test` for root script tests, and the fork's `test:build-gate` must pass against the pinned pi-mono. Generated files under `docs/pi-setup/generated/` are scanner-owned — never hand-edit. Default review provider is Pi (Claude-bridge Opus), dogfooding pi-on-pi.",
+      "prompt_note": "my-pi is Luke's personal Pi extension and harness lab: custom extensions (pi-memory, dream-memory, claude-bridge markers, native-tool-overrides), the my-pi-full profile package, the Pi Setup Registry catalog, and memory/cache/context-strategy docs. It customizes Pi (forked at valkyriweb/pi-mono, local `~/Projects/personal/pi-mono-fork/`) via extensions/packages first; core fork patches only when documented APIs cannot achieve the behavior. The local checkout lives at `~/Projects/personal/my-pi/`; the GitHub repo is `valkyriweb/my-pi`. Service areas: `area:extensions` (extension packages + lifecycle), `area:packages` (my-pi-full profile + package metadata), `area:memory` (pi-memory/dream-memory architecture, recall, consolidation), `area:cache` (prompt-cache stability; system-prompt/tools byte-stability), `area:setup` (docs/pi-setup catalog YAML; generated registry), `area:docs` (markdown docs, ADRs), `area:tests` (extension-gate, evals). Use at most two area tags; `area:cross-cutting` when it spans many. Cache stability is a BLOCKING concern for any prompt-prefix/tools/messages change; pure TUI rendering is cache-irrelevant. Validation: `npm run test:extension-gate` for extension/profile/cache changes, `npm test` for root script tests, and the fork's `test:build-gate` must pass against the pinned pi-mono. Generated files under `docs/pi-setup/generated/` are scanner-owned \u2014 never hand-edit. Default review provider is Pi (Claude-bridge Opus), dogfooding pi-on-pi.",
       "apply_close_rules": {
         "issue": [
           "implemented_on_main",
@@ -161,6 +237,52 @@
           "incoherent",
           "not_actionable_in_repo"
         ]
+      },
+      "docs_maintainer": {
+        "enabled": true,
+        "owned_docs": [
+          "README.md",
+          "AGENTS.md",
+          "docs/*.md",
+          "docs/adr/**/*.md",
+          "docs/pi-setup/*.md",
+          "docs/pi-setup/catalog/**/*.yaml"
+        ],
+        "docs_map": [
+          {
+            "code": [
+              "extensions/**",
+              "packages/**"
+            ],
+            "docs": [
+              "docs/pi-stack-inventory.md",
+              "docs/cache-strategy.md",
+              "README.md"
+            ]
+          },
+          {
+            "code": [
+              "scripts/**"
+            ],
+            "docs": [
+              "docs/runtime-loading.md",
+              "docs/release-engineering.md"
+            ]
+          },
+          {
+            "code": [
+              "docs/pi-setup/catalog/**"
+            ],
+            "docs": [
+              "docs/pi-setup/README.md"
+            ]
+          }
+        ],
+        "skip_labels": [
+          "skip-docs-check",
+          "docs-not-needed"
+        ],
+        "mode": "autofix"
       }
     },
     {
@@ -168,7 +290,7 @@
       "display_name": "horizon (product monorepo)",
       "checkout_dir": "horizon",
       "include_maintainer_authored": true,
-      "prompt_note": "Horizon is Luke's product monorepo (Bun workspaces): `packages/*` + `apps/*`. Local checkout `~/Projects/work/horizon/`; GitHub repo `valkyriweb/horizon` (private). Packages: `packages/alerts` (Mailgun transactional email delivery), `packages/design` (design system), plus `shared` utilities. Apps: `apps/billing` (PayFast ITN/postback), `apps/whatsapp` (Meta WhatsApp send + webhook), `apps/mail-dashboard`, `apps/mail-landing`. Service areas: `area:alerts` (Mailgun delivery), `area:billing` (PayFast ITN confirmation, idempotency), `area:whatsapp` (Meta send/webhook/egress), `area:mail` (mail-dashboard + mail-landing), `area:design` (design system), `area:shared`, `area:ci`, `area:docs`. Use at most two area tags; `area:cross-cutting` when it spans many. The repo is mid Effect adoption: vendor boundaries (Mailgun, Meta, PayFast) are wrapped with typed errors, AbortSignal timeout, exp+jittered retry, and Effect Layers, while the Promise-facing public APIs stay behavior-identical — review for that contract and flag any public-API regression. Security-sensitive paths must fail closed: PayFast ITN server confirmation, SSRF egress validation (https-only; block private/link-local/metadata; post-DNS recheck), and per-route API-key scope enforcement (403 insufficient_scope). Validation: Bun workspaces — `bun install --frozen-lockfile`, then `bun run --filter '*' build`, `bun run --filter '*' typecheck`, `bun run --filter '*' test`; per package `bun test` + `tsc --noEmit`. For every PR review, include code-craft and agent-native-hardening passes: flag unnecessary complexity, poor naming/API shape, brittle agent-unfriendly structure, unsafe boundaries, and missing verification. Conservative close policy: this is a live product repo, so do not auto-close on implemented_on_main — Effect slices are intentionally reviewed-not-merged.",
+      "prompt_note": "Horizon is Luke's product monorepo (Bun workspaces): `packages/*` + `apps/*`. Local checkout `~/Projects/work/horizon/`; GitHub repo `valkyriweb/horizon` (private). Packages: `packages/alerts` (Mailgun transactional email delivery), `packages/design` (design system), plus `shared` utilities. Apps: `apps/billing` (PayFast ITN/postback), `apps/whatsapp` (Meta WhatsApp send + webhook), `apps/mail-dashboard`, `apps/mail-landing`. Service areas: `area:alerts` (Mailgun delivery), `area:billing` (PayFast ITN confirmation, idempotency), `area:whatsapp` (Meta send/webhook/egress), `area:mail` (mail-dashboard + mail-landing), `area:design` (design system), `area:shared`, `area:ci`, `area:docs`. Use at most two area tags; `area:cross-cutting` when it spans many. The repo is mid Effect adoption: vendor boundaries (Mailgun, Meta, PayFast) are wrapped with typed errors, AbortSignal timeout, exp+jittered retry, and Effect Layers, while the Promise-facing public APIs stay behavior-identical \u2014 review for that contract and flag any public-API regression. Security-sensitive paths must fail closed: PayFast ITN server confirmation, SSRF egress validation (https-only; block private/link-local/metadata; post-DNS recheck), and per-route API-key scope enforcement (403 insufficient_scope). Validation: Bun workspaces \u2014 `bun install --frozen-lockfile`, then `bun run --filter '*' build`, `bun run --filter '*' typecheck`, `bun run --filter '*' test`; per package `bun test` + `tsc --noEmit`. For every PR review, include code-craft and agent-native-hardening passes: flag unnecessary complexity, poor naming/API shape, brittle agent-unfriendly structure, unsafe boundaries, and missing verification. Conservative close policy: this is a live product repo, so do not auto-close on implemented_on_main \u2014 Effect slices are intentionally reviewed-not-merged.",
       "apply_close_rules": {
         "issue": [],
         "pull_request": []
@@ -204,7 +326,7 @@
       "display_name": "OpenClaw (fork)",
       "checkout_dir": "openclaw",
       "include_maintainer_authored": true,
-      "prompt_note": "Luke's patched fork of OpenClaw (agent gateway). Tracks upstream openclaw/openclaw with carry-forward patches tracked in ~/Projects/infra/openclaw-claude/docs/issues.md (ISSUE-040, ISSUE-042, ISSUE-077, ISSUE-091, ISSUE-094, ISSUE-095, cron-list-fix). Service areas: `area:agent-runtime` (ACP, agent loop, session lifecycle), `area:tools` (bash/exec, image_generate, web, sessions_*), `area:plugins` (advisor, context-intelligence, pi-ai), `area:bridge` (claude-bridge sidecar), `area:tests` (vitest). Use at most two area tags. When the item spans multiple areas, use `area:cross-cutting`. Validation: `pnpm exec vitest run <test-file>`. **CRITICAL: do NOT propose closing carry-forward PRs as 'implemented on main' — these are upstream-bound patches, not yet merged upstream.** Carry-forward PRs are typically named with `carry(<version>):` prefix; treat them as long-lived.",
+      "prompt_note": "Luke's patched fork of OpenClaw (agent gateway). Tracks upstream openclaw/openclaw with carry-forward patches tracked in ~/Projects/infra/openclaw-claude/docs/issues.md (ISSUE-040, ISSUE-042, ISSUE-077, ISSUE-091, ISSUE-094, ISSUE-095, cron-list-fix). Service areas: `area:agent-runtime` (ACP, agent loop, session lifecycle), `area:tools` (bash/exec, image_generate, web, sessions_*), `area:plugins` (advisor, context-intelligence, pi-ai), `area:bridge` (claude-bridge sidecar), `area:tests` (vitest). Use at most two area tags. When the item spans multiple areas, use `area:cross-cutting`. Validation: `pnpm exec vitest run <test-file>`. **CRITICAL: do NOT propose closing carry-forward PRs as 'implemented on main' \u2014 these are upstream-bound patches, not yet merged upstream.** Carry-forward PRs are typically named with `carry(<version>):` prefix; treat them as long-lived.",
       "apply_close_rules": {
         "issue": [
           "duplicate_or_superseded",
@@ -251,8 +373,72 @@
       "include_maintainer_authored": true,
       "prompt_note": "OpenClaw management hub for Luke's production OpenClaw runtime: release notes, update logs, live-runtime issues, methodology, Paperclip wiring, plans, state, and docs. Mostly markdown; no source build. Areas: `area:release-risk`, `area:runtime-k8s`, `area:pi-harness`, `area:bridge-cache`, `area:skills-extensions`, `area:telemetry-evals`, `area:media-audio`, `area:context-health`, `area:docs-cleanup`, `area:methodology`. Use at most two area tags. Review as an ops/release triage assistant, not a generic stale-docs cleaner. Important work: read linked release logs/changelogs completely, compare against Luke's active runtime/cluster surfaces, and flag stability fixes, breaking config changes, Docker/Kubernetes/runtime impacts, prompt-cache/context health, Pi harness/bridge changes, skills/extensions, TTS/STT/media, heartbeats, telemetry/tracing/Opik/evals, active-memory, smoke/staging/build-test needs, and CHANGELOG/release tracking updates. Treat `docs/releases.md`, `docs/agent-context/update-release-runbook.md`, `state/update-log.jsonl`, `memory/MEMORY.md`, and `docs/issues.md` as operational state, not stale clutter. Prefer `manual_review` for release audits, runtime decisions, workflow design, plans, state logs, pending methodology, or anything needing cluster/operator judgment. Use `queue_fix_pr` only for narrow docs/index/changelog cleanup with an obvious existing file and no product/runtime decision; if no scoped validation command exists, choose `manual_review`. Do not propose closing methodology TODOs, pending-work notes, active plans, issue tracker entries, or release records as stale. Close only clear duplicates, cannot-reproduce reports, or items outside this repo boundary.",
       "apply_close_rules": {
-        "issue": ["duplicate_or_superseded", "cannot_reproduce", "not_actionable_in_repo"],
-        "pull_request": ["duplicate_or_superseded", "cannot_reproduce", "not_actionable_in_repo"]
+        "issue": [
+          "duplicate_or_superseded",
+          "cannot_reproduce",
+          "not_actionable_in_repo"
+        ],
+        "pull_request": [
+          "duplicate_or_superseded",
+          "cannot_reproduce",
+          "not_actionable_in_repo"
+        ]
+      },
+      "docs_maintainer": {
+        "enabled": true,
+        "owned_docs": [
+          "README.md",
+          "AGENTS.md",
+          "CLAUDE.md",
+          "CONTEXT.md",
+          "TOOLS.md",
+          "CHANGELOG.md",
+          "docs/**/*.md"
+        ],
+        "docs_map": [
+          {
+            "code": [
+              "services/**",
+              "plugins/**",
+              "docker/**",
+              "compose*.yml"
+            ],
+            "docs": [
+              "README.md",
+              "docs/adr/**",
+              "CHANGELOG.md"
+            ]
+          },
+          {
+            "code": [
+              "scripts/**",
+              "infra/**",
+              "config/**"
+            ],
+            "docs": [
+              "README.md",
+              "TOOLS.md",
+              "CHANGELOG.md"
+            ]
+          },
+          {
+            "code": [
+              "agents/**",
+              "prompts/**",
+              "skills/**"
+            ],
+            "docs": [
+              "AGENTS.md",
+              "CLAUDE.md",
+              "CONTEXT.md"
+            ]
+          }
+        ],
+        "skip_labels": [
+          "skip-docs-check",
+          "docs-not-needed"
+        ],
+        "mode": "autofix"
       }
     },
     {
@@ -261,7 +447,7 @@
       "checkout_dir": "paperclip",
       "commit_review_ref": "refs/heads/bermont",
       "include_maintainer_authored": true,
-      "prompt_note": "Luke's fork of paperclipai/paperclip — a billing/budget-governed AI agent platform deployed to the lue-kube cluster at https://paperclip.bermont.digital. Branch topology: `master` mirrors upstream paperclipai/paperclip (only `upstream-sync.yml` is Luke-custom there); `bermont` is the long-lived production overlay (master + bermont Docker/k8s wiring + the required-skill contract) and is the deployable branch. Review and commit-review are scoped to `bermont` — that is what ships to production; PRs into `master` are upstream syncs and are not reviewed here. Service areas: `area:server` (server/ routes, health, middleware, auth), `area:cli` (cli/ commands, onboarding, project-goal/company context), `area:packages` (packages/* — db, adapters/openclaw-gateway, billing), `area:ui` (ui/ React components), `area:docker` (docker/ agent-runtime images, onboarding smoke), `area:ci` (.github/workflows: release/e2e/smoke/docker), `area:docs`. Use at most two area tags; `area:cross-cutting` when it spans many. Paperclip-specific review focus: cost_events idempotency, budget enforcement fallbacks, approval-flow locking, billing-data exposure, budget bypass, and tenant isolation. **CRITICAL: do NOT propose closing PRs as `implemented_on_main` — the bermont overlay carries patches that are not on upstream master; treat overlay/carry-forward changes as long-lived.** Validation: `pnpm install --frozen-lockfile && pnpm build`; `pnpm test` for unit tests, narrowed to the changed package where possible.",
+      "prompt_note": "Luke's fork of paperclipai/paperclip \u2014 a billing/budget-governed AI agent platform deployed to the lue-kube cluster at https://paperclip.bermont.digital. Branch topology: `master` mirrors upstream paperclipai/paperclip (only `upstream-sync.yml` is Luke-custom there); `bermont` is the long-lived production overlay (master + bermont Docker/k8s wiring + the required-skill contract) and is the deployable branch. Review and commit-review are scoped to `bermont` \u2014 that is what ships to production; PRs into `master` are upstream syncs and are not reviewed here. Service areas: `area:server` (server/ routes, health, middleware, auth), `area:cli` (cli/ commands, onboarding, project-goal/company context), `area:packages` (packages/* \u2014 db, adapters/openclaw-gateway, billing), `area:ui` (ui/ React components), `area:docker` (docker/ agent-runtime images, onboarding smoke), `area:ci` (.github/workflows: release/e2e/smoke/docker), `area:docs`. Use at most two area tags; `area:cross-cutting` when it spans many. Paperclip-specific review focus: cost_events idempotency, budget enforcement fallbacks, approval-flow locking, billing-data exposure, budget bypass, and tenant isolation. **CRITICAL: do NOT propose closing PRs as `implemented_on_main` \u2014 the bermont overlay carries patches that are not on upstream master; treat overlay/carry-forward changes as long-lived.** Validation: `pnpm install --frozen-lockfile && pnpm build`; `pnpm test` for unit tests, narrowed to the changed package where possible.",
       "apply_close_rules": {
         "issue": [
           "duplicate_or_superseded",
