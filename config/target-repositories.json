@@ -78,45 +78,18 @@
               "NextJS-Frontend/components/**",
               "NextJS-Frontend/src/**"
             ],
-            "docs": [
-              "README.md",
-              "docs/caching.md",
-              "NextJS-Frontend/AGENTS.md"
-            ]
+            "docs": ["README.md", "docs/caching.md", "NextJS-Frontend/AGENTS.md"]
           },
           {
-            "code": [
-              "**/routes/**",
-              "**/controllers/**",
-              "**/api/**",
-              "wordpress/**/*.php"
-            ],
-            "docs": [
-              "README.md",
-              "docs/OPERATIONS.md",
-              "docs/observability.md"
-            ]
+            "code": ["**/routes/**", "**/controllers/**", "**/api/**", "wordpress/**/*.php"],
+            "docs": ["README.md", "docs/OPERATIONS.md", "docs/observability.md"]
           },
           {
-            "code": [
-              "config/**",
-              ".github/workflows/**",
-              "docker/**",
-              "Dockerfile*",
-              ".env*"
-            ],
-            "docs": [
-              "README.md",
-              "docs/OPERATIONS.md",
-              "docs/RELEASING.md",
-              ".env.example"
-            ]
+            "code": ["config/**", ".github/workflows/**", "docker/**", "Dockerfile*", ".env*"],
+            "docs": ["README.md", "docs/OPERATIONS.md", "docs/RELEASING.md", ".env.example"]
           }
         ],
-        "skip_labels": [
-          "skip-docs-check",
-          "docs-not-needed"
-        ],
+        "skip_labels": ["skip-docs-check", "docs-not-needed"],
         "mode": "autofix"
       },
       "prompt_note": "Core Wholesale is a multi-stack ecommerce platform. Service areas: `area:next-frontend` (Next.js storefront, React components, pages), `area:woocommerce` (WooCommerce plugin customisations, hooks, REST API extensions), `area:wordpress` (WordPress core customisations, themes, ACF, plugin integrations), `area:mysql` (database schema, queries, migrations, performance), `area:openclaw-integration` (OpenClaw agent/AI integration, tool dispatch, session management). Use at most two area tags. When the item spans multiple areas, use `area:cross-cutting`. Validation: appropriate per area \u2014 PHP unit tests for WP/WC, `pnpm build` for Next.js, SQL migration checks for MySQL.",
@@ -173,13 +146,8 @@
         ],
         "docs_map": [
           {
-            "code": [
-              "packages/coding-agent/src/**"
-            ],
-            "docs": [
-              "packages/coding-agent/CHANGELOG.md",
-              "packages/coding-agent/docs/**/*.md"
-            ]
+            "code": ["packages/coding-agent/src/**"],
+            "docs": ["packages/coding-agent/CHANGELOG.md", "packages/coding-agent/docs/**/*.md"]
           },
           {
             "code": [
@@ -196,20 +164,11 @@
             ]
           },
           {
-            "code": [
-              ".github/workflows/**",
-              "scripts/**"
-            ],
-            "docs": [
-              "README.md",
-              "FORK-CHANGELOG.md"
-            ]
+            "code": [".github/workflows/**", "scripts/**"],
+            "docs": ["README.md", "FORK-CHANGELOG.md"]
           }
         ],
-        "skip_labels": [
-          "skip-docs-check",
-          "docs-not-needed"
-        ],
+        "skip_labels": ["skip-docs-check", "docs-not-needed"],
         "mode": "autofix"
       }
     },
@@ -250,38 +209,19 @@
         ],
         "docs_map": [
           {
-            "code": [
-              "extensions/**",
-              "packages/**"
-            ],
-            "docs": [
-              "docs/pi-stack-inventory.md",
-              "docs/cache-strategy.md",
-              "README.md"
-            ]
+            "code": ["extensions/**", "packages/**"],
+            "docs": ["docs/pi-stack-inventory.md", "docs/cache-strategy.md", "README.md"]
           },
           {
-            "code": [
-              "scripts/**"
-            ],
-            "docs": [
-              "docs/runtime-loading.md",
-              "docs/release-engineering.md"
-            ]
+            "code": ["scripts/**"],
+            "docs": ["docs/runtime-loading.md", "docs/release-engineering.md"]
           },
           {
-            "code": [
-              "docs/pi-setup/catalog/**"
-            ],
-            "docs": [
-              "docs/pi-setup/README.md"
-            ]
+            "code": ["docs/pi-setup/catalog/**"],
+            "docs": ["docs/pi-setup/README.md"]
           }
         ],
-        "skip_labels": [
-          "skip-docs-check",
-          "docs-not-needed"
-        ],
+        "skip_labels": ["skip-docs-check", "docs-not-needed"],
         "mode": "autofix"
       }
     },
@@ -373,16 +313,8 @@
       "include_maintainer_authored": true,
       "prompt_note": "OpenClaw management hub for Luke's production OpenClaw runtime: release notes, update logs, live-runtime issues, methodology, Paperclip wiring, plans, state, and docs. Mostly markdown; no source build. Areas: `area:release-risk`, `area:runtime-k8s`, `area:pi-harness`, `area:bridge-cache`, `area:skills-extensions`, `area:telemetry-evals`, `area:media-audio`, `area:context-health`, `area:docs-cleanup`, `area:methodology`. Use at most two area tags. Review as an ops/release triage assistant, not a generic stale-docs cleaner. Important work: read linked release logs/changelogs completely, compare against Luke's active runtime/cluster surfaces, and flag stability fixes, breaking config changes, Docker/Kubernetes/runtime impacts, prompt-cache/context health, Pi harness/bridge changes, skills/extensions, TTS/STT/media, heartbeats, telemetry/tracing/Opik/evals, active-memory, smoke/staging/build-test needs, and CHANGELOG/release tracking updates. Treat `docs/releases.md`, `docs/agent-context/update-release-runbook.md`, `state/update-log.jsonl`, `memory/MEMORY.md`, and `docs/issues.md` as operational state, not stale clutter. Prefer `manual_review` for release audits, runtime decisions, workflow design, plans, state logs, pending methodology, or anything needing cluster/operator judgment. Use `queue_fix_pr` only for narrow docs/index/changelog cleanup with an obvious existing file and no product/runtime decision; if no scoped validation command exists, choose `manual_review`. Do not propose closing methodology TODOs, pending-work notes, active plans, issue tracker entries, or release records as stale. Close only clear duplicates, cannot-reproduce reports, or items outside this repo boundary.",
       "apply_close_rules": {
-        "issue": [
-          "duplicate_or_superseded",
-          "cannot_reproduce",
-          "not_actionable_in_repo"
-        ],
-        "pull_request": [
-          "duplicate_or_superseded",
-          "cannot_reproduce",
-          "not_actionable_in_repo"
-        ]
+        "issue": ["duplicate_or_superseded", "cannot_reproduce", "not_actionable_in_repo"],
+        "pull_request": ["duplicate_or_superseded", "cannot_reproduce", "not_actionable_in_repo"]
       },
       "docs_maintainer": {
         "enabled": true,
@@ -397,47 +329,19 @@
         ],
         "docs_map": [
           {
-            "code": [
-              "services/**",
-              "plugins/**",
-              "docker/**",
-              "compose*.yml"
-            ],
-            "docs": [
-              "README.md",
-              "docs/adr/**",
-              "CHANGELOG.md"
-            ]
+            "code": ["services/**", "plugins/**", "docker/**", "compose*.yml"],
+            "docs": ["README.md", "docs/adr/**", "CHANGELOG.md"]
           },
           {
-            "code": [
-              "scripts/**",
-              "infra/**",
-              "config/**"
-            ],
-            "docs": [
-              "README.md",
-              "TOOLS.md",
-              "CHANGELOG.md"
-            ]
+            "code": ["scripts/**", "infra/**", "config/**"],
+            "docs": ["README.md", "TOOLS.md", "CHANGELOG.md"]
           },
           {
-            "code": [
-              "agents/**",
-              "prompts/**",
-              "skills/**"
-            ],
-            "docs": [
-              "AGENTS.md",
-              "CLAUDE.md",
-              "CONTEXT.md"
-            ]
+            "code": ["agents/**", "prompts/**", "skills/**"],
+            "docs": ["AGENTS.md", "CLAUDE.md", "CONTEXT.md"]
           }
         ],
-        "skip_labels": [
-          "skip-docs-check",
-          "docs-not-needed"
-        ],
+        "skip_labels": ["skip-docs-check", "docs-not-needed"],
         "mode": "autofix"
       }
     },
