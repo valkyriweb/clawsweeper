@@ -70,6 +70,13 @@ runs:
           # per registered runner; sanitize for path safety.
           runner_slug="$(printf '%s' "${RUNNER_NAME:-runner}" | tr -c '[:alnum:]._-' '_')"
           codex_home="$HOME/.clawsweeper-repair/codex-home/${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}-${runner_slug}"
+          # Per-run homes persist forever on self-hosted runners (42 GB of
+          # them found on the mac-mini host, 2026-07-05). Prune siblings not
+          # touched in 7 days; live/concurrent jobs keep fresh mtimes so this
+          # never removes an in-flight home.
+          if [[ "${RUNNER_ENVIRONMENT:-}" == "self-hosted" ]]; then
+            find "$HOME/.clawsweeper-repair/codex-home" -mindepth 1 -maxdepth 1 -type d -mtime +7 -exec rm -rf {} + 2>/dev/null || true
+          fi
         fi
         mkdir -p "$codex_home"
         chmod 700 "$codex_home"
