@@ -34,6 +34,26 @@
       }
     },
     {
+      "target_repo": "bermont-digital/sale-sight-plugin",
+      "display_name": "SaleSight Plugin",
+      "checkout_dir": "sale-sight-plugin",
+      "prompt_note": "SaleSight is a private WordPress/WooCommerce plugin that ships through formal versioned ZIP releases and immutable commit-pinned Smilerite dogfood updates. Review runtime safety, fail-open checkout behavior, HPOS compatibility, idempotency, release fragments, version consistency, package provenance, and rollback evidence. Security, privacy, conversion-measurement, release publication, and production-deploy decisions always require human review. Validation: `composer run verify`; release changes also require the deterministic package reproducibility gate.",
+      "apply_close_rules": {
+        "issue": [],
+        "pull_request": []
+      }
+    },
+    {
+      "target_repo": "bermont-digital/smilerite",
+      "display_name": "Smilerite",
+      "checkout_dir": "smilerite",
+      "prompt_note": "Smilerite is a live private WooCommerce store; every main merge auto-deploys through SpinupWP. Review SaleSight updates for immutable upstream provenance, source-vs-release lane correctness, local-first proof, rollback, schema and Action Scheduler safety, Secondary Google Ads action 7680095433 only, Primary 7137479958 rejection, and SaleSight GA4 remaining disabled. Never recommend synthetic live conversions or automatic production merge/deploy. Validation: use the repository CI plus `scripts/salesight-plugin-verify.sh --ci` for SaleSight changes.",
+      "apply_close_rules": {
+        "issue": [],
+        "pull_request": []
+      }
+    },
+    {
       "target_repo": "CLIP-SA/core-ai",
       "display_name": "Core AI",
       "checkout_dir": "core-ai",
