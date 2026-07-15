@@ -92,10 +92,7 @@ test("legacy target auth permits only configured Valkyriweb routes", () => {
       /github_app_credential_route=bermont-digital.*legacy Valkyriweb target token/,
     );
   }
-  assert.throws(
-    () => legacyTargetAuthFor("unknown-org/unknown-repo"),
-    /Unsupported target repo/,
-  );
+  assert.throws(() => legacyTargetAuthFor("unknown-org/unknown-repo"), /Unsupported target repo/);
 });
 
 test("target-auth CLI emits the route and policy consumed by the facade", () => {
@@ -133,7 +130,12 @@ test("target-auth CLI emits the route and policy consumed by the facade", () => 
   assert.equal(
     execFileSync(
       process.execPath,
-      ["dist/repair/workflow-utils.js", "legacy-target-auth", "--target-repo", "bermont-digital/multica"],
+      [
+        "dist/repair/workflow-utils.js",
+        "legacy-target-auth",
+        "--target-repo",
+        "bermont-digital/multica",
+      ],
       { cwd: process.cwd(), encoding: "utf8" },
     ),
     "bermont-digital/multica",
