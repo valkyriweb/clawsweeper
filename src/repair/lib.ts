@@ -4,6 +4,7 @@ import { repoRoot } from "./paths.js";
 import type { JsonValue, LooseRecord } from "./json-types.js";
 import { isRepairMode, type RepairJobFrontmatter } from "./domain-types.js";
 import { isRepairJobIntent, repairJobIntentForFrontmatter } from "./job-intent.js";
+import { automationPolicyBlockReason, type AutomationCapability } from "../repository-profiles.js";
 
 export { repoRoot } from "./paths.js";
 export type {
@@ -151,6 +152,17 @@ export function validateJob(job: ParsedJob | LooseRecord) {
     if (!["comment", "label", "close", "merge", "fix", "raise_pr"].includes(action)) {
       errors.push(`unsupported allowed action: ${action}`);
     }
+  }
+  const policyCapabilities = new Set<AutomationCapability>();
+  for (const action of fm.allowed_actions ?? []) {
+    if (action === "close") policyCapabilities.add("close");
+    if (action === "merge") policyCapabilities.add("merge");
+    if (action === "fix") policyCapabilities.add("repair");
+    if (action === "raise_pr") policyCapabilities.add("pull_request");
+  }
+  for (const capability of policyCapabilities) {
+    const policyBlock = automationPolicyBlockReason(fm.repo, capability);
+    if (policyBlock) errors.push(policyBlock);
   }
   for (const ref of [...(fm.canonical ?? []), ...(fm.candidates ?? [])]) {
     if (!/^#?[0-9]+$/.test(String(ref))) {

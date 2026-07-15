@@ -103,6 +103,7 @@ import {
 } from "./target-validation.js";
 import { uniqueStrings } from "./validation-command-utils.js";
 import { enforceValidationFixScope } from "./validation-fix-scope.js";
+import { automationPolicyBlockReason } from "../repository-profiles.js";
 import {
   appendUsageEventJsonl,
   buildUsageTelemetryEvent,
@@ -236,6 +237,8 @@ if (!resultPathArg && !latest) {
 }
 
 const job = parseJob(jobPath);
+const policyBlock = automationPolicyBlockReason(job.frontmatter.repo, "repair");
+if (policyBlock) throw new Error(`refusing fix execution: ${policyBlock}`);
 const jobErrors = validateJob(job);
 if (jobErrors.length > 0) {
   console.error(jobErrors.join("\n"));

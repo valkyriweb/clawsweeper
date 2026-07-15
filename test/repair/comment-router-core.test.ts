@@ -23,6 +23,7 @@ import {
   buildAutomergeMergeArgs,
   buildAutomergeSquashMessage,
   commandHasAction,
+  commentRouterAutomationBlockReason,
   createCachedIssueCommentsLookup,
   createCachedIssueCommentsLookupAsync,
   commandResponseMarker,
@@ -57,6 +58,28 @@ import {
 } from "../../dist/repair/comment-router-core.js";
 import { CLAWSWEEPER_CO_AUTHOR_TRAILER } from "../../dist/repair/co-author-credit.js";
 import { parseSimpleYaml, validateJob } from "../../dist/repair/lib.js";
+
+test("review-only targets block mutation intents while retaining review and proposal intents", () => {
+  const repo = "bermont-digital/smilerite";
+  for (const intent of [
+    "fix_ci",
+    "autofix",
+    "automerge",
+    "implement_issue",
+    "autoclose",
+    "stop",
+    "clawsweeper_needs_human",
+  ]) {
+    assert.match(commentRouterAutomationBlockReason({ repo, intent }) ?? "", /review_only/);
+  }
+  for (const intent of ["status", "re_review", "review", "hatch"]) {
+    assert.equal(commentRouterAutomationBlockReason({ repo, intent }), null);
+  }
+  assert.equal(
+    commentRouterAutomationBlockReason({ repo: "valkyriweb/clawsweeper", intent: "automerge" }),
+    null,
+  );
+});
 
 test("parseCommand recognizes maintainer slash commands", () => {
   assert.deepEqual(parseCommand("/clawsweeper fix ci"), {

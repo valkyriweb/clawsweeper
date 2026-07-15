@@ -10,6 +10,17 @@ ClawSweeper has two target-repository paths:
 - a conservative generic fallback for exact event/manual reviews of
   `openclaw/*` repositories
 
+Every configured target and the fallback must declare `automation_policy`:
+
+- `full` allows configured repair, branch/PR lifecycle, merge, and close actions.
+- `review_only` allows reviews, proposal comments, artifacts, and state reports,
+  but denies repair jobs, branch pushes, PR creation or reopening, merges,
+  automerge, and issue/PR closure.
+
+The loader rejects missing or unknown policy values. Mutation executors also
+resolve the policy independently and fail closed for missing or unsupported
+targets, so prompts and workflow inputs cannot grant automation.
+
 `openclaw/openclaw` remains a built-in profile because it has broader
 auto-close policy. Other configured targets default to safer repo-local rules:
 issues are review/comment-only, and PRs may auto-close only when the same
@@ -45,9 +56,11 @@ workflow and GitHub App installation. It is not a blanket scheduled rollout.
 6. Confirm the target item gets one durable ClawSweeper review comment.
 
 For a repo that should appear in the README dashboard or scheduled queues, add
-it to `config/target-repositories.json` with an explicit prompt note and
-close-policy block. Keep the default policy unless the repo has a documented
-reason to allow broader issue closes.
+it to `config/target-repositories.json` with an explicit prompt note,
+`automation_policy`, and close-policy block. Start production targets at
+`review_only`; promote to `full` only after the mutation paths and credentials
+have a documented, tested rollout. `apply_close_rules` narrows ordinary close
+reasons under `full`; it never overrides `review_only`.
 
 ## Add Many Repositories
 

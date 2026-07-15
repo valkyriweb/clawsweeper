@@ -3,7 +3,7 @@ import crypto from "node:crypto";
 import http from "node:http";
 
 import type { JsonValue, LooseRecord } from "./json-types.js";
-import { parseCommand } from "./comment-router-core.js";
+import { commentRouterAutomationBlockReason, parseCommand } from "./comment-router-core.js";
 
 const DEFAULT_PORT = 8787;
 const COMMAND_PATTERN =
@@ -130,6 +130,14 @@ export function classifyIssueCommentWebhook({
   const installationId = Number(asRecord(payload.installation).id);
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(targetRepo)) {
     return { accepted: false, reason: "missing repository full_name" };
+  }
+  const parsedCommand = parseCommand(String(comment.body ?? ""));
+  const automationPolicyBlock = commentRouterAutomationBlockReason({
+    repo: targetRepo,
+    intent: parsedCommand?.intent,
+  });
+  if (automationPolicyBlock) {
+    return { accepted: false, reason: automationPolicyBlock };
   }
   if (!Number.isInteger(itemNumber) || itemNumber <= 0) {
     return { accepted: false, reason: "missing issue number" };

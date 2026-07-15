@@ -64,6 +64,19 @@ test("strict reproducible bug reports are eligible for implementation intake", (
   assert.equal(decision.status, "queued_for_repair");
 });
 
+test("review-only targets retain the report but never queue issue implementation", () => {
+  const markdown = report();
+  const decision = reportOnlyDecision({
+    targetRepo: "bermont-digital/sale-sight-plugin",
+    report: parseReviewReport(markdown),
+    reportMarkdown: markdown,
+  });
+
+  assert.equal(decision.shouldRepair, false);
+  assert.equal(decision.status, "review_only");
+  assert.match(decision.blockers.join("\n"), /review_only/);
+});
+
 test("security review verdict 'cleared' is eligible for issue implementation intake", () => {
   const markdown = report({ security_review_status: "cleared" });
   const decision = reportOnlyDecision({

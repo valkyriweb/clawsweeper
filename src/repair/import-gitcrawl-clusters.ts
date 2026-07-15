@@ -6,7 +6,7 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { hasSecuritySignalText, parseArgs, repoRoot } from "./lib.js";
 import { renderJobIntentFrontmatter } from "./job-intent.js";
-import { requireTargetRepo } from "../repository-profiles.js";
+import { automationPolicyBlockReason, requireTargetRepo } from "../repository-profiles.js";
 
 const args = parseArgs(process.argv.slice(2));
 const repo = requireTargetRepo(args.repo);
@@ -48,6 +48,11 @@ if (clusterIds.length === 0) {
 if (!["plan", "execute", "autonomous"].includes(mode)) {
   console.error("mode must be plan, execute, or autonomous");
   process.exit(2);
+}
+const importPolicyBlock = automationPolicyBlockReason(repo, "repair");
+if (importPolicyBlock) {
+  console.log(JSON.stringify({ status: "blocked", repo, reason: importPolicyBlock }, null, 2));
+  process.exit(0);
 }
 
 fs.mkdirSync(outDir, { recursive: true });

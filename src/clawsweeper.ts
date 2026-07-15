@@ -17,6 +17,7 @@ import { fileURLToPath } from "node:url";
 import {
   DEFAULT_TARGET_REPO,
   REPOSITORY_PROFILES,
+  automationPolicyBlockReason,
   isAutoCloseAllowed,
   normalizeRepo,
   repositoryProfileFor,
@@ -8547,7 +8548,14 @@ function postReviewStartStatusComment(options: {
   return "posted";
 }
 
-function closeItem(options: { number: number; kind: ItemKind; reason: CloseReason }): void {
+function closeItem(options: {
+  repo: string;
+  number: number;
+  kind: ItemKind;
+  reason: CloseReason;
+}): void {
+  const policyBlock = automationPolicyBlockReason(options.repo, "close");
+  if (policyBlock) throw new Error(policyBlock);
   if (options.kind === "pull_request") {
     ghWithRetry(["pr", "close", String(options.number)]);
   } else {
@@ -9862,7 +9870,9 @@ function applyDecisionsCommand(args: Args): void {
       if (processedCount >= processedLimit) break;
       continue;
     }
-    closeItem({ number, kind: item.kind, reason: closeReason });
+    // Keep the terminal close guard adjacent to the mutation in case a stale
+    // report or future caller bypasses the earlier decision validation.
+    closeItem({ repo, number, kind: item.kind, reason: closeReason });
     sleepMs(closeDelayMs);
     markdown = replaceSectionValue(markdown, REVIEW_SECTIONS.closeComment, reviewComment);
     markdown = replaceFrontMatterValue(markdown, "close_comment_sha256", sha256(reviewComment));

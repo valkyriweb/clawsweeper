@@ -11,7 +11,7 @@ import {
   renderIssueImplementationJob,
   REVIEW_REPRODUCIBLE_BUG_TRIGGER_SOURCE,
 } from "./comment-router-core.js";
-import { requireTargetRepo } from "../repository-profiles.js";
+import { automationPolicyBlockReason, requireTargetRepo } from "../repository-profiles.js";
 
 type IntakeDecision = {
   status: string;
@@ -341,6 +341,8 @@ function eligibilityDecision({
   if (!truthy(enabled)) {
     return decision("disabled", false, "issue implementation intake disabled");
   }
+  const policyBlock = automationPolicyBlockReason(targetRepo, "repair");
+  if (policyBlock) return decision("review_only", false, policyBlock);
   const fm = report.frontmatter;
   const blockers: string[] = [];
   // Case-insensitive repo comparison: reviewers/renderers normalize the

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import type { DocsMaintainerConfig, RepositoryProfile } from "../repository-profiles.js";
-import { repositoryProfileFor } from "../repository-profiles.js";
+import { automationPolicyBlockReason, repositoryProfileFor } from "../repository-profiles.js";
 import fs from "node:fs";
 import path from "node:path";
 import { ghJson, ghPaged } from "./github-cli.js";
@@ -92,6 +92,11 @@ function runCli(): void {
       printJson({ status: "precheck_only", decision });
       return;
     }
+    const policyBlock = automationPolicyBlockReason(input.repo, "repair");
+    if (policyBlock) {
+      printJson({ status: "blocked", reason: policyBlock, decision });
+      return;
+    }
     const jobPath = writeDocsMaintainerJob(input, decision);
     printJson({ status: "created", job: jobPath, decision });
     return;
@@ -167,6 +172,14 @@ function skip(
 }
 
 function mutationPlan(input: DocsMaintainerPrecheckInput): DocsMaintainerMutationPlan {
+  const policyBlock = automationPolicyBlockReason(input.repo, "repair");
+  if (policyBlock) {
+    return {
+      preferred: "none",
+      reason: policyBlock,
+      sameRepoHead: input.pr.headRepo.toLowerCase() === input.repo.toLowerCase(),
+    };
+  }
   const sameRepoHead = input.pr.headRepo.toLowerCase() === input.repo.toLowerCase();
   if (sameRepoHead) {
     return {
@@ -245,6 +258,9 @@ export function writeDocsMaintainerJob(
   input: DocsMaintainerPrecheckInput,
   decision: DocsMaintainerPrecheckDecision,
 ): string {
+  if (decision.action !== "run") throw new Error(`cannot create docs job: ${decision.reason}`);
+  const policyBlock = automationPolicyBlockReason(input.repo, "repair");
+  if (policyBlock) throw new Error(`cannot create docs job: ${policyBlock}`);
   const [owner] = input.repo.split("/");
   const clusterId = `docs-maintenance-${slug(input.repo)}-${input.pr.number}`;
   const relative = path.join("jobs", owner ?? "unknown", "inbox", `${clusterId}.md`);

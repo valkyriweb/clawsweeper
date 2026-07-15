@@ -66,6 +66,21 @@ candidates:
   assert.doesNotMatch(prompt, /## Dedupe policy/);
 });
 
+test("validateJob rejects mutation-capable jobs for review-only targets", () => {
+  const frontmatter = parseSimpleYaml(`repo: bermont-digital/smilerite
+cluster_id: review-only-smoke
+mode: autonomous
+job_intent: repair_cluster
+allowed_actions:
+  - comment
+  - fix
+  - raise_pr
+candidates:
+  - "#1"
+`);
+  assert.match(validateJob({ frontmatter }).join("\n"), /review_only.*denies/);
+});
+
 test("validateJob accepts docs maintenance jobs and rejects unknown canonical job intents", () => {
   const docsMaintenance = parseSimpleYaml(`repo: openclaw/openclaw
 cluster_id: docs-maintenance-openclaw-openclaw-1

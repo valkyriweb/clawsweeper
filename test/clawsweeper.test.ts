@@ -1229,6 +1229,19 @@ test("skill-only OpenClaw PRs can close through ClawHub with upload guidance", (
   assert.match(action.closeComment, /installable community skill/);
 });
 
+test("review-only targets preserve close proposals but reject automated close decisions", () => {
+  const decision = validateCloseDecision(
+    item({
+      repo: "bermont-digital/sale-sight-plugin",
+      kind: "issue",
+      url: "https://github.com/bermont-digital/sale-sight-plugin/issues/123",
+    }),
+    closeDecision(),
+  );
+  assert.equal(decision.ok, false);
+  assert.match(decision.reason, /not allowed for bermont-digital\/sale-sight-plugin/);
+});
+
 test("private target policy allows full auto-close on configured reasons", () => {
   const implementedPr = validateCloseDecision(
     item({
@@ -3551,7 +3564,7 @@ test("planned review shards stay within the Codex worker cap", () => {
   );
 });
 
-test("apply mode prioritizes matching close proposals before comment sync", () => {
+test("apply mode priorities do not turn review-only close proposals into mutations", () => {
   const issueClose = reportFrontMatter({
     decision: "close",
     close_reason: "implemented_on_main",

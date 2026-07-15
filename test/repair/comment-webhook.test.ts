@@ -34,6 +34,26 @@ test("comment webhook accepts maintainer ClawSweeper commands", () => {
   });
 });
 
+test("comment webhook rejects review-only repair commands before acknowledgement or routing", () => {
+  const result = classifyIssueCommentWebhook({
+    event: "issue_comment",
+    payload: {
+      action: "created",
+      repository: { full_name: "bermont-digital/sale-sight-plugin" },
+      issue: { number: 71898 },
+      installation: { id: 123 },
+      comment: {
+        id: 456,
+        body: "@clawsweeper automerge",
+        author_association: "MEMBER",
+      },
+    },
+  });
+
+  assert.equal(result.accepted, false);
+  assert.match(result.reason, /review_only/);
+});
+
 test("comment webhook rejects contributor commands before visible ack", () => {
   const result = classifyIssueCommentWebhook({
     event: "issue_comment",

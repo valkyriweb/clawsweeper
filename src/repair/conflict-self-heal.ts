@@ -27,6 +27,7 @@ import {
   selfHealJobPath,
   selfHealStatusMarkerPrefix,
 } from "./conflict-self-heal-core.js";
+import { automationPolicyBlockReason } from "../repository-profiles.js";
 
 const args = parseArgs(process.argv.slice(2));
 
@@ -66,6 +67,7 @@ const maxRepairsPerPr = Number(
 );
 const maxLiveWorkers = readMaxLiveWorkers(args);
 const execute = Boolean(args.execute);
+const selfHealPolicyBlock = automationPolicyBlockReason(repo, "repair");
 const writeReport = Boolean(args["write-report"] ?? true);
 const waitForCapacity = Boolean(args["wait-for-capacity"]);
 const allowRepeat = Boolean(args["allow-repeat"]);
@@ -90,7 +92,8 @@ const candidates = classified
   .filter((candidate) => candidate.status === "candidate")
   .slice(0, maxPrs);
 const dispatchSummary = {
-  enabled: execute,
+  enabled: execute && !selfHealPolicyBlock,
+  ...(selfHealPolicyBlock ? { status: "blocked", reason: selfHealPolicyBlock } : {}),
   workflow,
   repair_repo: repairRepo,
   runner,
@@ -111,7 +114,7 @@ const report: LooseRecord = {
   prs: classified,
 };
 
-if (execute) {
+if (execute && !selfHealPolicyBlock) {
   report.dispatch = executeDispatches(candidates, dispatchSummary, ledger);
 }
 
@@ -260,6 +263,9 @@ function executeDispatches(
   dispatchSummary: LooseRecord,
   currentLedger: LooseRecord,
 ) {
+  const policyBlock = automationPolicyBlockReason(repo, "repair");
+  if (policyBlock)
+    return { ...dispatchSummary, status: "blocked", reason: policyBlock, attempts: [] };
   const summary = {
     ...dispatchSummary,
     status: candidates.length === 0 ? "no_candidates" : "dispatching",
@@ -354,6 +360,8 @@ function publishSelfHealJobs() {
 }
 
 function writeSelfHealJob(candidate: LooseRecord) {
+  const policyBlock = automationPolicyBlockReason(repo, "repair");
+  if (policyBlock) throw new Error(policyBlock);
   const absolute = path.join(repoRoot(), candidate.job_path);
   fs.mkdirSync(path.dirname(absolute), { recursive: true });
   fs.writeFileSync(
@@ -375,6 +383,8 @@ function writeSelfHealJob(candidate: LooseRecord) {
 }
 
 function postSelfHealStatus(candidate: LooseRecord, { status }: { status: string }) {
+  const policyBlock = automationPolicyBlockReason(repo, "repair");
+  if (policyBlock) return;
   const body = renderSelfHealStatusComment({
     repo,
     issueNumber: candidate.number,
@@ -415,6 +425,8 @@ function findSelfHealStatusComment(number: JsonValue) {
 }
 
 function dispatchRepair(candidate: LooseRecord) {
+  const policyBlock = automationPolicyBlockReason(repo, "repair");
+  if (policyBlock) throw new Error(policyBlock);
   const result = spawnSync(
     "gh",
     [
