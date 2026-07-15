@@ -480,6 +480,7 @@ async function reposJson(env: DashboardEnv = {}) {
 async function clawsweeperEnablePlan(env: DashboardEnv, owner: string, name: string) {
   const repository = `${decodeURIComponent(owner)}/${decodeURIComponent(name)}`;
   if (!isValidRepoName(repository)) return json({ error: "invalid_repository" }, 400);
+  const bermontEnginePull = repository.toLowerCase().startsWith("bermont-digital/");
 
   const [repo, variables, workflows] = await Promise.all([
     githubJson(env, `/repos/${repository}`).catch((error) => ({
@@ -532,8 +533,9 @@ async function clawsweeperEnablePlan(env: DashboardEnv, owner: string, name: str
       { id: "workflow", ok: hasWorkflow, label: "ClawSweeper workflow appears present" },
     ],
     setup_pr: {
-      available: !hasWorkflow && !repo.archived,
+      available: !bermontEnginePull && !hasWorkflow && !repo.archived,
       workflow_path: CLAWSWEEPER_DISPATCH_WORKFLOW_PATH,
+      reason: bermontEnginePull ? "bermont_engine_pull_manual_only" : null,
     },
     triage_model: {
       labels: [
@@ -545,13 +547,19 @@ async function clawsweeperEnablePlan(env: DashboardEnv, owner: string, name: str
       ],
       commands: ["/clawsweeper implement", "/clawsweeper autofix", "/clawsweeper automerge"],
     },
-    would_do: [
-      "open a reviewable setup PR with the target dispatcher workflow",
-      "forward issue, PR, label, and maintainer command events to ClawSweeper",
-      "allow ClawSweeper to triage labels/comments into exact agent runs",
-      "write no target repo files until the setup PR is reviewed and merged",
-      "after merge, enable ClawSweeper repo settings and Actions watch",
-    ],
+    would_do: bermontEnginePull
+      ? [
+          "keep target dispatchers and repository_dispatch disabled",
+          "run one manual engine-pull exact-item canary from the shared private engine",
+          "keep Bermont App credentials out of the target repository",
+        ]
+      : [
+          "open a reviewable setup PR with the target dispatcher workflow",
+          "forward issue, PR, label, and maintainer command events to ClawSweeper",
+          "allow ClawSweeper to triage labels/comments into exact agent runs",
+          "write no target repo files until the setup PR is reviewed and merged",
+          "after merge, enable ClawSweeper repo settings and Actions watch",
+        ],
   });
 }
 
@@ -567,6 +575,12 @@ async function createClawsweeperSetupPr(
   if (!actor.authorized) return json({ error: "unauthorized" }, 401);
   const repository = `${decodeURIComponent(owner)}/${decodeURIComponent(name)}`;
   if (!isValidRepoName(repository)) return json({ error: "invalid_repository" }, 400);
+  // Engine-pull owns Bermont credentials. A target-side dispatcher would require
+  // a private key in the business repo and re-enable repository_dispatch, both
+  // explicitly prohibited for this route.
+  if (repository.toLowerCase().startsWith("bermont-digital/")) {
+    return json({ error: "bermont_engine_pull_manual_only" }, 403);
+  }
 
   const repo = await githubJson(env, `/repos/${repository}`, "write");
   if (repo?.archived) return json({ error: "repository_archived" }, 409);

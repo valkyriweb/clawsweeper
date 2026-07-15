@@ -10,11 +10,12 @@ the cluster changes and static lists go stale. Host/IP details live in
 - **Code + Actions:** `valkyriweb/clawsweeper` (this repo) runs the sweep/review/repair workflows.
 - **State:** `valkyriweb/clawsweeper-state` (published review state, dashboards).
 - **Targets:** the fleet in [`config/target-repositories.json`](../config/target-repositories.json).
-- **GitHub App:** `valkyriweb-clawsweeper` mints a **scoped per-target token** per run
-  (least privilege). App credentials in 1Password → **Personal** vault, item
-  *"GitHub App — valkyriweb-clawsweeper"* (`app_id 3711554`, client id, private key,
-  install ids). The `bermont-clawsweeper` app (Bermont Digital vault) is the separate
-  bermont-digital install.
+- **GitHub Apps:** target token authority is explicit in each repository profile's
+  `github_app_credential_route`. `valkyriweb` routes use `valkyriweb-clawsweeper`
+  (Personal vault); `bermont-digital` routes use `bermont-clawsweeper` from the
+  Bermont Digital vault, with both credentials held only by this engine repository.
+  The static target-token facade never infers an App from target ownership, and state
+  plus Pi package tokens always use the Valkyriweb App.
 
 Check live app installs:
 

@@ -12,9 +12,8 @@ on:
   workflow_dispatch:
     inputs:
       target_repo:
-        description: "Repository to sweep"
-        required: false
-        default: "bermont-digital/multica"
+        description: "Repository to sweep (explicit configured profile required)"
+        required: true
       apply_existing:
         description: "Apply existing proposed close decisions without rerunning Codex; skips items changed since review"
         required: false
@@ -181,7 +180,7 @@ jobs:
         id: target
         run: |
           set -euo pipefail
-          target_repo="${{ github.event.client_payload.target_repo || 'bermont-digital/multica' }}"
+          target_repo="${{ github.event.client_payload.target_repo || '' }}"
           item_number="${{ github.event.client_payload.item_number || '' }}"
           item_kind="${{ github.event.client_payload.item_kind || '' }}"
           if ! printf '%s' "$target_repo" | grep -Eq '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$'; then
@@ -213,29 +212,34 @@ jobs:
             echo "item_number=$item_number"
           } >> "$GITHUB_OUTPUT"
 
+      # Build before target authorization so the facade resolves the configured
+      # profile rather than inferring a credential from the target owner.
+      - uses: ./.github/actions/setup-pnpm
+        id: setup-pnpm
+        with:
+          build-script: build:all
+
       - name: Create target read token
         id: target-read-token
-        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+        uses: ./.github/actions/create-target-token
         with:
-          client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
-          private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
-          owner: ${{ steps.target.outputs.target_repo_owner }}
-          repositories: ${{ steps.target.outputs.target_repo_name }}
-          permission-contents: read
-          permission-issues: read
-          permission-pull-requests: read
+          target-repo: ${{ steps.target.outputs.target_repo }}
+          access-mode: read
+          valkyriweb-client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
+          valkyriweb-private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
+          bermont-digital-client-id: ${{ vars.BERMONT_DIGITAL_CLAWSWEEPER_APP_CLIENT_ID }}
+          bermont-digital-private-key: ${{ secrets.BERMONT_DIGITAL_CLAWSWEEPER_APP_PRIVATE_KEY }}
 
       - name: Create target write token
         id: target-write-token
-        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+        uses: ./.github/actions/create-target-token
         with:
-          client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
-          private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
-          owner: ${{ steps.target.outputs.target_repo_owner }}
-          repositories: ${{ steps.target.outputs.target_repo_name }}
-          permission-contents: write
-          permission-issues: write
-          permission-pull-requests: write
+          target-repo: ${{ steps.target.outputs.target_repo }}
+          access-mode: mutate
+          valkyriweb-client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
+          valkyriweb-private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
+          bermont-digital-client-id: ${{ vars.BERMONT_DIGITAL_CLAWSWEEPER_APP_CLIENT_ID }}
+          bermont-digital-private-key: ${{ secrets.BERMONT_DIGITAL_CLAWSWEEPER_APP_PRIVATE_KEY }}
 
       - name: React to target item review start
         continue-on-error: true
@@ -264,11 +268,6 @@ jobs:
             rm -f "$err"
           }
           react "eyes"
-
-      - uses: ./.github/actions/setup-pnpm
-        id: setup-pnpm
-        with:
-          build-script: build:all
 
       - id: review-routing
         env:
@@ -565,6 +564,8 @@ jobs:
       target_repo: ${{ steps.target.outputs.target_repo }}
       target_repo_name: ${{ steps.target.outputs.target_repo_name }}
       target_repo_owner: ${{ steps.target.outputs.target_repo_owner }}
+      target_credential_route: ${{ steps.target-read-token.outputs.credential-route }}
+      target_automation_policy: ${{ steps.target-read-token.outputs.automation-policy }}
     steps:
       - name: Sanitize workspace (read-only residue from prior codex runs)
         shell: bash
@@ -585,22 +586,8 @@ jobs:
         run: |
           target_repo="${{ github.event.inputs.target_repo || github.event.client_payload.target_repo || '' }}"
           if [ -z "$target_repo" ]; then
-            # Scheduled runs pick their target by cron expression. workflow_dispatch
-            # and repository_dispatch supply target_repo explicitly and skip this branch.
-            case "${{ github.event.schedule }}" in
-              "0 5 * * *")
-                target_repo="valkyriweb/pi-mono"
-                ;;
-              "0 7 * * *")
-                target_repo="valkyriweb/lue-kube"
-                ;;
-              "0 8 * * *")
-                target_repo="valkyriweb/openclaw-claude"
-                ;;
-              *)
-                target_repo="bermont-digital/multica"
-                ;;
-            esac
+            echo "target_repo is required for manual sweeps" >&2
+            exit 1
           fi
           target_owner="${target_repo%%/*}"
           target_name="${target_repo#*/}"
@@ -615,17 +602,22 @@ jobs:
             echo "target_checkout_dir=$target_checkout_dir"
           } >> "$GITHUB_OUTPUT"
 
+      - uses: ./clawsweeper/.github/actions/setup-pnpm
+        with:
+          working-directory: clawsweeper
+          build-script: build:all
+
       - name: Create target read token
         id: target-read-token
-        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+        uses: ./clawsweeper/.github/actions/create-target-token
         with:
-          client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
-          private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
-          owner: ${{ steps.target.outputs.target_repo_owner }}
-          repositories: ${{ steps.target.outputs.target_repo_name }}
-          permission-contents: read
-          permission-issues: read
-          permission-pull-requests: read
+          target-repo: ${{ steps.target.outputs.target_repo }}
+          access-mode: read
+          working-directory: clawsweeper
+          valkyriweb-client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
+          valkyriweb-private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
+          bermont-digital-client-id: ${{ vars.BERMONT_DIGITAL_CLAWSWEEPER_APP_CLIENT_ID }}
+          bermont-digital-private-key: ${{ secrets.BERMONT_DIGITAL_CLAWSWEEPER_APP_PRIVATE_KEY }}
 
       - name: Create state token
         id: state-token
@@ -643,11 +635,6 @@ jobs:
           state-repository: valkyriweb/clawsweeper-state
           worktree-path: clawsweeper
           fetch-depth: 1
-
-      - uses: ./clawsweeper/.github/actions/setup-pnpm
-        with:
-          working-directory: clawsweeper
-          build-script: build:all
 
       - id: review-routing
         working-directory: clawsweeper
@@ -931,36 +918,6 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Create target review token
-        id: target-read-token
-        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
-        with:
-          client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
-          private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
-          owner: ${{ needs.plan.outputs.target_repo_owner }}
-          repositories: ${{ needs.plan.outputs.target_repo_name }}
-          permission-contents: read
-          permission-issues: write
-          # write — needed to POST the "review started" sticky status comment
-          # via /issues/{n}/comments. When the item is a PR, GitHub Apps gate that
-          # endpoint on `pull-requests`, NOT `issues`, even though the path says
-          # /issues/. Without write the start-comment 403s and the whole review
-          # shard fails before reaching the model (see CLIP-SA/core-wholesale
-          # canary, 2026-05-21).
-          permission-pull-requests: write
-
-      - name: Create target Codex inspection token
-        id: codex-inspection-token
-        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
-        with:
-          client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
-          private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
-          owner: ${{ needs.plan.outputs.target_repo_owner }}
-          repositories: ${{ needs.plan.outputs.target_repo_name }}
-          permission-contents: read
-          permission-issues: read
-          permission-pull-requests: read
-
       - uses: actions/setup-node@v6
         with:
           node-version: 24
@@ -969,6 +926,21 @@ jobs:
         with:
           name: clawsweeper-runtime-dist
           path: clawsweeper/dist
+
+      # Review providers only receive this read token. Durable comments are
+      # published later by the deterministic publish job through comment/mutate
+      # access, never from an attacker-controlled model sandbox.
+      - name: Create target inspection token
+        id: target-read-token
+        uses: ./clawsweeper/.github/actions/create-target-token
+        with:
+          target-repo: ${{ needs.plan.outputs.target_repo }}
+          access-mode: read
+          working-directory: clawsweeper
+          valkyriweb-client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
+          valkyriweb-private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
+          bermont-digital-client-id: ${{ vars.BERMONT_DIGITAL_CLAWSWEEPER_APP_CLIENT_ID }}
+          bermont-digital-private-key: ${{ secrets.BERMONT_DIGITAL_CLAWSWEEPER_APP_PRIVATE_KEY }}
 
       - uses: ./clawsweeper/.github/actions/setup-codex
         with:
@@ -1005,6 +977,7 @@ jobs:
           ref: main
           filter: blob:none
           fetch-depth: 0
+          persist-credentials: false
 
       # Hydrate prior review state into the shard worktree so the per-item
       # Codex timeout escalator (and any other state-aware logic in
@@ -1038,7 +1011,7 @@ jobs:
         working-directory: clawsweeper
         env:
           GH_TOKEN: ${{ steps.target-read-token.outputs.token }}
-          CLAWSWEEPER_PROOF_INSPECTION_TOKEN: ${{ steps.codex-inspection-token.outputs.token }}
+          CLAWSWEEPER_PROOF_INSPECTION_TOKEN: ${{ steps.target-read-token.outputs.token }}
           ADDITIONAL_PROMPT: ${{ github.event.inputs.additional_prompt || github.event.client_payload.additional_prompt || '' }}
           # Provider routing flip lever. Empty/unset → default `codex`.
           # Set repo var to `claude-bridge` to route every review through
@@ -1178,17 +1151,20 @@ jobs:
           filter: blob:none
           fetch-depth: 0
 
-      - name: Create target write token
-        id: target-write-token
-        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+      - uses: ./.github/actions/setup-pnpm
         with:
-          client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
-          private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
-          owner: ${{ needs.plan.outputs.target_repo_owner }}
-          repositories: ${{ needs.plan.outputs.target_repo_name }}
-          permission-contents: write
-          permission-issues: write
-          permission-pull-requests: write
+          build-script: build:all
+
+      - name: Create target publish token
+        id: target-write-token
+        uses: ./.github/actions/create-target-token
+        with:
+          target-repo: ${{ needs.plan.outputs.target_repo }}
+          access-mode: ${{ needs.plan.outputs.target_automation_policy == 'review_only' && 'comment' || 'mutate' }}
+          valkyriweb-client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
+          valkyriweb-private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
+          bermont-digital-client-id: ${{ vars.BERMONT_DIGITAL_CLAWSWEEPER_APP_CLIENT_ID }}
+          bermont-digital-private-key: ${{ secrets.BERMONT_DIGITAL_CLAWSWEEPER_APP_PRIVATE_KEY }}
 
       - name: Create state token
         id: state-token
@@ -1204,10 +1180,6 @@ jobs:
         with:
           token: ${{ steps.state-token.outputs.token }}
           state-repository: valkyriweb/clawsweeper-state
-
-      - uses: ./.github/actions/setup-pnpm
-        with:
-          build-script: build:all
 
       - uses: actions/download-artifact@v8
         with:
@@ -1652,7 +1624,8 @@ jobs:
         run: |
           target_repo="${{ github.event.inputs.target_repo || github.event.client_payload.target_repo || '' }}"
           if [ -z "$target_repo" ]; then
-            target_repo="bermont-digital/multica"
+            echo "target_repo is required for manual audits" >&2
+            exit 1
           fi
           target_owner="${target_repo%%/*}"
           target_name="${target_repo#*/}"
@@ -1662,32 +1635,20 @@ jobs:
             echo "target_repo_name=$target_name"
           } >> "$GITHUB_OUTPUT"
 
+      - uses: ./.github/actions/setup-pnpm
+        with:
+          build-script: build:all
+
       - name: Create target read token
         id: target-read-token
-        continue-on-error: true
-        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+        uses: ./.github/actions/create-target-token
         with:
-          client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
-          private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
-          owner: ${{ steps.target.outputs.target_repo_owner }}
-          repositories: ${{ steps.target.outputs.target_repo_name }}
-          permission-contents: read
-          permission-issues: read
-          permission-pull-requests: read
-
-      - name: Select target read token
-        id: target-token
-        env:
-          APP_TOKEN: ${{ steps.target-read-token.outputs.token }}
-          FALLBACK_TOKEN: ${{ github.token }}
-        run: |
-          if [ -n "$APP_TOKEN" ]; then
-            echo "Using ClawSweeper App token for audit reads."
-            echo "token=$APP_TOKEN" >> "$GITHUB_OUTPUT"
-          else
-            echo "Using workflow token fallback for public audit reads."
-            echo "token=$FALLBACK_TOKEN" >> "$GITHUB_OUTPUT"
-          fi
+          target-repo: ${{ steps.target.outputs.target_repo }}
+          access-mode: read
+          valkyriweb-client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
+          valkyriweb-private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
+          bermont-digital-client-id: ${{ vars.BERMONT_DIGITAL_CLAWSWEEPER_APP_CLIENT_ID }}
+          bermont-digital-private-key: ${{ secrets.BERMONT_DIGITAL_CLAWSWEEPER_APP_PRIVATE_KEY }}
 
       - name: Create state token
         id: state-token
@@ -1704,13 +1665,9 @@ jobs:
           token: ${{ steps.state-token.outputs.token }}
           state-repository: valkyriweb/clawsweeper-state
 
-      - uses: ./.github/actions/setup-pnpm
-        with:
-          build-script: build:all
-
       - name: Refresh Audit Health
         env:
-          GH_TOKEN: ${{ steps.target-token.outputs.token }}
+          GH_TOKEN: ${{ steps.target-read-token.outputs.token }}
           TARGET_REPO: ${{ steps.target.outputs.target_repo }}
         run: |
           set -euo pipefail
@@ -1773,7 +1730,8 @@ jobs:
         run: |
           target_repo="${{ github.event.inputs.target_repo || '' }}"
           if [ -z "$target_repo" ]; then
-            target_repo="bermont-digital/multica"
+            echo "target_repo is required for manual apply" >&2
+            exit 1
           fi
           target_owner="${target_repo%%/*}"
           target_name="${target_repo#*/}"
@@ -1783,17 +1741,20 @@ jobs:
             echo "target_repo_name=$target_name"
           } >> "$GITHUB_OUTPUT"
 
+      - uses: ./.github/actions/setup-pnpm
+        with:
+          build-script: build:all
+
       - name: Create target write token
         id: target-write-token
-        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+        uses: ./.github/actions/create-target-token
         with:
-          client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
-          private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
-          owner: ${{ steps.target.outputs.target_repo_owner }}
-          repositories: ${{ steps.target.outputs.target_repo_name }}
-          permission-contents: write
-          permission-issues: write
-          permission-pull-requests: write
+          target-repo: ${{ steps.target.outputs.target_repo }}
+          access-mode: ${{ github.event.inputs.apply_sync_comments_only == 'true' && 'comment' || 'mutate' }}
+          valkyriweb-client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
+          valkyriweb-private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
+          bermont-digital-client-id: ${{ vars.BERMONT_DIGITAL_CLAWSWEEPER_APP_CLIENT_ID }}
+          bermont-digital-private-key: ${{ secrets.BERMONT_DIGITAL_CLAWSWEEPER_APP_PRIVATE_KEY }}
 
       - name: Create state token
         id: state-token
@@ -1809,10 +1770,6 @@ jobs:
         with:
           token: ${{ steps.state-token.outputs.token }}
           state-repository: valkyriweb/clawsweeper-state
-
-      - uses: ./.github/actions/setup-pnpm
-        with:
-          build-script: build:all
 
       - name: Sync before applying decisions
         run: git pull --rebase

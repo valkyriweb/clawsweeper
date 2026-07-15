@@ -91,19 +91,31 @@ jobs:
         with:
           filter: blob:none
 
-      - name: Resolve target owner
-        id: target_owner
+      - name: Resolve target repository
+        id: target
         env:
           JOB_PATH: ${{ inputs.job }}
         run: |
           set -euo pipefail
-          owner="${JOB_PATH#jobs/}"
-          owner="${owner%%/*}"
-          if [ -z "$owner" ] || [ "$owner" = "$JOB_PATH" ]; then
-            echo "Could not resolve target owner from job path: $JOB_PATH" >&2
+          target_repo="$(node -e 'const fs = require("fs"); const value = fs.readFileSync(process.env.JOB_PATH, "utf8").match(/^repository:\s*([^\s#]+)\s*$/m)?.[1]; if (!value) process.exit(1); process.stdout.write(value)' || true)"
+          if ! printf '%s' "$target_repo" | grep -Eq '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$'; then
+            echo "Could not resolve target repository from job: $JOB_PATH" >&2
             exit 1
           fi
-          echo "owner=$owner" >> "$GITHUB_OUTPUT"
+          {
+            echo "repo=$target_repo"
+            echo "owner=${target_repo%%/*}"
+            echo "name=${target_repo#*/}"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: ./.github/actions/setup-pnpm
+        with:
+          build-script: build:repair
+
+      - name: Authorize legacy target token
+        env:
+          TARGET_REPO: ${{ steps.target.outputs.repo }}
+        run: pnpm run --silent workflow -- legacy-target-auth --target-repo "$TARGET_REPO"
 
       - name: Create GitHub App token
         id: app_token
@@ -111,7 +123,8 @@ jobs:
         with:
           client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
           private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
-          owner: ${{ steps.target_owner.outputs.owner }}
+          owner: ${{ steps.target.outputs.owner }}
+          repositories: ${{ steps.target.outputs.name }}
           permission-contents: read
           permission-issues: read
           permission-pull-requests: read
@@ -249,19 +262,31 @@ jobs:
         with:
           filter: blob:none
 
-      - name: Resolve target owner
-        id: target_owner
+      - name: Resolve target repository
+        id: target
         env:
           JOB_PATH: ${{ inputs.job }}
         run: |
           set -euo pipefail
-          owner="${JOB_PATH#jobs/}"
-          owner="${owner%%/*}"
-          if [ -z "$owner" ] || [ "$owner" = "$JOB_PATH" ]; then
-            echo "Could not resolve target owner from job path: $JOB_PATH" >&2
+          target_repo="$(node -e 'const fs = require("fs"); const value = fs.readFileSync(process.env.JOB_PATH, "utf8").match(/^repository:\s*([^\s#]+)\s*$/m)?.[1]; if (!value) process.exit(1); process.stdout.write(value)' || true)"
+          if ! printf '%s' "$target_repo" | grep -Eq '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$'; then
+            echo "Could not resolve target repository from job: $JOB_PATH" >&2
             exit 1
           fi
-          echo "owner=$owner" >> "$GITHUB_OUTPUT"
+          {
+            echo "repo=$target_repo"
+            echo "owner=${target_repo%%/*}"
+            echo "name=${target_repo#*/}"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: ./.github/actions/setup-pnpm
+        with:
+          build-script: build:repair
+
+      - name: Authorize legacy target token
+        env:
+          TARGET_REPO: ${{ steps.target.outputs.repo }}
+        run: pnpm run --silent workflow -- legacy-target-auth --target-repo "$TARGET_REPO"
 
       - name: Create GitHub App token
         id: app_token
@@ -269,7 +294,8 @@ jobs:
         with:
           client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
           private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
-          owner: ${{ steps.target_owner.outputs.owner }}
+          owner: ${{ steps.target.outputs.owner }}
+          repositories: ${{ steps.target.outputs.name }}
           permission-actions: write
           permission-contents: write
           permission-issues: write

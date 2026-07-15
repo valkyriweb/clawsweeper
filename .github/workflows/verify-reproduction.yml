@@ -83,9 +83,16 @@ jobs:
           TARGET_REPO: ${{ github.event.inputs.target_repo || github.event.client_payload.target_repo }}
         run: |
           set -euo pipefail
-          echo "owner=${TARGET_REPO%%/*}" >> "$GITHUB_OUTPUT"
-          echo "name=${TARGET_REPO#*/}" >> "$GITHUB_OUTPUT"
-          echo "repo=${TARGET_REPO}" >> "$GITHUB_OUTPUT"
+          {
+            echo "owner=${TARGET_REPO%%/*}"
+            echo "name=${TARGET_REPO#*/}"
+            echo "repo=${TARGET_REPO}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Authorize legacy target token
+        env:
+          TARGET_REPO: ${{ steps.target.outputs.repo }}
+        run: pnpm run --silent workflow -- legacy-target-auth --target-repo "$TARGET_REPO"
 
       - name: Create GitHub App token
         id: app_token
@@ -205,6 +212,7 @@ jobs:
         working-directory: ${{ env.CLAWSWEEPER_STATE_DIR }}
         run: |
           set -euo pipefail
+          : "$TARGET_REPO"
           git config user.name "${CLAWSWEEPER_GIT_USER_NAME}"
           git config user.email "${CLAWSWEEPER_GIT_USER_EMAIL}"
           git add -- "${REPORT_PATH}"
@@ -213,7 +221,7 @@ jobs:
             exit 0
           fi
           git commit -m "chore: verify reproduction ${TARGET_REPO}#${ITEM_NUMBER}"
-          for attempt in 1 2 3 4 5; do
+          for _ in 1 2 3 4 5; do
             if git push; then
               exit 0
             fi

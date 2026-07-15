@@ -13,10 +13,12 @@ import {
   countActions,
   countCommandActions,
   countRequeueRequired,
+  legacyTargetAuthFor,
   mergeApplyReports,
   planOutputFields,
   plannedItemNumberCsv,
   proposedItemNumbers,
+  targetAuthFor,
   writeCommentSyncCursor,
 } from "../../dist/repair/workflow-utils.js";
 import { AUTOMATION_LIMITS, WORKER_CONFIG, workerLimit } from "../../dist/repair/limits.js";
@@ -48,6 +50,181 @@ test("commit-review-ref CLI resolves the target via --target-repo, as the workfl
       ),
     /--target-repo is required/,
   );
+});
+
+test("target auth resolves explicit routes and denies review-only mutation before minting", () => {
+  assert.deepEqual(targetAuthFor({ targetRepo: "bermont-digital/multica", accessMode: "mutate" }), {
+    target_repo: "bermont-digital/multica",
+    target_repo_owner: "bermont-digital",
+    target_repo_name: "multica",
+    credential_route: "valkyriweb",
+    automation_policy: "full",
+    access_mode: "mutate",
+  });
+  assert.deepEqual(targetAuthFor({ targetRepo: "valkyriweb/clawsweeper", accessMode: "read" }), {
+    target_repo: "valkyriweb/clawsweeper",
+    target_repo_owner: "valkyriweb",
+    target_repo_name: "clawsweeper",
+    credential_route: "valkyriweb",
+    automation_policy: "full",
+    access_mode: "read",
+  });
+  assert.equal(
+    targetAuthFor({ targetRepo: "bermont-digital/sale-sight-plugin", accessMode: "comment" })
+      .credential_route,
+    "bermont-digital",
+  );
+  assert.throws(
+    () => targetAuthFor({ targetRepo: "bermont-digital/smilerite", accessMode: "mutate" }),
+    /review_only.*denies target token access-mode=mutate/,
+  );
+  assert.throws(
+    () => targetAuthFor({ targetRepo: "unknown-org/unknown-repo", accessMode: "read" }),
+    /Unsupported target repo/,
+  );
+});
+
+test("legacy target auth permits only configured Valkyriweb routes", () => {
+  assert.equal(legacyTargetAuthFor("bermont-digital/multica"), "bermont-digital/multica");
+  for (const targetRepo of ["bermont-digital/sale-sight-plugin", "bermont-digital/smilerite"]) {
+    assert.throws(
+      () => legacyTargetAuthFor(targetRepo),
+      /github_app_credential_route=bermont-digital.*legacy Valkyriweb target token/,
+    );
+  }
+  assert.throws(
+    () => legacyTargetAuthFor("unknown-org/unknown-repo"),
+    /Unsupported target repo/,
+  );
+});
+
+test("target-auth CLI emits the route and policy consumed by the facade", () => {
+  const output = execFileSync(
+    process.execPath,
+    [
+      "dist/repair/workflow-utils.js",
+      "target-auth",
+      "--target-repo",
+      "bermont-digital/sale-sight-plugin",
+      "--access-mode",
+      "comment",
+    ],
+    { cwd: process.cwd(), encoding: "utf8" },
+  );
+  assert.match(output, /^credential_route=bermont-digital$/m);
+  assert.match(output, /^automation_policy=review_only$/m);
+  assert.match(output, /^access_mode=comment$/m);
+  assert.throws(
+    () =>
+      execFileSync(
+        process.execPath,
+        [
+          "dist/repair/workflow-utils.js",
+          "target-auth",
+          "--target-repo",
+          "bermont-digital/smilerite",
+          "--access-mode",
+          "mutate",
+        ],
+        { cwd: process.cwd(), encoding: "utf8", stdio: "pipe" },
+      ),
+    /review_only.*denies target token access-mode=mutate/,
+  );
+  assert.equal(
+    execFileSync(
+      process.execPath,
+      ["dist/repair/workflow-utils.js", "legacy-target-auth", "--target-repo", "bermont-digital/multica"],
+      { cwd: process.cwd(), encoding: "utf8" },
+    ),
+    "bermont-digital/multica",
+  );
+  assert.throws(
+    () =>
+      execFileSync(
+        process.execPath,
+        [
+          "dist/repair/workflow-utils.js",
+          "legacy-target-auth",
+          "--target-repo",
+          "bermont-digital/sale-sight-plugin",
+        ],
+        { cwd: process.cwd(), encoding: "utf8", stdio: "pipe" },
+      ),
+    /github_app_credential_route=bermont-digital/,
+  );
+});
+
+test("target-token facade contains only static credential branches", () => {
+  const action = fs.readFileSync(".github/actions/create-target-token/action.yml", "utf8");
+  for (const route of ["valkyriweb", "bermont-digital"]) {
+    for (const mode of ["read", "comment", "mutate"]) {
+      assert.match(
+        action,
+        new RegExp(
+          `Create ${route === "valkyriweb" ? "Valkyriweb" : "Bermont Digital"} ${mode} token`,
+        ),
+      );
+    }
+  }
+  assert.match(action, /target-auth/);
+  assert.doesNotMatch(action, /secrets\[/);
+  assert.doesNotMatch(action, /\$\{\{\s*format\(/);
+});
+
+test("manual sweep routes every target token through the facade and keeps control tokens Valkyriweb", () => {
+  const workflow = fs.readFileSync(".github/workflows/sweep.yml", "utf8");
+  const targetTokenSites =
+    workflow.match(/uses: (?:\.\/)?(?:clawsweeper\/)?\.github\/actions\/create-target-token/g) ??
+    [];
+  assert.equal(targetTokenSites.length, 7);
+  assert.match(
+    workflow,
+    /target_repo:\n\s+description: "Repository to sweep \(explicit configured profile required\)"\n\s+required: true/,
+  );
+  assert.doesNotMatch(workflow, /^\s+repository_dispatch:\s*$/m);
+  assert.doesNotMatch(workflow, /^\s+schedule:\s*$/m);
+  assert.match(workflow, /repositories: clawsweeper-state/);
+  assert.match(workflow, /repositories: my-pi/);
+  assert.match(workflow, /BERMONT_DIGITAL_CLAWSWEEPER_APP_PRIVATE_KEY/);
+  assert.match(workflow, /persist-credentials: false/);
+  assert.match(
+    workflow,
+    /CLAWSWEEPER_PROOF_INSPECTION_TOKEN: \$\{\{ steps\.target-read-token\.outputs\.token \}\}/,
+  );
+});
+
+test("every active legacy target-token mint has a preceding route guard", () => {
+  const targetMintSites: Array<{ workflow: string; tokenStep: string }> = [
+    { workflow: "commit-review.yml", tokenStep: "Create target read token" },
+    { workflow: "commit-review.yml", tokenStep: "Create target checks token" },
+    { workflow: "repair-cluster-worker.yml", tokenStep: "Create GitHub App token" },
+    { workflow: "repair-comment-router.yml", tokenStep: "Create GitHub App token" },
+    { workflow: "repair-commit-finding-intake.yml", tokenStep: "Create GitHub App token" },
+    { workflow: "repair-issue-implementation-intake.yml", tokenStep: "Create GitHub App token" },
+    { workflow: "verify-reproduction.yml", tokenStep: "Create GitHub App token" },
+  ];
+
+  for (const { workflow, tokenStep } of targetMintSites) {
+    const source = fs.readFileSync(path.join(".github/workflows", workflow), "utf8");
+    const tokenStepIndexes = [...source.matchAll(new RegExp(`- name: ${tokenStep}`, "g"))].map(
+      (match) => match.index ?? -1,
+    );
+    assert.ok(tokenStepIndexes.length > 0, `${workflow} must retain its enumerated target mint`);
+    for (const tokenStepIndex of tokenStepIndexes) {
+      const precedingSource = source.slice(0, tokenStepIndex);
+      const jobStepsIndex = precedingSource.lastIndexOf("\n    steps:");
+      const guardIndex = precedingSource.lastIndexOf("- name: Authorize legacy target token");
+      assert.ok(
+        guardIndex > jobStepsIndex,
+        `${workflow} target mint needs a same-job legacy route guard`,
+      );
+      assert.match(
+        precedingSource.slice(guardIndex, tokenStepIndex),
+        /legacy-target-auth --target-repo "\$TARGET_REPO"/,
+        `${workflow} guard must validate the resolved target repo`,
+      );
+    }
+  }
 });
 
 test("workflow utilities expose automation limits", () => {

@@ -10,7 +10,10 @@ ClawSweeper has two target-repository paths:
 - a conservative generic fallback for exact event/manual reviews of
   `openclaw/*` repositories
 
-Every configured target and the fallback must declare `automation_policy`:
+Every configured target and the fallback must declare both `automation_policy` and
+`github_app_credential_route` (`valkyriweb` or `bermont-digital`). The loader rejects a
+missing or unknown route before any target token can be minted. Routes are never inferred
+from the repository owner.
 
 - `full` allows configured repair, branch/PR lifecycle, merge, and close actions.
 - `review_only` allows reviews, proposal comments, artifacts, and state reports,
@@ -44,16 +47,13 @@ workflow and GitHub App installation. It is not a blanket scheduled rollout.
 
 ## Add One Repository
 
-1. Install the ClawSweeper GitHub App on the target repository.
-2. Add or merge the target dispatcher from
-   [`docs/target-dispatcher.md`](target-dispatcher.md).
-3. Ensure the target repo can read the org or repo
-   `CLAWSWEEPER_APP_PRIVATE_KEY` secret.
-4. Open, edit, or comment on a target issue/PR and confirm a dispatcher run
-   appears in the target repo.
-5. Confirm the receiver run appears in
-   `https://github.com/openclaw/clawsweeper/actions`.
-6. Confirm the target item gets one durable ClawSweeper review comment.
+1. Add an explicit profile including `github_app_credential_route`.
+2. Keep the corresponding App credential only in this engine repository. Never add an
+   engine private key to a target repository.
+3. Use a manual `workflow_dispatch` exact-item canary from this engine, then confirm the
+   target item receives one durable review comment.
+4. For `bermont-digital/*`, keep target dispatchers and `repository_dispatch` disabled;
+   run SaleSight first and Smilerite second from the shared private engine.
 
 For a repo that should appear in the README dashboard or scheduled queues, add
 it to `config/target-repositories.json` with an explicit prompt note,
@@ -66,9 +66,9 @@ reasons under `full`; it never overrides `review_only`.
 
 Batch rollout should be incremental:
 
-- install the app and dispatcher on a small group first
-- leave scheduled backfill off
-- verify event review/comment sync on one issue or PR per repo
+- configure the App only in the engine and add one route-explicit profile at a time
+- leave schedules and target dispatchers off
+- verify a manual exact-item review/comment canary on one issue or PR per repo
 - add config entries for repos that should show in the dashboard
 - enable scheduled backfill/apply only after repo-specific safety rules exist
 

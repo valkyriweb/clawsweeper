@@ -18,7 +18,13 @@ test("automation policies are explicit and fail closed for protected targets", (
   const smilerite = repositoryProfileFor("bermont-digital/smilerite");
   assert.equal(saleSight.automationPolicy, "review_only");
   assert.equal(smilerite.automationPolicy, "review_only");
+  assert.equal(saleSight.githubAppCredentialRoute, "bermont-digital");
+  assert.equal(smilerite.githubAppCredentialRoute, "bermont-digital");
   assert.equal(repositoryProfileFor("valkyriweb/clawsweeper").automationPolicy, "full");
+  assert.equal(
+    repositoryProfileFor("valkyriweb/clawsweeper").githubAppCredentialRoute,
+    "valkyriweb",
+  );
   assert.equal(resolveAutomationCapabilities("review_only").repair, false);
   assert.equal(resolveAutomationCapabilities("review_only").labels, false);
   assert.equal(resolveAutomationCapabilities("review_only").review, true);
@@ -39,6 +45,17 @@ test("target repository schema rejects missing or unknown automation policies", 
   const missingPolicy = structuredClone(config);
   delete missingPolicy.repositories[0].automation_policy;
   assert.throws(() => validateTargetRepositoryConfig(missingPolicy), /automation_policy/);
+
+  const missingRoute = structuredClone(config);
+  delete missingRoute.repositories[0].github_app_credential_route;
+  assert.throws(() => validateTargetRepositoryConfig(missingRoute), /github_app_credential_route/);
+
+  const unknownRoute = structuredClone(config);
+  unknownRoute.repositories[0].github_app_credential_route = "other-app";
+  assert.throws(
+    () => validateTargetRepositoryConfig(unknownRoute),
+    /github_app_credential_route.*valkyriweb.*bermont-digital/,
+  );
 
   const unknownPolicy = structuredClone(config);
   unknownPolicy.repositories[0].automation_policy = "sometimes";
@@ -71,6 +88,9 @@ test("repositoryProfileFor carries service-area routing notes", () => {
   const profile = repositoryProfileFor("bermont-digital/multica");
 
   assert.equal(profile.targetRepo, "bermont-digital/multica");
+  // Multica keeps its established full policy and credential route in this narrow canary slice.
+  assert.equal(profile.automationPolicy, "full");
+  assert.equal(profile.githubAppCredentialRoute, "valkyriweb");
   assert.match(profile.promptNote, /area:backend-go/);
   assert.match(profile.promptNote, /area:frontend-next/);
   assert.match(profile.promptNote, /area:daemon/);
