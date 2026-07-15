@@ -131,6 +131,16 @@ jobs:
             echo "target_checkout_dir=target-$target_name"
           } >> "$GITHUB_OUTPUT"
 
+      - uses: ./clawsweeper/.github/actions/setup-pnpm
+        with:
+          working-directory: clawsweeper
+          build-script: build:all
+
+      - name: Authorize legacy target token
+        env:
+          TARGET_REPO: ${{ steps.target.outputs.target_repo }}
+        run: pnpm --dir clawsweeper run --silent workflow -- legacy-target-auth --target-repo "$TARGET_REPO"
+
       - name: Create target read token
         id: target-read-token
         uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
@@ -383,6 +393,16 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
+      - uses: ./clawsweeper/.github/actions/setup-pnpm
+        with:
+          working-directory: clawsweeper
+          build-script: build:all
+
+      - name: Authorize legacy target token
+        env:
+          TARGET_REPO: ${{ needs.plan.outputs.target_repo }}
+        run: pnpm --dir clawsweeper run --silent workflow -- legacy-target-auth --target-repo "$TARGET_REPO"
+
       - name: Create target read token
         id: target-read-token
         uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
@@ -595,6 +615,12 @@ jobs:
             --dispatch-mode workflow_dispatch \
             --report-repo "${{ github.repository }}" \
             --enabled "$ENABLED"
+
+      - name: Authorize legacy target token
+        if: ${{ needs.plan.outputs.create_checks == 'true' }}
+        env:
+          TARGET_REPO: ${{ needs.plan.outputs.target_repo }}
+        run: pnpm run --silent workflow -- legacy-target-auth --target-repo "$TARGET_REPO"
 
       - name: Create target checks token
         id: target-checks-token

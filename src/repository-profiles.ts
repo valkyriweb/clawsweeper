@@ -20,6 +20,8 @@ export type ReviewProviderModels = Record<ReviewProvider, string>;
 
 /** Per-target authorization for automation that can change a target repository. */
 export type AutomationPolicy = "full" | "review_only";
+/** The only credential authorities allowed to mint target-repository tokens. */
+export type GithubAppCredentialRoute = "valkyriweb" | "bermont-digital";
 export type AutomationCapability =
   | "repair"
   | "branch_push"
@@ -64,6 +66,8 @@ export interface RepositoryProfile {
   promptNote: string;
   applyCloseRules: Partial<Record<RepositoryItemKind, readonly RepositoryCloseReason[]>>;
   automationPolicy: AutomationPolicy;
+  /** Explicit GitHub App authority for scoped target tokens; never inferred from owner. */
+  githubAppCredentialRoute: GithubAppCredentialRoute;
   docsMaintainer: DocsMaintainerConfig;
   // Optional per-target override of the review provider. Highest-precedence
   // input to `resolveReviewProvider()`; lets one repo opt out of (or back
@@ -105,6 +109,7 @@ interface ConfiguredRepositoryProfile {
   promptNote: string;
   applyCloseRules: Partial<Record<RepositoryItemKind, readonly RepositoryCloseReason[]>>;
   automationPolicy: AutomationPolicy;
+  githubAppCredentialRoute: GithubAppCredentialRoute;
   docsMaintainer: DocsMaintainerConfig;
   reviewProvider?: ReviewProvider;
   includeMaintainerAuthored?: boolean;
@@ -139,6 +144,7 @@ interface OpenClawFallbackConfig {
   promptNote: string;
   applyCloseRules: Partial<Record<RepositoryItemKind, readonly RepositoryCloseReason[]>>;
   automationPolicy: AutomationPolicy;
+  githubAppCredentialRoute: GithubAppCredentialRoute;
 }
 
 const OPENCLAW_CLOSE_REASONS: readonly RepositoryCloseReason[] = [
@@ -157,6 +163,10 @@ const CLOSE_REASON_SET = new Set<RepositoryCloseReason>(ALL_CLOSE_REASONS);
 const ITEM_KIND_SET = new Set<RepositoryItemKind>(["issue", "pull_request"]);
 const DOCS_MAINTAINER_MODE_SET = new Set<DocsMaintainerMode>(["autofix", "precheck"]);
 const AUTOMATION_POLICY_SET: ReadonlySet<AutomationPolicy> = new Set(["full", "review_only"]);
+export const GITHUB_APP_CREDENTIAL_ROUTE_SET: ReadonlySet<GithubAppCredentialRoute> = new Set([
+  "valkyriweb",
+  "bermont-digital",
+]);
 
 const FULL_AUTOMATION_CAPABILITIES: AutomationCapabilities = Object.freeze({
   review: true,
@@ -222,6 +232,7 @@ const CORE_OPENCLAW_PROFILE: RepositoryProfile = {
     pull_request: OPENCLAW_CLOSE_REASONS.filter((reason) => reason !== "stale_insufficient_info"),
   },
   automationPolicy: "full",
+  githubAppCredentialRoute: "valkyriweb",
   docsMaintainer: DEFAULT_DOCS_MAINTAINER_CONFIG,
 };
 
@@ -330,6 +341,7 @@ function configuredRepositoryProfile(profile: ConfiguredRepositoryProfile): Repo
     promptNote: profile.promptNote,
     applyCloseRules: profile.applyCloseRules,
     automationPolicy: profile.automationPolicy,
+    githubAppCredentialRoute: profile.githubAppCredentialRoute,
     docsMaintainer: profile.docsMaintainer,
   };
   if (profile.docsUrl) result.docsUrl = profile.docsUrl;
@@ -361,6 +373,7 @@ function fallbackRepositoryProfile(normalizedTargetRepo: string): RepositoryProf
       .replaceAll("{repo_name}", repoName),
     applyCloseRules: fallback.applyCloseRules,
     automationPolicy: fallback.automationPolicy,
+    githubAppCredentialRoute: fallback.githubAppCredentialRoute,
     docsMaintainer: DEFAULT_DOCS_MAINTAINER_CONFIG,
   };
 }
@@ -466,6 +479,10 @@ function validateConfiguredRepositoryProfile(
       profile.automation_policy,
       `${label}.automation_policy`,
     ),
+    githubAppCredentialRoute: githubAppCredentialRouteValue(
+      profile.github_app_credential_route,
+      `${label}.github_app_credential_route`,
+    ),
     docsMaintainer: docsMaintainerConfigValue(
       profile.docs_maintainer ?? profile.docsMaintainer,
       `${label}.docs_maintainer`,
@@ -525,6 +542,10 @@ function validateOpenClawFallbackConfig(value: unknown): OpenClawFallbackConfig 
       fallback.automation_policy,
       "openclaw_fallback.automation_policy",
     ),
+    githubAppCredentialRoute: githubAppCredentialRouteValue(
+      fallback.github_app_credential_route,
+      "openclaw_fallback.github_app_credential_route",
+    ),
   };
 }
 
@@ -534,6 +555,14 @@ function automationPolicyValue(value: unknown, label: string): AutomationPolicy 
     throw new Error(`${label} must be one of: ${[...AUTOMATION_POLICY_SET].join(", ")}`);
   }
   return policy as AutomationPolicy;
+}
+
+function githubAppCredentialRouteValue(value: unknown, label: string): GithubAppCredentialRoute {
+  const route = stringValue(value, label);
+  if (!GITHUB_APP_CREDENTIAL_ROUTE_SET.has(route as GithubAppCredentialRoute)) {
+    throw new Error(`${label} must be one of: ${[...GITHUB_APP_CREDENTIAL_ROUTE_SET].join(", ")}`);
+  }
+  return route as GithubAppCredentialRoute;
 }
 
 function docsMaintainerConfigValue(value: unknown, label: string): DocsMaintainerConfig {

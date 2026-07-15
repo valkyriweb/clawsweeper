@@ -82,6 +82,17 @@ function runCli(): void {
     case "commit-review-ref":
       process.stdout.write(commitReviewRefForTarget(requiredString("target-repo")));
       break;
+    case "target-auth":
+      printOutput(
+        targetAuthFor({
+          targetRepo: requiredString("target-repo"),
+          accessMode: requiredTargetTokenAccessMode(requiredString("access-mode")),
+        }),
+      );
+      break;
+    case "legacy-target-auth":
+      process.stdout.write(legacyTargetAuthFor(requiredString("target-repo")));
+      break;
     case "proposed-item-numbers":
       process.stdout.write(proposedItemNumbers(proposedItemOptions()).join(","));
       break;
@@ -195,6 +206,65 @@ export function reviewModelForTarget(targetRepo: string): string {
 
 export function commitReviewRefForTarget(targetRepo: string): string {
   return repositoryProfileFor(targetRepo).commitReviewRef ?? DEFAULT_COMMIT_REVIEW_REF;
+}
+
+export type TargetTokenAccessMode = "read" | "comment" | "mutate";
+
+/**
+ * Fail closed before legacy workflows mint with the Valkyriweb private key.
+ * These workflows cannot select a credential route, so only the explicitly
+ * Valkyriweb-routed configured targets are safe to run through them.
+ */
+export function legacyTargetAuthFor(targetRepo: string): string {
+  const profile = repositoryProfileFor(targetRepo);
+  if (profile.githubAppCredentialRoute !== "valkyriweb") {
+    throw new Error(
+      `${profile.targetRepo} github_app_credential_route=${profile.githubAppCredentialRoute} cannot use the legacy Valkyriweb target token`,
+    );
+  }
+  return profile.targetRepo;
+}
+
+/**
+ * Canonical, fail-closed target-token authorization used by the provider-swappable
+ * Action facade. Credential routing is config/profile data, never inferred from
+ * a repository owner or an input secret name.
+ */
+export function targetAuthFor(options: {
+  targetRepo: string;
+  accessMode: TargetTokenAccessMode;
+}): Record<
+  | "target_repo"
+  | "target_repo_owner"
+  | "target_repo_name"
+  | "credential_route"
+  | "automation_policy"
+  | "access_mode",
+  string
+> {
+  const profile = repositoryProfileFor(options.targetRepo);
+  if (options.accessMode === "mutate" && profile.automationPolicy !== "full") {
+    throw new Error(
+      `${profile.targetRepo} automation_policy=${profile.automationPolicy} denies target token access-mode=mutate`,
+    );
+  }
+  const [targetRepoOwner, targetRepoName] = profile.targetRepo.split("/");
+  if (!targetRepoOwner || !targetRepoName)
+    throw new Error(`invalid configured target repo: ${profile.targetRepo}`);
+  return {
+    target_repo: profile.targetRepo,
+    target_repo_owner: targetRepoOwner,
+    target_repo_name: targetRepoName,
+    credential_route: profile.githubAppCredentialRoute,
+    automation_policy: profile.automationPolicy,
+    access_mode: options.accessMode,
+  };
+}
+
+function requiredTargetTokenAccessMode(value: string): TargetTokenAccessMode {
+  const allowed = new Set<TargetTokenAccessMode>(["read", "comment", "mutate"]);
+  if (allowed.has(value as TargetTokenAccessMode)) return value as TargetTokenAccessMode;
+  throw new Error("--access-mode must be one of: read, comment, mutate");
 }
 
 function reviewModelFromPlan(plan: LooseRecord): string {

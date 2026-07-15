@@ -4348,8 +4348,10 @@ test("ClawSweeper Telegram proof judgement controls the Mantis proof label", () 
 test("review workflow gives Codex a read-only inspection token", () => {
   const workflow = readWorkflowFixture("sweep.yml");
 
-  assert.match(workflow, /id: codex-inspection-token/);
-  assert.match(workflow, /permission-issues: read/);
+  assert.match(workflow, /Create target inspection token/);
+  assert.match(workflow, /access-mode: read/);
+  assert.match(workflow, /create-target-token/);
+  assert.match(workflow, /persist-credentials: false/);
   assert.match(workflow, /CLAWSWEEPER_PROOF_INSPECTION_TOKEN/);
 });
 
@@ -4547,18 +4549,17 @@ test("commit review workflow settles and reviews from the target's configured br
   assert.doesNotMatch(workflow, /checkout --detach "\$COMMIT_SHA"/);
 });
 
-test("sweep target write tokens can merge pull requests", () => {
+test("sweep target mutation requests use the routed facade", () => {
   const workflow = readWorkflowFixture("sweep.yml");
   const targetWriteTokenBlocks = workflow
-    .split("- name: Create target write token")
+    .split("access-mode: mutate")
     .slice(1)
     .map((block) => block.split("\n      - ")[0]);
 
-  assert.equal(targetWriteTokenBlocks.length, 3);
-  for (const block of targetWriteTokenBlocks) {
-    assert.match(block, /permission-contents: write/);
-    assert.match(block, /permission-pull-requests: write/);
-  }
+  assert.equal(targetWriteTokenBlocks.length, 1);
+  assert.match(workflow, /uses: \.\/\.github\/actions\/create-target-token/);
+  assert.match(workflow, /target_automation_policy == 'review_only' && 'comment' \|\| 'mutate'/);
+  assert.match(workflow, /apply_sync_comments_only == 'true' && 'comment' \|\| 'mutate'/);
 });
 
 test("sweep review recovery uses explicit failed shard artifacts", () => {
@@ -4608,6 +4609,7 @@ test("codex subprocess env strips GitHub and App credentials", () => {
     process.env.CLAWSWEEPER_PROOF_INSPECTION_TOKEN = "codex-target";
     process.env.CLAWSWEEPER_APP_ID = "123";
     process.env.CLAWSWEEPER_APP_PRIVATE_KEY = "private";
+    process.env.BERMONT_DIGITAL_CLAWSWEEPER_APP_PRIVATE_KEY = "bermont-private";
     process.env.OPENAI_API_KEY = "openai";
     process.env.CODEX_API_KEY = "codex";
 
@@ -4619,6 +4621,7 @@ test("codex subprocess env strips GitHub and App credentials", () => {
     assert.equal(env.CLAWSWEEPER_PROOF_INSPECTION_TOKEN, undefined);
     assert.equal(env.CLAWSWEEPER_APP_ID, undefined);
     assert.equal(env.CLAWSWEEPER_APP_PRIVATE_KEY, undefined);
+    assert.equal(env.BERMONT_DIGITAL_CLAWSWEEPER_APP_PRIVATE_KEY, undefined);
     assert.equal(env.OPENAI_API_KEY, undefined);
     assert.equal(env.CODEX_API_KEY, undefined);
     assert.equal(env.GIT_OPTIONAL_LOCKS, "0");

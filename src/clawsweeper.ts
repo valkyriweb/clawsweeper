@@ -5383,7 +5383,7 @@ export function runClaudeCode(options: RunClaudeCodeOptions): Decision {
   const result = spawn("claude", args, {
     cwd: options.openclawDir,
     encoding: "utf8",
-    env: { ...process.env },
+    env: codexEnv({ ghToken: process.env.CLAWSWEEPER_PROOF_INSPECTION_TOKEN }),
     input: prompt,
     maxBuffer: 128 * 1024 * 1024,
     timeout: options.timeoutMs,
@@ -5569,7 +5569,7 @@ export function runPi(options: RunPiOptions): Decision {
   const result = spawn("pi", args, {
     cwd: options.openclawDir,
     encoding: "utf8",
-    env: { ...process.env },
+    env: codexEnv({ ghToken: process.env.CLAWSWEEPER_PROOF_INSPECTION_TOKEN }),
     input: wrapped,
     maxBuffer: 128 * 1024 * 1024,
     timeout: options.timeoutMs,

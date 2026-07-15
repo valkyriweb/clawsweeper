@@ -11,6 +11,7 @@ export function codexEnv(options: CodexEnvOptions = {}): NodeJS.ProcessEnv {
   delete env.CLAWSWEEPER_PROOF_INSPECTION_TOKEN;
   delete env.CLAWSWEEPER_APP_ID;
   delete env.CLAWSWEEPER_APP_PRIVATE_KEY;
+  delete env.BERMONT_DIGITAL_CLAWSWEEPER_APP_PRIVATE_KEY;
   delete env.OPENAI_API_KEY;
   delete env.CODEX_API_KEY;
   delete env.OPIK_API_KEY;

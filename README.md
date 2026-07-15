@@ -565,14 +565,18 @@ Required secrets:
   ClawSweeper GitHub App. Do not copy this from the public app page; use the app
   configured for the deployment (for the live dashboard, see
   `dashboard/wrangler.toml`).
-- `CLAWSWEEPER_APP_PRIVATE_KEY`: private key for the same GitHub App; plan/review
-  jobs use a short-lived GitHub App installation token for read-heavy target API
-  calls, commit review uses a read-scoped target token while Codex runs, and
-  apply/comment-sync/check jobs use the app token for comments, closes, and
-  optional checks.
-  Keep App credentials scoped to the `actions/create-github-app-token` step.
-  Review shards run Codex over attacker-controlled issue/PR text, so
-  `codexEnv()` also strips these App variables before spawning Codex.
+- `CLAWSWEEPER_APP_PRIVATE_KEY`: Valkyriweb App private key for state, Pi package,
+  and `valkyriweb`-routed target tokens.
+- repository/organization variable `BERMONT_DIGITAL_CLAWSWEEPER_APP_CLIENT_ID` and
+  secret `BERMONT_DIGITAL_CLAWSWEEPER_APP_PRIVATE_KEY`: engine-only Bermont App
+  credentials for profiles explicitly routed to `bermont-digital`. They are never
+  placed in a business target repository and never fall back to the Valkyriweb App.
+
+The static target-token facade selects the configured route before minting;
+`review_only` profiles may receive read/comment tokens but are denied mutate
+requests. Keep all App credentials scoped to `actions/create-github-app-token`.
+Review shards run Codex over attacker-controlled issue/PR text, so `codexEnv()`
+strips both App private keys before spawning Codex.
 
 Token flow:
 

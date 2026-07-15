@@ -7,7 +7,8 @@ Luke's fork of `openclaw/clawsweeper`. Divergence from upstream is intentional. 
 Automated GitHub issue/PR triage + review/repair via GitHub Actions + Codex. Runs in
 `valkyriweb/clawsweeper`; state in `valkyriweb/clawsweeper-state`; targets in
 [`config/target-repositories.json`](config/target-repositories.json). Each run mints a
-**scoped per-target token** from the `valkyriweb-clawsweeper` GitHub App.
+**scoped per-target token** through the profile's explicit credential route; state and
+Pi package access always remain on `valkyriweb-clawsweeper`.
 
 ## Read first
 
@@ -48,6 +49,9 @@ Repair lane: `pnpm run repair:*` (see `package.json`). Package manager: **pnpm**
 
 ## App credentials
 
-1Password → **Personal** vault → *"GitHub App — valkyriweb-clawsweeper"* (`app_id 3711554`,
-client id, private key, install ids). Never commit keys; the workflow reads the
-`CLAWSWEEPER_APP_PRIVATE_KEY` Actions secret.
+`valkyriweb` profile routes use 1Password → **Personal** → *"GitHub App —
+valkyriweb-clawsweeper"* (`app_id 3711554`) via `CLAWSWEEPER_APP_PRIVATE_KEY`.
+`bermont-digital` routes use the engine-only Bermont App credentials
+`BERMONT_DIGITAL_CLAWSWEEPER_APP_CLIENT_ID` and
+`BERMONT_DIGITAL_CLAWSWEEPER_APP_PRIVATE_KEY`. Never commit keys or place either
+credential in a Bermont target repository.

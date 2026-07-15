@@ -1744,6 +1744,34 @@ test("clawsweeper setup PR rejects anonymous dashboard requests", async () => {
   assert.deepEqual(await response.json(), { error: "unauthorized" });
 });
 
+test("clawsweeper setup PR refuses Bermont repositories before any GitHub request", async () => {
+  const originalFetch = globalThis.fetch;
+  let fetchCalls = 0;
+  globalThis.fetch = (async () => {
+    fetchCalls += 1;
+    throw new Error("Bermont setup must not contact GitHub");
+  }) as typeof fetch;
+
+  try {
+    const response = await worker.fetch(
+      new Request(
+        "https://clawsweeper.openclaw.ai/api/repos/bermont-digital/smilerite/clawsweeper-setup-pr",
+        {
+          method: "POST",
+          headers: { Authorization: "Bearer admin-secret" },
+        },
+      ),
+      { GITHUB_TOKEN: "gh-token", DASHBOARD_ADMIN_TOKEN: "admin-secret" },
+      { waitUntil: () => undefined },
+    );
+    assert.equal(response.status, 403);
+    assert.deepEqual(await response.json(), { error: "bermont_engine_pull_manual_only" });
+    assert.equal(fetchCalls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("clawsweeper setup PR writes dispatcher workflow and opens a reviewable PR", async () => {
   const originalFetch = globalThis.fetch;
   const writes: Array<{ method: string; path: string; body: Record<string, unknown> }> = [];

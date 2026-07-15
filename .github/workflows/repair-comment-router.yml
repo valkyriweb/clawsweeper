@@ -110,7 +110,13 @@ jobs:
           TARGET_REPO: ${{ github.event_name == 'workflow_dispatch' && inputs.target_repo || github.event.client_payload.target_repo || vars.CLAWSWEEPER_TARGET_REPO }}
         run: |
           set -euo pipefail
+          echo "repo=$TARGET_REPO" >> "$GITHUB_OUTPUT"
           echo "owner=${TARGET_REPO%%/*}" >> "$GITHUB_OUTPUT"
+
+      - name: Authorize legacy target token
+        env:
+          TARGET_REPO: ${{ steps.target-owner.outputs.repo }}
+        run: pnpm run --silent workflow -- legacy-target-auth --target-repo "$TARGET_REPO"
 
       - name: Create GitHub App token
         id: app_token

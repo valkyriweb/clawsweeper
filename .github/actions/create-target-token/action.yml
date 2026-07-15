@@ -1,0 +1,136 @@
+name: Create routed ClawSweeper target token
+description: Fail-closed target-profile authorization with static GitHub App credential adapters.
+inputs:
+  target-repo:
+    description: Configured target repository (owner/name).
+    required: true
+  access-mode:
+    description: "Required target access mode: read, comment, or mutate."
+    required: true
+  working-directory:
+    description: Built ClawSweeper workspace containing dist/repair/workflow-utils.js.
+    required: false
+    default: .
+  valkyriweb-client-id:
+    description: Valkyriweb App client ID.
+    required: true
+  valkyriweb-private-key:
+    description: Valkyriweb App private key.
+    required: true
+  bermont-digital-client-id:
+    description: Bermont Digital App client ID.
+    required: true
+  bermont-digital-private-key:
+    description: Bermont Digital App private key.
+    required: true
+outputs:
+  token:
+    description: Scoped token from the explicitly authorized static provider branch.
+    value: ${{ steps.valkyriweb-read.outputs.token || steps.valkyriweb-comment.outputs.token || steps.valkyriweb-mutate.outputs.token || steps.bermont-digital-read.outputs.token || steps.bermont-digital-comment.outputs.token || steps.bermont-digital-mutate.outputs.token }}
+  target-repo:
+    description: Canonically normalized configured target repository.
+    value: ${{ steps.resolve.outputs.target_repo }}
+  credential-route:
+    description: Explicit credential route selected by the repository profile.
+    value: ${{ steps.resolve.outputs.credential_route }}
+  automation-policy:
+    description: Explicit automation policy selected by the repository profile.
+    value: ${{ steps.resolve.outputs.automation_policy }}
+  access-mode:
+    description: Validated token access mode.
+    value: ${{ steps.resolve.outputs.access_mode }}
+runs:
+  using: composite
+  steps:
+    - name: Resolve target authorization
+      id: resolve
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        TARGET_REPO: ${{ inputs.target-repo }}
+        ACCESS_MODE: ${{ inputs.access-mode }}
+      run: |
+        set -euo pipefail
+        node dist/repair/workflow-utils.js target-auth \
+          --target-repo "$TARGET_REPO" \
+          --access-mode "$ACCESS_MODE" >> "$GITHUB_OUTPUT"
+
+    # These are deliberately static provider branches. Do not turn the App inputs
+    # into dynamically composed secret names or add a fallback credential.
+    - name: Create Valkyriweb read token
+      id: valkyriweb-read
+      if: ${{ steps.resolve.outputs.credential_route == 'valkyriweb' && steps.resolve.outputs.access_mode == 'read' }}
+      uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+      with:
+        client-id: ${{ inputs.valkyriweb-client-id }}
+        private-key: ${{ inputs.valkyriweb-private-key }}
+        owner: ${{ steps.resolve.outputs.target_repo_owner }}
+        repositories: ${{ steps.resolve.outputs.target_repo_name }}
+        permission-contents: read
+        permission-issues: read
+        permission-pull-requests: read
+
+    - name: Create Valkyriweb comment token
+      id: valkyriweb-comment
+      if: ${{ steps.resolve.outputs.credential_route == 'valkyriweb' && steps.resolve.outputs.access_mode == 'comment' }}
+      uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+      with:
+        client-id: ${{ inputs.valkyriweb-client-id }}
+        private-key: ${{ inputs.valkyriweb-private-key }}
+        owner: ${{ steps.resolve.outputs.target_repo_owner }}
+        repositories: ${{ steps.resolve.outputs.target_repo_name }}
+        permission-contents: read
+        permission-issues: write
+        permission-pull-requests: write
+
+    - name: Create Valkyriweb mutate token
+      id: valkyriweb-mutate
+      if: ${{ steps.resolve.outputs.credential_route == 'valkyriweb' && steps.resolve.outputs.access_mode == 'mutate' }}
+      uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+      with:
+        client-id: ${{ inputs.valkyriweb-client-id }}
+        private-key: ${{ inputs.valkyriweb-private-key }}
+        owner: ${{ steps.resolve.outputs.target_repo_owner }}
+        repositories: ${{ steps.resolve.outputs.target_repo_name }}
+        permission-contents: write
+        permission-issues: write
+        permission-pull-requests: write
+
+    - name: Create Bermont Digital read token
+      id: bermont-digital-read
+      if: ${{ steps.resolve.outputs.credential_route == 'bermont-digital' && steps.resolve.outputs.access_mode == 'read' }}
+      uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+      with:
+        client-id: ${{ inputs.bermont-digital-client-id }}
+        private-key: ${{ inputs.bermont-digital-private-key }}
+        owner: ${{ steps.resolve.outputs.target_repo_owner }}
+        repositories: ${{ steps.resolve.outputs.target_repo_name }}
+        permission-contents: read
+        permission-issues: read
+        permission-pull-requests: read
+
+    - name: Create Bermont Digital comment token
+      id: bermont-digital-comment
+      if: ${{ steps.resolve.outputs.credential_route == 'bermont-digital' && steps.resolve.outputs.access_mode == 'comment' }}
+      uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+      with:
+        client-id: ${{ inputs.bermont-digital-client-id }}
+        private-key: ${{ inputs.bermont-digital-private-key }}
+        owner: ${{ steps.resolve.outputs.target_repo_owner }}
+        repositories: ${{ steps.resolve.outputs.target_repo_name }}
+        permission-contents: read
+        permission-issues: write
+        permission-pull-requests: write
+
+    - name: Create Bermont Digital mutate token
+      id: bermont-digital-mutate
+      if: ${{ steps.resolve.outputs.credential_route == 'bermont-digital' && steps.resolve.outputs.access_mode == 'mutate' }}
+      uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+      with:
+        client-id: ${{ inputs.bermont-digital-client-id }}
+        private-key: ${{ inputs.bermont-digital-private-key }}
+        owner: ${{ steps.resolve.outputs.target_repo_owner }}
+        repositories: ${{ steps.resolve.outputs.target_repo_name }}
+        permission-contents: write
+        permission-issues: write
+        permission-pull-requests: write
