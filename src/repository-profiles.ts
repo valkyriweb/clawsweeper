@@ -20,7 +20,13 @@ export type ReviewProviderModels = Record<ReviewProvider, string>;
 
 /** Per-target authorization for automation that can change a target repository. */
 export type AutomationPolicy = "full" | "review_only";
-export type AutomationCapability = "repair" | "branch_push" | "pull_request" | "merge" | "close";
+export type AutomationCapability =
+  | "repair"
+  | "branch_push"
+  | "pull_request"
+  | "merge"
+  | "close"
+  | "label";
 
 export interface AutomationCapabilities {
   review: true;
@@ -30,6 +36,7 @@ export interface AutomationCapabilities {
   pullRequest: boolean;
   merge: boolean;
   close: boolean;
+  labels: boolean;
 }
 
 export type DocsMaintainerMode = "autofix" | "precheck";
@@ -159,6 +166,7 @@ const FULL_AUTOMATION_CAPABILITIES: AutomationCapabilities = Object.freeze({
   pullRequest: true,
   merge: true,
   close: true,
+  labels: true,
 });
 
 const REVIEW_ONLY_AUTOMATION_CAPABILITIES: AutomationCapabilities = Object.freeze({
@@ -169,6 +177,7 @@ const REVIEW_ONLY_AUTOMATION_CAPABILITIES: AutomationCapabilities = Object.freez
   pullRequest: false,
   merge: false,
   close: false,
+  labels: false,
 });
 
 export const DEFAULT_DOCS_MAINTAINER_CONFIG: DocsMaintainerConfig = {
@@ -293,7 +302,9 @@ export function automationPolicyBlockReason(
       ? capabilities.branchPush
       : capability === "pull_request"
         ? capabilities.pullRequest
-        : capabilities[capability];
+        : capability === "label"
+          ? capabilities.labels
+          : capabilities[capability];
   if (allowed) return null;
   return `${profile.targetRepo} automation_policy=${profile.automationPolicy} denies ${capability}`;
 }

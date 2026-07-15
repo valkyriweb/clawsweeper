@@ -368,6 +368,7 @@ function classifyCommand(command: LooseRecord): JsonValue {
   const automationPolicyBlock = commentRouterAutomationBlockReason({
     repo: command.repo,
     intent: command.intent,
+    actions: command.actions,
   });
   if (automationPolicyBlock) {
     return {
@@ -1258,6 +1259,7 @@ function executeCommand(command: LooseRecord) {
     const automationPolicyBlock = commentRouterAutomationBlockReason({
       repo: command.repo,
       intent: command.intent,
+      actions: command.actions,
     });
     if (automationPolicyBlock) {
       command.reason = automationPolicyBlock;
