@@ -7,6 +7,7 @@ import { parseArgs, parseJob, repoRoot, validateJob } from "./lib.js";
 import { ghJsonBestEffort } from "./github-cli.js";
 import { escapeRegExp } from "./text-utils.js";
 import { renderJobIntentFrontmatter } from "./job-intent.js";
+import { automationPolicyBlockReason } from "../repository-profiles.js";
 
 const args = parseArgs(process.argv.slice(2));
 const fromReport = args["from-report"] ?? args.from_report;
@@ -42,6 +43,11 @@ const dispatch = Boolean(args.dispatch);
 const checkExisting = !(args["no-check-existing"] ?? args.no_check_existing);
 
 if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo)) die("--repo must be owner/repo");
+const createJobPolicyBlock = automationPolicyBlockReason(repo, "repair");
+if (createJobPolicyBlock) {
+  console.log(JSON.stringify({ status: "blocked", repo, reason: createJobPolicyBlock }, null, 2));
+  process.exit(0);
+}
 if (!["plan", "execute", "autonomous"].includes(mode))
   die("--mode must be plan, execute, or autonomous");
 if (finalRefs.length === 0)

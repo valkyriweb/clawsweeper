@@ -1,13 +1,55 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
   REPOSITORY_PROFILES,
+  automationPolicyBlockReason,
   repositoryProfileFor,
+  resolveAutomationCapabilities,
+  validateTargetRepositoryConfig,
   requireTargetRepo,
   resolveRepositoryReviewProvider,
   reviewModelForProvider,
 } from "../dist/repository-profiles.js";
+
+test("automation policies are explicit and fail closed for protected targets", () => {
+  const saleSight = repositoryProfileFor("bermont-digital/sale-sight-plugin");
+  const smilerite = repositoryProfileFor("bermont-digital/smilerite");
+  assert.equal(saleSight.automationPolicy, "review_only");
+  assert.equal(smilerite.automationPolicy, "review_only");
+  assert.equal(repositoryProfileFor("valkyriweb/clawsweeper").automationPolicy, "full");
+  assert.equal(resolveAutomationCapabilities("review_only").repair, false);
+  assert.equal(resolveAutomationCapabilities("review_only").review, true);
+  assert.equal(resolveAutomationCapabilities("unknown").close, false);
+  assert.match(automationPolicyBlockReason(saleSight.targetRepo, "close") ?? "", /review_only/);
+  assert.match(
+    automationPolicyBlockReason("unknown-org/unknown-repo", "repair") ?? "",
+    /unsupported/,
+  );
+  assert.equal(automationPolicyBlockReason("valkyriweb/clawsweeper", "merge"), null);
+});
+
+test("target repository schema rejects missing or unknown automation policies", () => {
+  const config = JSON.parse(readFileSync("config/target-repositories.json", "utf8"));
+  const missingPolicy = structuredClone(config);
+  delete missingPolicy.repositories[0].automation_policy;
+  assert.throws(() => validateTargetRepositoryConfig(missingPolicy), /automation_policy/);
+
+  const unknownPolicy = structuredClone(config);
+  unknownPolicy.repositories[0].automation_policy = "sometimes";
+  assert.throws(
+    () => validateTargetRepositoryConfig(unknownPolicy),
+    /automation_policy.*full.*review_only/,
+  );
+
+  const oldSchema = structuredClone(config);
+  oldSchema.schema_version = 1;
+  assert.throws(
+    () => validateTargetRepositoryConfig(oldSchema),
+    /Unsupported target repository config schema/,
+  );
+});
 
 test("repositoryProfileFor matches mixed-case input against private target profiles", () => {
   const profile = repositoryProfileFor("CLIP-SA/Core-Wholesale");

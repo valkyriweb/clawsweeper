@@ -18,6 +18,20 @@ export type ReviewProvider = "codex" | "claude-bridge" | "claude-code" | "pi";
 
 export type ReviewProviderModels = Record<ReviewProvider, string>;
 
+/** Per-target authorization for automation that can change a target repository. */
+export type AutomationPolicy = "full" | "review_only";
+export type AutomationCapability = "repair" | "branch_push" | "pull_request" | "merge" | "close";
+
+export interface AutomationCapabilities {
+  review: true;
+  proposals: true;
+  repair: boolean;
+  branchPush: boolean;
+  pullRequest: boolean;
+  merge: boolean;
+  close: boolean;
+}
+
 export type DocsMaintainerMode = "autofix" | "precheck";
 
 export interface DocsMaintainerMapEntry {
@@ -42,6 +56,7 @@ export interface RepositoryProfile {
   communityUrl?: string;
   promptNote: string;
   applyCloseRules: Partial<Record<RepositoryItemKind, readonly RepositoryCloseReason[]>>;
+  automationPolicy: AutomationPolicy;
   docsMaintainer: DocsMaintainerConfig;
   // Optional per-target override of the review provider. Highest-precedence
   // input to `resolveReviewProvider()`; lets one repo opt out of (or back
@@ -64,7 +79,7 @@ export interface RepositoryProfile {
 }
 
 interface TargetRepositoryConfig {
-  schemaVersion: 1;
+  schemaVersion: 2;
   repositories: readonly ConfiguredRepositoryProfile[];
   reviewRouting: ReviewRoutingConfig;
   openclawFallback?: OpenClawFallbackConfig;
@@ -82,6 +97,7 @@ interface ConfiguredRepositoryProfile {
   communityUrl?: string;
   promptNote: string;
   applyCloseRules: Partial<Record<RepositoryItemKind, readonly RepositoryCloseReason[]>>;
+  automationPolicy: AutomationPolicy;
   docsMaintainer: DocsMaintainerConfig;
   reviewProvider?: ReviewProvider;
   includeMaintainerAuthored?: boolean;
@@ -115,6 +131,7 @@ interface OpenClawFallbackConfig {
   allowRepoNamePattern: RegExp;
   promptNote: string;
   applyCloseRules: Partial<Record<RepositoryItemKind, readonly RepositoryCloseReason[]>>;
+  automationPolicy: AutomationPolicy;
 }
 
 const OPENCLAW_CLOSE_REASONS: readonly RepositoryCloseReason[] = [
@@ -132,6 +149,27 @@ const ALL_CLOSE_REASONS: readonly RepositoryCloseReason[] = [...OPENCLAW_CLOSE_R
 const CLOSE_REASON_SET = new Set<RepositoryCloseReason>(ALL_CLOSE_REASONS);
 const ITEM_KIND_SET = new Set<RepositoryItemKind>(["issue", "pull_request"]);
 const DOCS_MAINTAINER_MODE_SET = new Set<DocsMaintainerMode>(["autofix", "precheck"]);
+const AUTOMATION_POLICY_SET: ReadonlySet<AutomationPolicy> = new Set(["full", "review_only"]);
+
+const FULL_AUTOMATION_CAPABILITIES: AutomationCapabilities = Object.freeze({
+  review: true,
+  proposals: true,
+  repair: true,
+  branchPush: true,
+  pullRequest: true,
+  merge: true,
+  close: true,
+});
+
+const REVIEW_ONLY_AUTOMATION_CAPABILITIES: AutomationCapabilities = Object.freeze({
+  review: true,
+  proposals: true,
+  repair: false,
+  branchPush: false,
+  pullRequest: false,
+  merge: false,
+  close: false,
+});
 
 export const DEFAULT_DOCS_MAINTAINER_CONFIG: DocsMaintainerConfig = {
   enabled: false,
@@ -174,6 +212,7 @@ const CORE_OPENCLAW_PROFILE: RepositoryProfile = {
     issue: OPENCLAW_CLOSE_REASONS,
     pull_request: OPENCLAW_CLOSE_REASONS.filter((reason) => reason !== "stale_insufficient_info"),
   },
+  automationPolicy: "full",
   docsMaintainer: DEFAULT_DOCS_MAINTAINER_CONFIG,
 };
 
@@ -225,12 +264,49 @@ export function requireTargetRepo(value: unknown): string {
   return repo;
 }
 
+/**
+ * Resolve target mutation capabilities without making a permissive guess.
+ * Missing or unknown values are review-only, so every caller fails closed.
+ */
+export function resolveAutomationCapabilities(policy: unknown): AutomationCapabilities {
+  return policy === "full" ? FULL_AUTOMATION_CAPABILITIES : REVIEW_ONLY_AUTOMATION_CAPABILITIES;
+}
+
+/** Return a denial instead of throwing so terminal executors can report it. */
+export function automationPolicyBlockReason(
+  targetRepo: unknown,
+  capability: AutomationCapability,
+): string | null {
+  const requested = typeof targetRepo === "string" ? targetRepo.trim() : "";
+  if (!TARGET_REPO_PATTERN.test(requested)) {
+    return `automation policy denies ${capability}: target repository is missing or invalid`;
+  }
+  let profile: RepositoryProfile;
+  try {
+    profile = repositoryProfileFor(requested);
+  } catch {
+    return `automation policy denies ${capability}: unsupported target repository ${requested}`;
+  }
+  const capabilities = resolveAutomationCapabilities(profile.automationPolicy);
+  const allowed =
+    capability === "branch_push"
+      ? capabilities.branchPush
+      : capability === "pull_request"
+        ? capabilities.pullRequest
+        : capabilities[capability];
+  if (allowed) return null;
+  return `${profile.targetRepo} automation_policy=${profile.automationPolicy} denies ${capability}`;
+}
+
 export function isAutoCloseAllowed(
   profile: RepositoryProfile,
   kind: RepositoryItemKind,
   reason: RepositoryCloseReason,
 ): boolean {
-  return Boolean(profile.applyCloseRules[kind]?.includes(reason));
+  return (
+    resolveAutomationCapabilities(profile.automationPolicy).close &&
+    Boolean(profile.applyCloseRules[kind]?.includes(reason))
+  );
 }
 
 function configuredRepositoryProfile(profile: ConfiguredRepositoryProfile): RepositoryProfile {
@@ -242,6 +318,7 @@ function configuredRepositoryProfile(profile: ConfiguredRepositoryProfile): Repo
     checkoutDir: profile.checkoutDir,
     promptNote: profile.promptNote,
     applyCloseRules: profile.applyCloseRules,
+    automationPolicy: profile.automationPolicy,
     docsMaintainer: profile.docsMaintainer,
   };
   if (profile.docsUrl) result.docsUrl = profile.docsUrl;
@@ -272,6 +349,7 @@ function fallbackRepositoryProfile(normalizedTargetRepo: string): RepositoryProf
       .replaceAll("{target_repo}", normalizedTargetRepo)
       .replaceAll("{repo_name}", repoName),
     applyCloseRules: fallback.applyCloseRules,
+    automationPolicy: fallback.automationPolicy,
     docsMaintainer: DEFAULT_DOCS_MAINTAINER_CONFIG,
   };
 }
@@ -292,7 +370,7 @@ function readTargetRepositoryConfig(
   filePath = join(repoRoot(), "config", "target-repositories.json"),
 ): TargetRepositoryConfig {
   if (!existsSync(filePath)) {
-    return { schemaVersion: 1, repositories: [], reviewRouting: defaultReviewRoutingConfig() };
+    return { schemaVersion: 2, repositories: [], reviewRouting: defaultReviewRoutingConfig() };
   }
   const parsed = JSON.parse(readFileSync(filePath, "utf8")) as unknown;
   return validateTargetRepositoryConfig(parsed);
@@ -326,16 +404,16 @@ export function resolveRepositoryReviewProvider(opts: {
   return fallback;
 }
 
-function validateTargetRepositoryConfig(value: unknown): TargetRepositoryConfig {
+export function validateTargetRepositoryConfig(value: unknown): TargetRepositoryConfig {
   const config = record(value, "target repository config");
   const schemaVersion = numberValue(config.schema_version, "schema_version");
-  if (schemaVersion !== 1)
+  if (schemaVersion !== 2)
     throw new Error(`Unsupported target repository config schema: ${schemaVersion}`);
   const repositories = arrayValue(config.repositories, "repositories").map((entry, index) =>
     validateConfiguredRepositoryProfile(entry, `repositories[${index}]`),
   );
   const result: TargetRepositoryConfig = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     repositories,
     reviewRouting: validateReviewRoutingConfig(config.review_routing),
   };
@@ -373,6 +451,10 @@ function validateConfiguredRepositoryProfile(
     checkoutDir: pathSegmentValue(profile.checkout_dir, `${label}.checkout_dir`),
     promptNote: stringValue(profile.prompt_note, `${label}.prompt_note`),
     applyCloseRules: closeRulesValue(profile.apply_close_rules, `${label}.apply_close_rules`),
+    automationPolicy: automationPolicyValue(
+      profile.automation_policy,
+      `${label}.automation_policy`,
+    ),
     docsMaintainer: docsMaintainerConfigValue(
       profile.docs_maintainer ?? profile.docsMaintainer,
       `${label}.docs_maintainer`,
@@ -428,7 +510,19 @@ function validateOpenClawFallbackConfig(value: unknown): OpenClawFallbackConfig 
       fallback.apply_close_rules,
       "openclaw_fallback.apply_close_rules",
     ),
+    automationPolicy: automationPolicyValue(
+      fallback.automation_policy,
+      "openclaw_fallback.automation_policy",
+    ),
   };
+}
+
+function automationPolicyValue(value: unknown, label: string): AutomationPolicy {
+  const policy = stringValue(value, label);
+  if (!AUTOMATION_POLICY_SET.has(policy as AutomationPolicy)) {
+    throw new Error(`${label} must be one of: ${[...AUTOMATION_POLICY_SET].join(", ")}`);
+  }
+  return policy as AutomationPolicy;
 }
 
 function docsMaintainerConfigValue(value: unknown, label: string): DocsMaintainerConfig {

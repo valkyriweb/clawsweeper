@@ -16,7 +16,7 @@ import {
 import { ghJson, ghText } from "./github-cli.js";
 import { sleepMs } from "./timing.js";
 import { REPAIR_CLUSTER_WORKFLOW, REVIEW_BOTS } from "./constants.js";
-import { requireTargetRepo } from "../repository-profiles.js";
+import { automationPolicyBlockReason, requireTargetRepo } from "../repository-profiles.js";
 import { numberEnv } from "./env-utils.js";
 import { compactText, escapeRegExp } from "./text-utils.js";
 
@@ -35,7 +35,9 @@ const repairRepo = String(
 const headPrefix = String(args["head-prefix"] ?? DEFAULT_HEAD_PREFIX);
 const writeReport = Boolean(args["write-report"]);
 const execute = Boolean(args.execute);
-const dispatchRepairs = Boolean(args["dispatch-repairs"] || args.dispatch || execute);
+const requestedDispatchRepairs = Boolean(args["dispatch-repairs"] || args.dispatch || execute);
+const finalizerPolicyBlock = automationPolicyBlockReason(repo, "repair");
+const dispatchRepairs = requestedDispatchRepairs && !finalizerPolicyBlock;
 const workflow = String(
   args.workflow ?? process.env.CLAWSWEEPER_FINALIZER_WORKFLOW ?? REPAIR_CLUSTER_WORKFLOW,
 );
@@ -68,7 +70,9 @@ const openPulls = listOpenPullRequests(repo, headPrefix);
 const prs = openPulls.map((pull: JsonValue) =>
   classifyPullRequest(hydratePullRequest(repo, pull), records),
 );
-const dispatchCandidates = dispatchRepairs ? selectDispatchCandidates(prs).slice(0, maxPrs) : [];
+const dispatchCandidates = requestedDispatchRepairs
+  ? selectDispatchCandidates(prs).slice(0, maxPrs)
+  : [];
 const report: LooseRecord = {
   repo,
   repair_repo: repairRepo,
@@ -78,7 +82,9 @@ const report: LooseRecord = {
   summary: summarize(prs),
   dispatch: {
     enabled: dispatchRepairs,
+    requested: requestedDispatchRepairs,
     execute,
+    ...(finalizerPolicyBlock ? { status: "blocked", reason: finalizerPolicyBlock } : {}),
     workflow,
     runner,
     execution_runner: executionRunner,
@@ -576,6 +582,10 @@ function summarizeDispatchCandidate(candidate: LooseRecord) {
 }
 
 function executeDispatches(candidates: LooseRecord[], dispatchSummary: JsonValue) {
+  const policyBlock = automationPolicyBlockReason(repo, "repair");
+  if (policyBlock) {
+    return { ...dispatchSummary, status: "blocked", reason: policyBlock, attempts: [] };
+  }
   const summary = {
     ...dispatchSummary,
     status: candidates.length === 0 ? "no_candidates" : "dispatching",
@@ -661,6 +671,8 @@ function executeDispatches(candidates: LooseRecord[], dispatchSummary: JsonValue
 }
 
 function dispatchRepair(candidate: LooseRecord) {
+  const policyBlock = automationPolicyBlockReason(repo, "repair");
+  if (policyBlock) throw new Error(policyBlock);
   ghText([
     "workflow",
     "run",

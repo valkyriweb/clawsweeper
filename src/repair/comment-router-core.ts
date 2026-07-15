@@ -1,4 +1,5 @@
 import type { JsonValue, LooseRecord } from "./json-types.js";
+import { automationPolicyBlockReason } from "../repository-profiles.js";
 import {
   CLAWSWEEPER_CO_AUTHOR_TRAILER,
   clawsweeperCoAuthorKey,
@@ -15,6 +16,39 @@ export const REPAIR_INTENTS = new Set([
 ]);
 export const MERGE_INTENTS = new Set(["clawsweeper_auto_merge", "maintainer_approve_automerge"]);
 export const AUTOCLOSE_INTENTS = new Set(["autoclose"]);
+export const LIFECYCLE_LABEL_INTENTS = new Set(["stop", "clawsweeper_needs_human"]);
+
+/**
+ * Commands that can only produce review/proposal output return null. Every
+ * repair, PR lifecycle, merge, and close command resolves through the same
+ * per-target fail-closed policy before a router can create or dispatch work.
+ */
+export function commentRouterAutomationBlockReason({
+  repo,
+  intent,
+}: {
+  repo: unknown;
+  intent: unknown;
+}): string | null {
+  const commandIntent = String(intent ?? "");
+  if (AUTOCLOSE_INTENTS.has(commandIntent)) {
+    return automationPolicyBlockReason(repo, "close");
+  }
+  if (
+    MERGE_INTENTS.has(commandIntent) ||
+    ["automerge", "maintainer_approve_automerge"].includes(commandIntent)
+  ) {
+    return automationPolicyBlockReason(repo, "merge");
+  }
+  if (
+    REPAIR_INTENTS.has(commandIntent) ||
+    LIFECYCLE_LABEL_INTENTS.has(commandIntent) ||
+    ["autofix", "automerge", "implement_issue"].includes(commandIntent)
+  ) {
+    return automationPolicyBlockReason(repo, "repair");
+  }
+  return null;
+}
 export const AUTOMERGE_JOB_SOURCE = "pr_automerge";
 export const ISSUE_IMPLEMENTATION_JOB_SOURCE = "issue_implementation";
 export const REVIEW_REPRODUCIBLE_BUG_TRIGGER_SOURCE = "review_reproducible_bug";

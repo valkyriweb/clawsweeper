@@ -32,6 +32,7 @@ import {
   writeRepairSquashMergeBody,
 } from "./repair-merge-message.js";
 import { compactText as compactPlainText } from "./text-utils.js";
+import { automationPolicyBlockReason } from "../repository-profiles.js";
 
 const PASSING_CHECK_CONCLUSIONS = new Set(["SUCCESS", "SKIPPED", "NEUTRAL"]);
 const FIX_PR_MERGE_STATES = new Set(["CLEAN", "HAS_HOOKS", "UNSTABLE"]);
@@ -102,6 +103,16 @@ const report: LooseRecord = {
   actions: [],
 };
 
+const postFlightPolicyBlock =
+  automationPolicyBlockReason(result.repo, "merge") ??
+  automationPolicyBlockReason(result.repo, "close");
+if (postFlightPolicyBlock) {
+  report.actions.push({ action: "post_flight", status: "blocked", reason: postFlightPolicyBlock });
+  writeReport(report, resultPath);
+  console.log(JSON.stringify(report, null, 2));
+  process.exit(0);
+}
+
 if (!fixReport) {
   report.actions.push({
     action: "post_flight",
@@ -132,6 +143,8 @@ if (report.actions.length === 0) {
 writeReport(report, resultPath);
 
 function finalizeFixPr(action: LooseRecord) {
+  const policyBlock = automationPolicyBlockReason(result.repo, "merge");
+  if (policyBlock) return { action: "finalize_fix_pr", status: "blocked", reason: policyBlock };
   const base = {
     action: "finalize_fix_pr",
     source_action: action.action,
@@ -383,6 +396,8 @@ function finalizePostMergeCloseout({
   fixUrl,
   finalized,
 }: LooseRecord) {
+  const policyBlock = automationPolicyBlockReason(result.repo, "close");
+  if (policyBlock) return { action: "post_merge_closeout", status: "blocked", reason: policyBlock };
   const base = {
     action: "post_merge_closeout",
     source_action: actionName,

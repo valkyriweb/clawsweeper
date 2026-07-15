@@ -7,7 +7,7 @@ import { ghJsonWithRetry, ghTextWithRetry } from "./github-cli.js";
 import { parseIssueOrPullRef } from "./github-ref.js";
 import { CLAWSWEEPER_LABEL_DESCRIPTION, DEFAULT_LABEL } from "./constants.js";
 import { readJsonFileIfExists as readJson } from "./json-file.js";
-import { requireTargetRepo } from "../repository-profiles.js";
+import { automationPolicyBlockReason, requireTargetRepo } from "../repository-profiles.js";
 
 const FIX_PR_STATUSES = new Set(["opened", "pushed", "executed", "blocked", "planned"]);
 const APPLY_STATUSES = new Set(["executed"]);
@@ -308,6 +308,8 @@ function labelTarget(target: LooseRecord) {
     url: target.url,
     sources: target.sources,
   };
+  const policyBlock = automationPolicyBlockReason(target.repo, "repair");
+  if (policyBlock) return { ...base, status: "blocked", reason: policyBlock };
   if (!live) return { ...base, status: "planned", reason: "live verification disabled" };
 
   let item;

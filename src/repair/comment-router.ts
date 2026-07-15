@@ -37,6 +37,7 @@ import {
   buildAutomergeMergeArgs,
   buildAutomergeSquashMessage,
   commandHasAction,
+  commentRouterAutomationBlockReason,
   createCachedIssueCommentsLookup,
   createCachedIssueCommentsLookupAsync,
   createCachedLabelNumberLookup,
@@ -364,6 +365,18 @@ function classifyCommand(command: LooseRecord): JsonValue {
     ? classifyPullTarget(pull, command.issue_number)
     : classifyIssueTarget(issue, command.issue_number);
   const next = { ...command, target };
+  const automationPolicyBlock = commentRouterAutomationBlockReason({
+    repo: command.repo,
+    intent: command.intent,
+  });
+  if (automationPolicyBlock) {
+    return {
+      ...next,
+      status: "ready",
+      reason: automationPolicyBlock,
+      actions: [{ action: "comment", status: execute ? "pending" : "planned" }],
+    };
+  }
   if (
     !command.trusted_bot &&
     authorization &&
@@ -1242,6 +1255,32 @@ function isRepairLoopControlIntent(command: LooseRecord) {
 
 function executeCommand(command: LooseRecord) {
   try {
+    const automationPolicyBlock = commentRouterAutomationBlockReason({
+      repo: command.repo,
+      intent: command.intent,
+    });
+    if (automationPolicyBlock) {
+      command.reason = automationPolicyBlock;
+      command.actions = (command.actions ?? []).map((action: JsonValue) =>
+        action.action === "comment"
+          ? action
+          : { ...action, status: "blocked", reason: automationPolicyBlock },
+      );
+      const commentResult = postComment(command, renderResponse(command, null));
+      command.actions = command.actions.map((action: JsonValue) =>
+        action.action === "comment"
+          ? {
+              ...action,
+              status: "executed",
+              commented_at: new Date().toISOString(),
+              response_comment_id: commentResult.comment_id,
+              response_comment_mode: commentResult.mode,
+            }
+          : action,
+      );
+      command.status = "blocked";
+      return;
+    }
     let dispatched = null;
     const shouldDispatchRepair = command.actions?.some(
       (action: JsonValue) => action.action === "dispatch_repair",
@@ -1746,6 +1785,11 @@ function acknowledgeSkippedMaintainerCommand(command: LooseRecord) {
 }
 
 function ensureAutomergeJob(command: LooseRecord) {
+  const policyBlock = commentRouterAutomationBlockReason({
+    repo: command.repo,
+    intent: command.intent || "autofix",
+  });
+  if (policyBlock) throw new Error(policyBlock);
   if (command.target?.job_path) {
     return {
       job_path: command.target.job_path,
@@ -1797,6 +1841,11 @@ function ensureAutomergeJob(command: LooseRecord) {
 }
 
 function ensureIssueImplementationJob(command: LooseRecord) {
+  const policyBlock = commentRouterAutomationBlockReason({
+    repo: command.repo,
+    intent: "implement_issue",
+  });
+  if (policyBlock) throw new Error(policyBlock);
   if (command.target?.job_path) {
     return {
       job_path: command.target.job_path,
@@ -1973,6 +2022,11 @@ function freeformReviewPrompt(command: LooseRecord): string {
 }
 
 function dispatchRepair(command: LooseRecord) {
+  const policyBlock = commentRouterAutomationBlockReason({
+    repo: command.repo,
+    intent: "autofix",
+  });
+  if (policyBlock) throw new Error(policyBlock);
   const activeRun = activeRepairRunForCommand(command);
   if (activeRun) {
     return {
@@ -2077,6 +2131,12 @@ function githubActionsRunUrlFromDispatchOutput(output: unknown) {
 }
 
 function executeAutoclose(command: LooseRecord) {
+  const policyBlock = commentRouterAutomationBlockReason({
+    repo: command.repo,
+    intent: "autoclose",
+  });
+  if (policyBlock)
+    return { action: "autoclose", status: "blocked", reason: policyBlock, targets: [] };
   const reason = autocloseReason(command);
   const currentNumber = Number(command.issue_number);
   const targets = [...(command.autoclose_targets ?? [])].sort(
@@ -2216,6 +2276,11 @@ function closeIssueOrPullRequest(repo: string, number: number, kind: string) {
 }
 
 function executeAutomerge(command: LooseRecord) {
+  const policyBlock = commentRouterAutomationBlockReason({
+    repo: command.repo,
+    intent: "automerge",
+  });
+  if (policyBlock) return { action: "merge", status: "blocked", reason: policyBlock };
   const stoppedReason = repairLoopStoppedReason(command);
   if (stoppedReason) {
     return { action: "merge", status: "blocked", reason: stoppedReason, merge_method: "squash" };

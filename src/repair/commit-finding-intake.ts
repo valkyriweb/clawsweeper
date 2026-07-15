@@ -20,7 +20,7 @@ import { readJsonFileIfExists as readJsonIfExists } from "./json-file.js";
 import { renderJobIntentFrontmatter } from "./job-intent.js";
 import { commitFindingPrTitle } from "./pr-title.js";
 import { escapeRegExp, slug } from "./text-utils.js";
-import { requireTargetRepo } from "../repository-profiles.js";
+import { automationPolicyBlockReason, requireTargetRepo } from "../repository-profiles.js";
 
 const args = parseArgs(process.argv.slice(2));
 const command = args._[0] ?? "prepare";
@@ -60,7 +60,7 @@ function prepare() {
   const branch = `clawsweeper/${clusterId}`;
   const latestMain = fetchLatestMain(targetRepo);
   const decision = reportRead.ok
-    ? intakeDecision({ enabled, report, reportMarkdown })
+    ? intakeDecision({ enabled, targetRepo, report, reportMarkdown })
     : { status: "report_missing", shouldRepair: false, reason: reportRead.reason };
   const preparedAt = new Date().toISOString();
   const runDir = decision.shouldRepair
@@ -142,9 +142,13 @@ function finalize() {
   console.log(JSON.stringify({ status, audit_path: relative(auditPath), pr_url: prUrl }, null, 2));
 }
 
-function intakeDecision({ enabled, report, reportMarkdown }: LooseRecord) {
+function intakeDecision({ enabled, targetRepo, report, reportMarkdown }: LooseRecord) {
   if (!truthy(enabled)) {
     return { status: "disabled", shouldRepair: false, reason: "commit finding intake disabled" };
+  }
+  const policyBlock = automationPolicyBlockReason(targetRepo, "repair");
+  if (policyBlock) {
+    return { status: "review_only", shouldRepair: false, reason: policyBlock };
   }
   if (report.result !== "findings") {
     return {

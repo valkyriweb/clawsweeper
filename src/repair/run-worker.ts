@@ -15,6 +15,7 @@ import {
   validateJob,
 } from "./lib.js";
 import { repairJobIntentForFrontmatter } from "./job-intent.js";
+import { automationPolicyBlockReason } from "../repository-profiles.js";
 import {
   appendUsageEventJsonl,
   buildUsageTelemetryEvent,
@@ -81,6 +82,8 @@ if (errors.length > 0) {
 assertAllowedOwner(job.frontmatter.repo, process.env.CLAWSWEEPER_ALLOWED_OWNER);
 
 if ((mode === "execute" || mode === "autonomous") && !dryRun) {
+  const policyBlock = automationPolicyBlockReason(job.frontmatter.repo, "repair");
+  if (policyBlock) throw new Error(`refusing ${mode}: ${policyBlock}`);
   if (job.frontmatter.mode !== mode) {
     throw new Error(`refusing ${mode}: job frontmatter mode is not ${mode}`);
   }

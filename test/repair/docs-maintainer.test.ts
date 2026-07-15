@@ -87,6 +87,18 @@ test("docs maintainer skips bot-authored docs-maintainer PRs", () => {
   assert.equal(decision.reason, "bot_authored_pr");
 });
 
+test("docs maintainer retains review precheck but never creates a review-only job", () => {
+  const saleSight = repositoryProfileFor("bermont-digital/sale-sight-plugin");
+  const reviewOnlyInput = { ...input(), repo: saleSight.targetRepo, profile: saleSight };
+  const decision = precheckDocsMaintainer(reviewOnlyInput);
+  assert.equal(decision.mutation.preferred, "none");
+  assert.match(decision.mutation.reason, /review_only/);
+  assert.throws(
+    () => writeDocsMaintainerJob(reviewOnlyInput, { ...decision, action: "run" }),
+    /review_only/,
+  );
+});
+
 test("docs maintainer plans companion PR for fork heads", () => {
   const decision = precheckDocsMaintainer(
     input({ pr: { headRepo: "contributor/core-wholesale" } }),

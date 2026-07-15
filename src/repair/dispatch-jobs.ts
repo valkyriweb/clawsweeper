@@ -18,6 +18,7 @@ import { sleepMs } from "./timing.js";
 import { REPAIR_CLUSTER_WORKFLOW } from "./constants.js";
 import { AUTOMATION_LIMITS, workerLimit, type WorkerLane } from "./limits.js";
 import { repairJobIntentForFrontmatter, workerLaneForRepairJobIntent } from "./job-intent.js";
+import { automationPolicyBlockReason } from "../repository-profiles.js";
 
 const args = parseArgs(process.argv.slice(2));
 const defaultRunner = process.env.CLAWSWEEPER_WORKER_RUNNER ?? "blacksmith-4vcpu-ubuntu-2404";
@@ -46,7 +47,8 @@ let failed = false;
 const validatedJobs: JsonValue[] = [];
 for (const file of files) {
   const job = parseJob(file);
-  const errors = validateJob(job);
+  const policyBlock = automationPolicyBlockReason(job.frontmatter.repo, "repair");
+  const errors = [...(policyBlock ? [policyBlock] : []), ...validateJob(job)];
   if (errors.length > 0) {
     failed = true;
     console.error(`invalid job: ${file}`);

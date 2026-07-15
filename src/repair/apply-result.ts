@@ -32,6 +32,7 @@ import {
   writeRepairSquashMergeBody,
 } from "./repair-merge-message.js";
 import { validateClosePolicy, validateMergePolicy } from "./merge-close-policy.js";
+import { automationPolicyBlockReason } from "../repository-profiles.js";
 
 const MAINTAINER_AUTHOR_ASSOCIATIONS = new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
 const CLOSE_ACTIONS = new Set([
@@ -231,6 +232,8 @@ function applyCloseAction({
   candidateFix,
   idempotencyKey,
 }: LooseRecord) {
+  const automationPolicyBlock = automationPolicyBlockReason(result.repo, "close");
+  if (automationPolicyBlock) return { ...base, status: "blocked", reason: automationPolicyBlock };
   const closePolicyBlock = validateClosePolicy({ job, actionName });
   if (closePolicyBlock) return { ...base, status: "blocked", reason: closePolicyBlock };
   const fixFirstBlock = validateFixFirstClose({
@@ -401,6 +404,8 @@ function applyMergeAction({
   target,
   base,
 }: LooseRecord) {
+  const automationPolicyBlock = automationPolicyBlockReason(result.repo, "merge");
+  if (automationPolicyBlock) return { ...base, status: "blocked", reason: automationPolicyBlock };
   const policyBlock = validateMergePolicy({ job, action });
   if (policyBlock) return { ...base, status: "blocked", reason: policyBlock };
   if (!allowedRefs.has(target)) {

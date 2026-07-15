@@ -292,10 +292,12 @@ allocated.
 
 Maintainer-authored items (OWNER/MEMBER/COLLABORATOR) are skipped by default,
 but a target can opt in by setting `include_maintainer_authored: true` in
-`config/target-repositories.json`. Closure safety lives in `apply_close_rules`
-per-target, so opting in only changes what reaches review — it does not change
-what the bot is allowed to close. `CLAWSWEEPER_INCLUDE_MAINTAINER_AUTHORED=true`
-is a fleet-wide override (accepts `true`/`1`/`yes`).
+`config/target-repositories.json`. `automation_policy` is the outer mutation
+gate: `review_only` preserves review output while denying repair, push, PR
+lifecycle, merge, and close actions. For `full` targets, `apply_close_rules`
+then narrows ordinary closure reasons. Opting into maintainer-authored review
+changes neither gate. `CLAWSWEEPER_INCLUDE_MAINTAINER_AUTHORED=true` is a
+fleet-wide review-selection override (accepts `true`/`1`/`yes`).
 
 Review cadence is **activity-driven** by default. `shouldReviewItem` returns
 true when, and only when, one of these is true:
