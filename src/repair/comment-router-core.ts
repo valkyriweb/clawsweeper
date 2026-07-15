@@ -20,15 +20,19 @@ export const LIFECYCLE_LABEL_INTENTS = new Set(["stop", "clawsweeper_needs_human
 
 /**
  * Commands that can only produce review/proposal output return null. Every
- * repair, PR lifecycle, merge, and close command resolves through the same
- * per-target fail-closed policy before a router can create or dispatch work.
+ * repair, label, PR lifecycle, merge, and close command resolves through the
+ * same per-target fail-closed policy before a router can create or dispatch work.
+ * Planned label mutations are checked independently of their command intent so
+ * a forged or future intent cannot bypass the target policy.
  */
 export function commentRouterAutomationBlockReason({
   repo,
   intent,
+  actions,
 }: {
   repo: unknown;
   intent: unknown;
+  actions?: unknown;
 }): string | null {
   const commandIntent = String(intent ?? "");
   if (AUTOCLOSE_INTENTS.has(commandIntent)) {
@@ -41,8 +45,19 @@ export function commentRouterAutomationBlockReason({
     return automationPolicyBlockReason(repo, "merge");
   }
   if (
-    REPAIR_INTENTS.has(commandIntent) ||
     LIFECYCLE_LABEL_INTENTS.has(commandIntent) ||
+    (Array.isArray(actions) &&
+      actions.some(
+        (action) =>
+          action &&
+          typeof action === "object" &&
+          ["label", "remove_label"].includes(String(action.action ?? "")),
+      ))
+  ) {
+    return automationPolicyBlockReason(repo, "label");
+  }
+  if (
+    REPAIR_INTENTS.has(commandIntent) ||
     ["autofix", "automerge", "implement_issue"].includes(commandIntent)
   ) {
     return automationPolicyBlockReason(repo, "repair");

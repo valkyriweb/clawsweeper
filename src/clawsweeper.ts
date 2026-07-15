@@ -7173,6 +7173,7 @@ export function telegramVisibleProofLabelsForTest(
 }
 
 function syncTelegramVisibleProofLabel(options: {
+  repo: string;
   number: number;
   labels: readonly string[];
   proof: Pick<TelegramVisibleProof, "status">;
@@ -7183,6 +7184,7 @@ function syncTelegramVisibleProofLabel(options: {
   const wantsLabel = nextLabels.includes(TELEGRAM_VISIBLE_PROOF_LABEL);
   if (hadLabel === wantsLabel) return nextLabels;
   if (options.dryRun) return nextLabels;
+  if (automationPolicyBlockReason(options.repo, "label")) return [...options.labels];
   if (wantsLabel) ensureTelegramVisibleProofLabel();
   ghWithRetry([
     "issue",
@@ -7215,6 +7217,7 @@ function ensureTelegramVisibleProofLabel(): void {
 }
 
 function syncRealBehaviorProofSufficientLabel(options: {
+  repo: string;
   number: number;
   labels: readonly string[];
   proof: Pick<RealBehaviorProof, "status">;
@@ -7225,6 +7228,7 @@ function syncRealBehaviorProofSufficientLabel(options: {
   const wantsLabel = nextLabels.includes(PROOF_SUFFICIENT_LABEL);
   if (hadLabel === wantsLabel) return nextLabels;
   if (options.dryRun) return nextLabels;
+  if (automationPolicyBlockReason(options.repo, "label")) return [...options.labels];
   ghWithRetry([
     "issue",
     "edit",
@@ -9619,12 +9623,14 @@ function applyDecisionsCommand(args: Args): void {
     }
     if (state === "open" && item.kind === "pull_request") {
       item.labels = syncRealBehaviorProofSufficientLabel({
+        repo,
         number,
         labels: item.labels,
         proof: reportRealBehaviorProof(markdown),
         dryRun,
       });
       item.labels = syncTelegramVisibleProofLabel({
+        repo,
         number,
         labels: item.labels,
         proof: reportTelegramVisibleProof(markdown),

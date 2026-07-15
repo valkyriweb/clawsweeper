@@ -81,6 +81,59 @@ test("review-only targets block mutation intents while retaining review and prop
   );
 });
 
+test("label actions cannot bypass comment-router automation policy", () => {
+  const labelActions = [
+    { action: "label", status: "planned" },
+    { action: "remove_label", status: "planned" },
+  ];
+  for (const actions of labelActions) {
+    assert.match(
+      commentRouterAutomationBlockReason({
+        repo: "bermont-digital/smilerite",
+        intent: "forged_unknown_intent",
+        actions: [actions],
+      }) ?? "",
+      /review_only.*denies label/,
+    );
+    assert.match(
+      commentRouterAutomationBlockReason({
+        repo: "unknown-org/unknown-repo",
+        intent: "forged_unknown_intent",
+        actions: [actions],
+      }) ?? "",
+      /denies label.*unsupported/,
+    );
+    assert.equal(
+      commentRouterAutomationBlockReason({
+        repo: "valkyriweb/clawsweeper",
+        intent: "forged_unknown_intent",
+        actions: [actions],
+      }),
+      null,
+    );
+  }
+  for (const intent of ["stop", "clawsweeper_needs_human"]) {
+    assert.match(
+      commentRouterAutomationBlockReason({ repo: "bermont-digital/smilerite", intent }) ?? "",
+      /review_only.*denies label/,
+    );
+  }
+  for (const actions of [
+    undefined,
+    [{ action: "comment", status: "planned" }],
+    [{ action: "dispatch_clawsweeper", status: "planned" }],
+  ]) {
+    assert.equal(
+      commentRouterAutomationBlockReason({
+        repo: "bermont-digital/smilerite",
+        intent: "forged_unknown_intent",
+        actions,
+      }),
+      null,
+    );
+  }
+});
+
 test("parseCommand recognizes maintainer slash commands", () => {
   assert.deepEqual(parseCommand("/clawsweeper fix ci"), {
     trigger: "slash",

@@ -20,9 +20,13 @@ test("automation policies are explicit and fail closed for protected targets", (
   assert.equal(smilerite.automationPolicy, "review_only");
   assert.equal(repositoryProfileFor("valkyriweb/clawsweeper").automationPolicy, "full");
   assert.equal(resolveAutomationCapabilities("review_only").repair, false);
+  assert.equal(resolveAutomationCapabilities("review_only").labels, false);
   assert.equal(resolveAutomationCapabilities("review_only").review, true);
   assert.equal(resolveAutomationCapabilities("unknown").close, false);
+  assert.equal(resolveAutomationCapabilities("unknown").labels, false);
   assert.match(automationPolicyBlockReason(saleSight.targetRepo, "close") ?? "", /review_only/);
+  assert.match(automationPolicyBlockReason(saleSight.targetRepo, "label") ?? "", /review_only/);
+  assert.equal(automationPolicyBlockReason("valkyriweb/clawsweeper", "label"), null);
   assert.match(
     automationPolicyBlockReason("unknown-org/unknown-repo", "repair") ?? "",
     /unsupported/,
