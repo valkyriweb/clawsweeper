@@ -5644,30 +5644,44 @@ export function extractPiJsonPayload(stdout: string): unknown {
   }
   const candidate = extractPiAssistantText(trimmed);
   const stripped = stripJsonFences(candidate).trim();
-  try {
-    return JSON.parse(stripped) as unknown;
-  } catch {
-    throw new Error("pi provider returned non-JSON payload");
-  }
+  const parsed = tryParseJsonObject(stripped) ?? tryParseJsonObjectSuffix(stripped);
+  if (parsed !== undefined) return parsed;
+  throw new Error("pi provider returned non-JSON payload");
 }
 
 function extractPiAssistantText(stdout: string): string {
-  // Try the whole stdout first — pi may emit a single envelope.
+  // Try the whole stdout first — pi may emit a single envelope or a direct JSON payload.
   const single = tryParseJsonObject(stdout);
   if (single !== undefined) {
-    return assistantTextFromPiObject(single) ?? stdout;
+    const terminalText = piAssistantTerminalText(single);
+    if (terminalText !== null) return terminalText;
+    if (typeof single === "object" && single !== null && !("type" in single)) {
+      return assistantTextFromPiObject(single) ?? stdout;
+    }
+    return stdout;
   }
-  // Otherwise scan lines bottom-up for the last assistant text.
+  // Otherwise scan JSONL bottom-up for the last terminal assistant message.
   const lines = stdout.split(/\r?\n/u).filter((line) => line.trim().length > 0);
   for (let index = lines.length - 1; index >= 0; index -= 1) {
     const line = lines[index];
     if (line === undefined) continue;
     const parsed = tryParseJsonObject(line);
     if (parsed === undefined) continue;
-    const text = assistantTextFromPiObject(parsed);
+    const text = piAssistantTerminalText(parsed);
     if (text !== null && text.length > 0) return text;
   }
   return stdout;
+}
+
+function piAssistantTerminalText(value: unknown): string | null {
+  if (typeof value !== "object" || value === null) return null;
+  const record = value as Record<string, unknown>;
+  if (record["type"] === "assistant") return assistantTextFromPiObject(record);
+  if (record["type"] !== "message_end" && record["type"] !== "turn_end") return null;
+  const message = record["message"];
+  if (typeof message !== "object" || message === null) return null;
+  if ((message as Record<string, unknown>)["role"] !== "assistant") return null;
+  return assistantTextFromPiObject(message);
 }
 
 function assistantTextFromPiObject(value: unknown): string | null {
@@ -5676,6 +5690,10 @@ function assistantTextFromPiObject(value: unknown): string | null {
   for (const key of ["text", "content", "result", "message"]) {
     const inner = record[key];
     if (typeof inner === "string") return inner;
+  }
+  if (typeof record["message"] === "object" && record["message"] !== null) {
+    const nested = assistantTextFromPiObject(record["message"]);
+    if (nested !== null && nested.length > 0) return nested;
   }
   if (Array.isArray(record["content"])) {
     const joined = (record["content"] as unknown[])
@@ -5702,9 +5720,21 @@ function tryParseJsonObject(value: string): unknown {
   }
 }
 
+function tryParseJsonObjectSuffix(value: string): unknown {
+  const objectStart = value.indexOf("{");
+  if (objectStart < 0) return undefined;
+  const prefix = value.slice(0, objectStart);
+  if (/[{}]/u.test(prefix)) return undefined;
+  return tryParseJsonObject(value.slice(objectStart).trim());
+}
+
 function stripJsonFences(value: string): string {
-  const match = /^```(?:json)?\s*([\s\S]*?)\s*```$/u.exec(value.trim());
-  return match?.[1] ?? value;
+  const trimmed = value.trim();
+  const wrapped = /^```(?:json)?\s*([\s\S]*?)\s*```$/u.exec(trimmed);
+  if (wrapped?.[1]) return wrapped[1];
+
+  const blocks = [...trimmed.matchAll(/```(?:json)?\s*([\s\S]*?)\s*```/gu)];
+  return blocks.at(-1)?.[1] ?? value;
 }
 
 interface CliWatchdogResult {
