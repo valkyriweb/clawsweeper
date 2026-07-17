@@ -33,6 +33,7 @@
     "mantisRecommendation",
     "overallCorrectness",
     "overallConfidenceScore",
+    "reviewTier",
     "fixedRelease",
     "fixedSha",
     "fixedAt",
@@ -554,6 +555,11 @@
       "type": "string",
       "enum": ["patch is correct", "patch is incorrect", "not a patch"],
       "description": "Codex /review-style overall patch verdict. Use not a patch for issues and non-PR items."
+    },
+    "reviewTier": {
+      "type": "string",
+      "enum": ["routine", "important", "critical", "not_applicable"],
+      "description": "Z/L change tier assigned during change-tier calibration, recorded so maintainers can audit tier-distribution drift. Use routine/important/critical for pull requests and not_applicable for issues and non-PR items. This tier sets review depth only; it never changes the finding bar."
     },
     "overallConfidenceScore": {
       "type": "number",

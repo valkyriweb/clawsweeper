@@ -9,6 +9,14 @@ checkpoint, and status-only commits are intentionally omitted.
 
 ### Added
 
+- Added a `reviewTier` field to the review decision schema and parser: the
+  reviewer records the Z/L change tier it assigned (`routine`/`important`/
+  `critical`, or `not_applicable` for non-PR items) on every verdict, so
+  maintainers can audit tier-distribution drift — a guard against classify-up
+  and escalate-only quietly pushing every PR toward critical. Legacy records
+  without the field parse as `not_applicable`. Bumped the review policy version
+  to `2026-07-17-policy-v18`.
+
 - Added Z/L Continuum change-tier calibration to the PR review prompts (Codex +
   Claude paths): the reviewer classifies each PR's blast radius and *escalates
   investigation depth* accordingly — defaulting to important and reserving
