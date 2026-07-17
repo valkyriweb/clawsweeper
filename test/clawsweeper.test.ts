@@ -4235,10 +4235,7 @@ test("decision parser records the reviewTier audit field", () => {
   // A recorded PR change tier round-trips for drift auditing.
   assert.equal(parseDecision(closeDecision({ reviewTier: "critical" })).reviewTier, "critical");
   // Unknown tiers are rejected.
-  assert.throws(
-    () => parseDecision(closeDecision({ reviewTier: "mega" })),
-    /decision\.reviewTier/,
-  );
+  assert.throws(() => parseDecision(closeDecision({ reviewTier: "mega" })), /decision\.reviewTier/);
 });
 
 test("review prompt requires target package-manager detection for validation commands", () => {

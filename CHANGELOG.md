@@ -15,11 +15,15 @@ checkpoint, and status-only commits are intentionally omitted.
   maintainers can audit tier-distribution drift — a guard against classify-up
   and escalate-only quietly pushing every PR toward critical. Legacy records
   without the field parse as `not_applicable`. Bumped the review policy version
-  to `2026-07-17-policy-v18`.
+  to `2026-07-17-policy-v18`. The assigned tier is persisted to each record's
+  `review_tier` front matter (and round-trips through `reportDecision`), and a
+  zero-cost `scripts/review-tier-drift.ts` audit reads a state checkout's
+  `records/` to report tier distribution and warn on classify-up drift — no
+  model calls.
 
 - Added Z/L Continuum change-tier calibration to the PR review prompts (Codex +
-  Claude paths): the reviewer classifies each PR's blast radius and *escalates
-  investigation depth* accordingly — defaulting to important and reserving
+  Claude paths): the reviewer classifies each PR's blast radius and _escalates
+  investigation depth_ accordingly — defaulting to important and reserving
   critical for enumerated high-blast triggers (security/authz/secrets,
   data/schema migrations, public-API/CLI contracts, release/hotfix paths, CI/CD
   and supply-chain changes, feature flags, production config). The finding bar

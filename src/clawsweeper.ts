@@ -7473,7 +7473,8 @@ function reportDecision(markdown: string, closeReason: CloseReason): Decision {
     telegramVisibleProof: reportTelegramVisibleProof(markdown),
     overallCorrectness: reportOverallCorrectness(markdown),
     overallConfidenceScore: reportOverallConfidenceScore(markdown),
-    reviewTier: "not_applicable",
+    reviewTier:
+      (frontMatterValue(markdown, "review_tier") as ReviewTier | undefined) ?? "not_applicable",
     fixedRelease: fixedRelease && fixedRelease !== "unknown" ? fixedRelease : null,
     fixedSha: fixedSha && fixedSha !== "unknown" ? fixedSha : null,
     fixedAt: fixedAt && fixedAt !== "unknown" ? fixedAt : null,
@@ -8995,6 +8996,7 @@ triage_priority: ${options.decision.triagePriority}
 impact_labels: ${jsonFrontMatterValue(options.decision.impactLabels)}
 merge_risk_labels: ${jsonFrontMatterValue(options.decision.mergeRiskLabels)}
 pr_rating_overall_tier: ${options.decision.prRating.overallTier}
+review_tier: ${options.decision.reviewTier ?? "not_applicable"}
 mantis_recommendation_status: ${options.decision.mantisRecommendation.status}
 item_category: ${options.decision.itemCategory}
 reproduction_status: ${options.decision.reproductionStatus}
