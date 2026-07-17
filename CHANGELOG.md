@@ -9,11 +9,15 @@ checkpoint, and status-only commits are intentionally omitted.
 
 ### Added
 
-- Added Z/L Continuum change-tier calibration (routine / important / critical) to
-  the PR review prompts (Codex + Claude paths), so review scrutiny and the
-  strictness of `risks`/`reviewFindings` scale with a change's blast radius;
-  security/migration/public-API/release surfaces are always treated as critical.
-  Bumped the review policy version to `2026-07-17-policy-v17`.
+- Added Z/L Continuum change-tier calibration to the PR review prompts (Codex +
+  Claude paths): review scrutiny *escalates* on higher-blast changes, with
+  security/migration/public-API/release surfaces always treated as critical and
+  size floors (>20 files / >800 non-test LOC) forcing at least important. The
+  calibration is escalate-only by design — unlike the interactive review skill's
+  symmetric depth matrix, it never licenses lighter review, since this one-shot
+  automated reviewer has no human to catch a mislabelled `routine` diff (routine
+  is defined as a verified no-behaviour-change conclusion, not a file-type). Bumped
+  the review policy version to `2026-07-17-policy-v17`.
 - Added the first Cloudflare live dashboard for ClawSweeper observability, with
   active worker counts, pipeline rows, CI state, automerge timing, and optional
   signed status-event ingest.

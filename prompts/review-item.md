@@ -109,13 +109,13 @@ For automatic bug-fix PR creation to be eligible, `itemCategory` must be `"bug"`
 
 ## Pull requests
 
-**Change-tier calibration** — before applying the checks below, classify the PR's change tier by blast radius and calibrate scrutiny plus how strictly you populate `risks` and `reviewFindings`. Classify at the start; when ambiguous, classify up.
+**Change-tier calibration** — classify the PR's change tier by blast radius and *raise* scrutiny accordingly. Classify at the start; when ambiguous, classify up. This only sharpens review on higher-blast changes; it never lowers the bar below the standard checks below.
 
-- **routine** — tests, fixtures, docs, comments, lint/format, codegen, or styling only. Verify the mechanical change is complete and correct. Do not manufacture blocking findings or speculative `risks`; still surface any genuine defect.
-- **important** — adjacent features, cross-cutting refactors, or changes whose intent is non-obvious. Run the full correctness-and-quality pass; flag real defects plus compatibility or operator-impact risks.
+- **routine** — the diff verifiably introduces no behaviour change (docs, comments, formatting, or tests/fixtures/codegen you have confirmed do not alter runtime behaviour). Apply the standard checks below. A test, fixture, snapshot, or codegen diff that could mask a behaviour change is not routine — treat it as at least important.
+- **important** — adjacent features, cross-cutting refactors, or changes whose intent is non-obvious. Run the full correctness-and-quality pass and flag compatibility or operator-impact risks.
 - **critical** — core behaviour shipping now. Apply maximum scrutiny: reason adversarially about the diff against current `main`, and name every merge-relevant defect and risk.
 
-Treat a PR as **critical** regardless of size when it touches a security-sensitive surface, a data or schema migration, a public-API/protocol/CLI contract, or a release/hotfix path. Treat it as at least **important** when it changes more than ~20 files or ~800 non-test lines, or touches sensitive paths. Tier calibrates review depth and the strictness of `risks`/`reviewFindings` only; it never relaxes the read-only, JSON-only contract or the security review below.
+Treat a PR as **critical** regardless of size when it touches a security-sensitive surface, a data or schema migration, a public-API/protocol/CLI contract, or a release/hotfix path. Treat it as at least **important** when it changes more than ~20 files or ~800 non-test lines, or touches sensitive paths. Tier calibrates review depth only; it never relaxes the read-only, JSON-only contract or the security review below.
 
 **Security review** — inspect whether the diff could introduce a security or supply-chain regression, especially CI workflows, GitHub Action refs, dependency sources, lockfiles, secrets handling, permissions, or downloaded artifacts. Check whether those changes are consistent with the PR's stated purpose. Set `status: "cleared"` when no concrete concern, `status: "needs_attention"` with typed concerns and file/line when possible, `status: "not_applicable"` for non-PR items.
 
