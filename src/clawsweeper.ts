@@ -118,6 +118,7 @@ type ReproductionStatus =
   | "unclear"
   | "not_applicable";
 type OverallCorrectness = "patch is correct" | "patch is incorrect" | "not a patch";
+type ReviewTier = "routine" | "important" | "critical" | "not_applicable";
 type SecurityReviewStatus = "cleared" | "needs_attention" | "not_applicable";
 type SecurityConcernSeverity = "high" | "medium" | "low";
 type RealBehaviorProofStatus =
@@ -395,6 +396,7 @@ interface Decision {
   telegramVisibleProof: TelegramVisibleProof;
   overallCorrectness: OverallCorrectness;
   overallConfidenceScore: number;
+  reviewTier?: ReviewTier;
   fixedRelease?: string | null;
   fixedSha?: string | null;
   fixedAt?: string | null;
@@ -796,7 +798,7 @@ const RECENT_MISSING_OPEN_MS = DAY_MS;
 const DEFAULT_CODEX_MODEL = "gpt-5.5";
 const DEFAULT_REASONING_EFFORT = "high";
 const DEFAULT_SERVICE_TIER = "";
-const REVIEW_POLICY_VERSION = "2026-07-17-policy-v17";
+const REVIEW_POLICY_VERSION = "2026-07-17-policy-v18";
 const REVIEW_ITEM_PROMPT_PATH = join(ROOT, "prompts", "review-item.md");
 const REVIEW_ITEM_CLAUDE_PROMPT_PATH = join(ROOT, "prompts", "review-item-claude.md");
 const CLAWSWEEPER_DECISION_SCHEMA_PATH = join(ROOT, "schema", "clawsweeper-decision.schema.json");
@@ -874,6 +876,12 @@ const OVERALL_CORRECTNESS_VALUES = new Set<OverallCorrectness>([
   "patch is correct",
   "patch is incorrect",
   "not a patch",
+]);
+const REVIEW_TIER_VALUES = new Set<ReviewTier>([
+  "routine",
+  "important",
+  "critical",
+  "not_applicable",
 ]);
 
 type ReviewArtifactDestination = "items" | "closed" | "skip_closed";
@@ -954,6 +962,7 @@ const DECISION_SCHEMA_KEYS = new Set([
   "telegramVisibleProof",
   "overallCorrectness",
   "overallConfidenceScore",
+  "reviewTier",
   "fixedRelease",
   "fixedSha",
   "fixedAt",
@@ -1828,6 +1837,10 @@ export function parseDecision(value: unknown, item?: DecisionNormalizationItem):
       OVERALL_CORRECTNESS_VALUES,
       "decision.overallCorrectness",
     ),
+    reviewTier:
+      record.reviewTier === undefined
+        ? "not_applicable"
+        : requireEnum(record.reviewTier, REVIEW_TIER_VALUES, "decision.reviewTier"),
     overallConfidenceScore: requireConfidenceScore(
       record.overallConfidenceScore,
       "decision.overallConfidenceScore",
@@ -4729,6 +4742,7 @@ export function codexFailureDecision(
     },
     overallCorrectness: "not a patch",
     overallConfidenceScore: 0,
+    reviewTier: "not_applicable",
     fixedRelease: null,
     fixedSha: null,
     fixedAt: null,
@@ -7459,6 +7473,8 @@ function reportDecision(markdown: string, closeReason: CloseReason): Decision {
     telegramVisibleProof: reportTelegramVisibleProof(markdown),
     overallCorrectness: reportOverallCorrectness(markdown),
     overallConfidenceScore: reportOverallConfidenceScore(markdown),
+    reviewTier:
+      (frontMatterValue(markdown, "review_tier") as ReviewTier | undefined) ?? "not_applicable",
     fixedRelease: fixedRelease && fixedRelease !== "unknown" ? fixedRelease : null,
     fixedSha: fixedSha && fixedSha !== "unknown" ? fixedSha : null,
     fixedAt: fixedAt && fixedAt !== "unknown" ? fixedAt : null,
@@ -8980,6 +8996,7 @@ triage_priority: ${options.decision.triagePriority}
 impact_labels: ${jsonFrontMatterValue(options.decision.impactLabels)}
 merge_risk_labels: ${jsonFrontMatterValue(options.decision.mergeRiskLabels)}
 pr_rating_overall_tier: ${options.decision.prRating.overallTier}
+review_tier: ${options.decision.reviewTier ?? "not_applicable"}
 mantis_recommendation_status: ${options.decision.mantisRecommendation.status}
 item_category: ${options.decision.itemCategory}
 reproduction_status: ${options.decision.reproductionStatus}

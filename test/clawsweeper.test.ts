@@ -4229,6 +4229,15 @@ test("decision parser enforces required schema-shaped evidence", () => {
   assert.deepEqual(workCandidate.workClusterRefs, ["#123", "#456"]);
 });
 
+test("decision parser records the reviewTier audit field", () => {
+  // Legacy records without the field parse as not_applicable.
+  assert.equal(parseDecision(closeDecision()).reviewTier, "not_applicable");
+  // A recorded PR change tier round-trips for drift auditing.
+  assert.equal(parseDecision(closeDecision({ reviewTier: "critical" })).reviewTier, "critical");
+  // Unknown tiers are rejected.
+  assert.throws(() => parseDecision(closeDecision({ reviewTier: "mega" })), /decision\.reviewTier/);
+});
+
 test("review prompt requires target package-manager detection for validation commands", () => {
   const prompt = readFileSync("prompts/review-item.md", "utf8");
 
