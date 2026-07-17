@@ -1,0 +1,96 @@
+name: clawsweeper reviewTier drift watch
+
+# After a sweep completes, audit the recorded Z/L reviewTier distribution and
+# post to a dedicated Discord channel ONLY when a drift warning fires. No cron,
+# no model calls; skips cleanly when there is no drift or no channel configured.
+on:
+  workflow_run:
+    workflows:
+      - ClawSweeper
+    types:
+      - completed
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  CLAWSWEEPER_APP_CLIENT_ID: Iv23lirdjmVqYd1gwY26
+
+concurrency:
+  group: clawsweeper-tier-drift-watch
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    # Only inspect state that a successful sweep actually produced.
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Create GitHub App token
+        id: app_token
+        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+        with:
+          client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
+          private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          permission-contents: read
+
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          filter: blob:none
+          persist-credentials: false
+
+      - name: Create state token
+        id: state-token
+        uses: ./.github/actions/create-state-token
+        with:
+          client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
+          private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
+
+      - uses: ./.github/actions/setup-state
+        with:
+          token: ${{ steps.state-token.outputs.token }}
+
+      - name: Enable pinned pnpm
+        shell: bash
+        run: |
+          set -euo pipefail
+          corepack enable
+          for attempt in 1 2 3; do
+            if corepack prepare "pnpm@10.33.2" --activate; then
+              exit 0
+            fi
+            sleep "$((attempt * 10))"
+          done
+          corepack prepare "pnpm@10.33.2" --activate
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if pnpm install --frozen-lockfile; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              exit 1
+            fi
+            sleep "$((attempt * 10))"
+          done
+          pnpm run build:repair
+
+      - name: Notify on reviewTier drift
+        shell: bash
+        env:
+          CLAWSWEEPER_OPENCLAW_HOOK_URL: ${{ secrets.CLAWSWEEPER_OPENCLAW_HOOK_URL }}
+          CLAWSWEEPER_OPENCLAW_HOOK_TOKEN: ${{ secrets.CLAWSWEEPER_OPENCLAW_HOOK_TOKEN }}
+          CLAWSWEEPER_OPENCLAW_AGENT_ID: ${{ vars.CLAWSWEEPER_OPENCLAW_AGENT_ID || 'clawsweeper' }}
+          # Dedicated drift channel in Luke's personal Discord (repo variable).
+          CLAWSWEEPER_TIER_DRIFT_DISCORD_TARGET: ${{ vars.CLAWSWEEPER_TIER_DRIFT_DISCORD_TARGET }}
+        run: |
+          set -euo pipefail
+          pnpm run repair:notify-tier-drift -- --records="${CLAWSWEEPER_STATE_DIR}/records"
