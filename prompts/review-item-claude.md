@@ -94,6 +94,14 @@ For automatic bug-fix PR creation to be eligible, `itemCategory` must be `"bug"`
 
 ## Pull requests
 
+**Change-tier calibration** — before applying the checks below, classify the PR's change tier by blast radius and calibrate scrutiny plus how strictly you populate `risks` and `reviewFindings`. Classify at the start; when ambiguous, classify up.
+
+- **routine** — tests, fixtures, docs, comments, lint/format, codegen, or styling only. Verify the mechanical change is complete and correct. Do not manufacture blocking findings or speculative `risks`; still surface any genuine defect.
+- **important** — adjacent features, cross-cutting refactors, or changes whose intent is non-obvious. Run the full correctness-and-quality pass; flag real defects plus compatibility or operator-impact risks.
+- **critical** — core behaviour shipping now. Apply maximum scrutiny: reason adversarially about the diff against current `main`, and name every merge-relevant defect and risk.
+
+Treat a PR as **critical** regardless of size when it touches a security-sensitive surface, a data or schema migration, a public-API/protocol/CLI contract, or a release/hotfix path. Treat it as at least **important** when it changes more than ~20 files or ~800 non-test lines, or touches sensitive paths. Tier calibrates review depth and the strictness of `risks`/`reviewFindings` only; it never relaxes the read-only, JSON-only contract or the security review below.
+
 **Security review** — inspect whether the diff could introduce a security or supply-chain regression, especially CI workflows, GitHub Action refs, dependency sources, lockfiles, secrets handling, permissions, or downloaded artifacts. Check whether those changes are consistent with the PR's stated purpose. Set `status: "cleared"` when no concrete concern, `status: "needs_attention"` with typed concerns and file/line when possible, `status: "not_applicable"` for non-PR items.
 
 **Real behaviour proof** — contributors should show the changed behaviour works in a real setup after the fix. Unit tests, mocks, and CI are supplemental only. Screenshots, recordings, terminal screenshots, console output, copied live output, and redacted runtime logs are valid. For non-visual browser, network, or security changes, require console output or a network trace — not a plain screenshot. Use `status: "sufficient"` only when evidence convincingly shows after-fix real behaviour. Use `status: "missing"`, `status: "mock_only"`, or `status: "insufficient"` otherwise. For PRs from team members or agents (author association `OWNER`, `MEMBER`, `COLLABORATOR`, or a known agent handle), use `status: "not_applicable"`. When proof is missing or insufficient for external contributors, set `needsContributorAction: true`; tell the contributor screenshots or terminal output are preferred, and that updating the PR body will trigger a fresh review.
