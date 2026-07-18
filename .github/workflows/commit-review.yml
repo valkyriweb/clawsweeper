@@ -459,14 +459,17 @@ jobs:
           echo "review_model=$(pnpm run --silent workflow -- action-model --action commit-review --fallback gpt-5.6-terra)" >> "$GITHUB_OUTPUT"
           echo "codex_effort=$(pnpm run --silent workflow -- codex-reasoning-effort --action commit-review)" >> "$GITHUB_OUTPUT"
 
-      - uses: ./clawsweeper/.github/actions/setup-codex
+      # Provider setup is fully conditional on the resolved provider: a pi or
+      # claude-code review must not depend on the codex CLI install (which can
+      # wedge on a cold runner). Prod-inert: provider resolves to codex by
+      # default, so setup-codex runs exactly as before unless the registry
+      # flips commit-review to another provider.
+      - if: ${{ steps.commit-routing.outputs.review_provider == 'codex' }}
+        uses: ./clawsweeper/.github/actions/setup-codex
         with:
           auth-mode: ${{ vars.CLAWSWEEPER_CODEX_AUTH_MODE || 'subscription' }}
           login-status: "true"
 
-      # Conditional providers: setup-claude-code / setup-pi run only when the
-      # active commit-review provider matches. setup-codex stays unconditional
-      # (cheap when warm; helper steps call the codex CLI regardless).
       - if: ${{ steps.commit-routing.outputs.review_provider == 'claude-code' }}
         uses: ./clawsweeper/.github/actions/setup-claude-code
 
