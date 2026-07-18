@@ -14,6 +14,7 @@ import {
   type ReviewProvider,
 } from "../repository-profiles.js";
 import {
+  ACTION_PROVIDERS,
   DEFAULT_ACTION_CONFIG,
   MODEL_ACTIONS,
   PROVIDER_MODELS,
@@ -100,6 +101,11 @@ function runCli(): void {
     case "codex-reasoning-effort":
       process.stdout.write(
         codexReasoningEffortForAction(requireModelAction(requiredString("action"))),
+      );
+      break;
+    case "action-provider":
+      process.stdout.write(
+        actionProvider(requireModelAction(requiredString("action")), optionalString("fallback")),
       );
       break;
     case "action-model":
@@ -257,6 +263,30 @@ export function actionModel(action: ModelAction, fallback: string): string {
   const trimmed = fallback.trim();
   if (trimmed) return trimmed;
   return DEFAULT_ACTION_CONFIG[action].model;
+}
+
+// Resolve the provider for an action: registry override wins, else the
+// caller-supplied fallback (validated against the action's allowed providers),
+// else the built-in per-action default. Prod-inert: with CLAWSWEEPER_MODELS unset
+// this returns DEFAULT_ACTION_CONFIG[action].provider. Deliberately does NOT read
+// CLAWSWEEPER_REVIEW_PROVIDER (that variable is the sweep-review pi/opus lock and
+// is `pi` in prod; including it would flip other lanes off their default).
+export function actionProvider(action: ModelAction, fallback: string): ReviewProvider {
+  const override = parseModelRegistry(process.env.CLAWSWEEPER_MODELS)[action]?.provider;
+  if (override) return override;
+  const trimmed = fallback.trim();
+  if (trimmed) {
+    if (!(trimmed in PROVIDER_MODELS)) {
+      throw new Error(`unknown provider fallback: ${trimmed}`);
+    }
+    if (!ACTION_PROVIDERS[action].includes(trimmed as ReviewProvider)) {
+      throw new Error(
+        `"${action}" does not support provider "${trimmed}" (allowed: ${ACTION_PROVIDERS[action].join(", ")})`,
+      );
+    }
+    return trimmed as ReviewProvider;
+  }
+  return DEFAULT_ACTION_CONFIG[action].provider;
 }
 
 export function commitReviewRefForTarget(targetRepo: string): string {

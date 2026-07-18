@@ -7,6 +7,7 @@ import test from "node:test";
 
 import {
   actionModel,
+  actionProvider,
   artifactItemNumbers,
   automationLimit,
   codexReasoningEffortForAction,
@@ -688,6 +689,30 @@ test("actionModel resolves registry override, then fallback, then default", () =
       "commit-review": { model: "gpt-5.5" },
     });
     assert.equal(actionModel("commit-review", "gpt-5.6-terra"), "gpt-5.5");
+  } finally {
+    if (prior === undefined) delete process.env.CLAWSWEEPER_MODELS;
+    else process.env.CLAWSWEEPER_MODELS = prior;
+  }
+});
+
+test("actionProvider resolves registry override, then validated fallback, then default", () => {
+  const prior = process.env.CLAWSWEEPER_MODELS;
+  try {
+    delete process.env.CLAWSWEEPER_MODELS;
+    // Default per action when nothing supplied (prod-inert).
+    assert.equal(actionProvider("commit-review", ""), "codex");
+    assert.equal(actionProvider("sweep-review", ""), "pi");
+    // Valid fallback is honored.
+    assert.equal(actionProvider("commit-review", "pi"), "pi");
+    // Unknown provider fallback fails closed.
+    assert.throws(() => actionProvider("commit-review", "bogus"), /unknown provider fallback/);
+    // Provider not allowed for the action fails closed.
+    assert.throws(() => actionProvider("repair-worker", "pi"), /does not support provider "pi"/);
+    // Registry override wins over the fallback.
+    process.env.CLAWSWEEPER_MODELS = JSON.stringify({
+      "commit-review": { provider: "pi", model: "claude-opus-4-8" },
+    });
+    assert.equal(actionProvider("commit-review", "codex"), "pi");
   } finally {
     if (prior === undefined) delete process.env.CLAWSWEEPER_MODELS;
     else process.env.CLAWSWEEPER_MODELS = prior;
