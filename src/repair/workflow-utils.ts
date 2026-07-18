@@ -14,6 +14,7 @@ import {
   type ReviewProvider,
 } from "../repository-profiles.js";
 import {
+  DEFAULT_ACTION_CONFIG,
   MODEL_ACTIONS,
   PROVIDER_MODELS,
   REASONING_EFFORTS,
@@ -95,6 +96,11 @@ function runCli(): void {
       break;
     case "review-model":
       process.stdout.write(reviewModelForTarget(requiredString("target-repo")));
+      break;
+    case "codex-reasoning-effort":
+      process.stdout.write(
+        codexReasoningEffortForAction(requireModelAction(requiredString("action"))),
+      );
       break;
     case "commit-review-ref":
       process.stdout.write(commitReviewRefForTarget(requiredString("target-repo")));
@@ -221,7 +227,19 @@ export function reviewProviderForTarget(targetRepo: string): ReviewProvider {
 }
 
 export function reviewModelForTarget(targetRepo: string): string {
-  return reviewModelForProvider(reviewProviderForTarget(targetRepo));
+  const override = parseModelRegistry(process.env.CLAWSWEEPER_MODELS)["sweep-review"]?.model;
+  return override ?? reviewModelForProvider(reviewProviderForTarget(targetRepo));
+}
+
+// Resolve codex reasoning effort for an action: registry override wins, else the
+// existing CODEX_REASONING_EFFORT env/var, else the built-in per-action default.
+// Fallback preserves current behaviour when CLAWSWEEPER_MODELS is unset.
+export function codexReasoningEffortForAction(action: ModelAction): string {
+  const override = parseModelRegistry(process.env.CLAWSWEEPER_MODELS)[action]?.effort;
+  if (override) return override;
+  const envEffort = process.env.CODEX_REASONING_EFFORT?.trim();
+  if (envEffort) return envEffort;
+  return DEFAULT_ACTION_CONFIG[action].effort;
 }
 
 export function commitReviewRefForTarget(targetRepo: string): string {

@@ -640,6 +640,7 @@ jobs:
         working-directory: clawsweeper
         env:
           CLAWSWEEPER_REVIEW_PROVIDER: ${{ vars.CLAWSWEEPER_REVIEW_PROVIDER || '' }}
+          CLAWSWEEPER_MODELS: ${{ vars.CLAWSWEEPER_MODELS || '' }}
           TARGET_REPO: ${{ steps.target.outputs.target_repo }}
         run: |
           set -euo pipefail

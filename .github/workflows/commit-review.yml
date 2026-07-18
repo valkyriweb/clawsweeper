@@ -482,7 +482,10 @@ jobs:
           COMMIT_SWEEPER_ADDITIONAL_PROMPT: ${{ github.event.inputs.additional_prompt || github.event.client_payload.additional_prompt || '' }}
           # ClawRouter addresses models as clawrouter/<slug> (fail-closed namespace).
           CODEX_MODEL: ${{ (vars.CLAWSWEEPER_CODEX_AUTH_MODE == 'clawrouter' && 'clawrouter/gpt-5.6-terra') || 'gpt-5.6-terra' }}
+          # Model/effort registry override; unset -> resolver returns the built-in default (high).
+          CLAWSWEEPER_MODELS: ${{ vars.CLAWSWEEPER_MODELS || '' }}
         run: |
+          CODEX_EFFORT="$(pnpm run --silent workflow -- codex-reasoning-effort --action commit-review)"
           node dist/commit-sweeper.js review \
             --target-repo "${{ needs.plan.outputs.target_repo }}" \
             --target-dir "../${{ needs.plan.outputs.target_checkout_dir }}" \
@@ -491,7 +494,7 @@ jobs:
             --artifact-mode \
             --work-dir ../commit-work \
             --codex-model "${CODEX_MODEL}" \
-            --codex-reasoning-effort high \
+            --codex-reasoning-effort "${CODEX_EFFORT}" \
             --codex-sandbox danger-full-access \
             --codex-timeout-ms 1800000
 
