@@ -68,6 +68,16 @@ checkpoint, and status-only commits are intentionally omitted.
 - Added a generated 1200x630 social preview card plus large-image Open Graph and
   Twitter metadata for the docs site.
 
+### Changed
+
+- Switched Codex review runs (sweep issue/PR review and commit review) from
+  `gpt-5.5` to `gpt-5.6-terra` at high reasoning: ~40% faster overall with
+  negligible review-quality loss and materially cheaper. `xhigh` was evaluated
+  and rejected — it erases the speed win without a measurable eval gain. Repair
+  workers stay on `gpt-5.5` (separate `CLAWSWEEPER_MODEL` lever). The sweep
+  reasoning effort is the `CODEX_REASONING_EFFORT` repo variable, which must be
+  set to `high` for this to take effect.
+
 ### Fixed
 
 - Updated review timeouts in-place on the mutable review status comment, then let recovery or the next eligible sweep retry with the escalated timeout cap instead of posting a separate inbox-noise timeout comment.

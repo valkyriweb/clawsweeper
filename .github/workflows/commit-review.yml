@@ -482,7 +482,7 @@ jobs:
             --report-dir ../commit-artifacts \
             --artifact-mode \
             --work-dir ../commit-work \
-            --codex-model gpt-5.5 \
+            --codex-model gpt-5.6-terra \
             --codex-reasoning-effort high \
             --codex-sandbox danger-full-access \
             --codex-timeout-ms 1800000

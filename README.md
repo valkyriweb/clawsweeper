@@ -271,7 +271,7 @@ Review is proposal-only. It never closes items.
 - Manual runs can pass `item_number` or comma-separated `item_numbers` to review
   exact Audit Health findings without scanning for a normal batch.
 - Each shard checks out the selected target repository at `main`.
-- Codex reviews with `gpt-5.5`, high reasoning, the default service tier, and an
+- Codex reviews with `gpt-5.6-terra`, high reasoning, the default service tier, and an
   activity-based watchdog. A review is aborted only if Codex goes silent for the
   inactivity window (default 2m, `CLAWSWEEPER_REVIEW_INACTIVITY_MS`) or runs past
   a generous absolute backstop (default 45m, `CLAWSWEEPER_REVIEW_MAX_TOTAL_MS`),
@@ -446,8 +446,8 @@ source ~/.profile
 corepack enable
 pnpm install
 pnpm run build
-pnpm run plan -- --target-repo openclaw/openclaw --batch-size 5 --shard-count 5 --max-pages 250 --codex-model gpt-5.5 --codex-reasoning-effort high
-pnpm run review -- --target-repo openclaw/openclaw --target-dir ../openclaw --batch-size 5 --max-pages 250 --artifact-dir artifacts/reviews --codex-model gpt-5.5 --codex-reasoning-effort high --codex-timeout-ms 600000
+pnpm run plan -- --target-repo openclaw/openclaw --batch-size 5 --shard-count 5 --max-pages 250 --codex-model gpt-5.6-terra --codex-reasoning-effort high
+pnpm run review -- --target-repo openclaw/openclaw --target-dir ../openclaw --batch-size 5 --max-pages 250 --artifact-dir artifacts/reviews --codex-model gpt-5.6-terra --codex-reasoning-effort high --codex-timeout-ms 600000
 pnpm run apply-artifacts -- --target-repo openclaw/openclaw --artifact-dir artifacts/reviews --skip-dashboard
 pnpm run audit -- --target-repo openclaw/openclaw --max-pages 250 --sample-limit 25 --update-dashboard
 pnpm run reconcile -- --target-repo openclaw/openclaw --dry-run
