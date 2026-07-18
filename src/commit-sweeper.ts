@@ -11,16 +11,18 @@ import {
 import { publishCheckFromReport, splitFrontMatter } from "./commit-checks.js";
 import { argBool, argNumber, argString, parseArgs, type Args } from "./clawsweeper-args.js";
 import { safeOutputTail } from "./clawsweeper-text.js";
-import { codexEnv } from "./codex-env.js";
+import {
+  COMMIT_REVIEW_PROVIDERS,
+  isCommitReviewProvider,
+  runCommitReviewClaudeCode,
+  runCommitReviewCodex,
+  runCommitReviewPi,
+  type CommitReviewProvider,
+  type CommitReviewRunResult,
+} from "./commit-review-providers.js";
 import { runText } from "./command.js";
 import { ghRetryKind, ghRetryWaitMs } from "./github-retry.js";
 import { repositoryProfileFor, requireTargetRepo } from "./repository-profiles.js";
-import {
-  appendUsageEventJsonl,
-  buildUsageTelemetryEvent,
-  parseCodexTokenUsageFromJsonl,
-  type UsageStatus,
-} from "./usage-telemetry.js";
 
 export { isReviewableCommitPath } from "./commit-classifier.js";
 
@@ -271,121 +273,30 @@ function ensureCommitReportTimestamps(markdown: string, metadata: CommitMetadata
   return markdown.replace(/^---\n[\s\S]*?\n---/, `---\n${frontMatter}\n---`);
 }
 
-function runCodex(options: {
-  targetDir: string;
-  targetRepo: string;
-  sha: string;
-  baseSha: string;
-  metadata: CommitMetadata;
-  model: string;
-  reasoningEffort: string;
-  sandboxMode: string;
-  serviceTier: string;
-  timeoutMs: number;
-  workDir: string;
-  additionalPrompt: string;
-}): string {
-  ensureDir(options.workDir);
-  const promptPath = join(options.workDir, `${options.sha}.prompt.md`);
-  const outputPath = join(options.workDir, `${options.sha}.md`);
-  const usageEventsPath = join(options.workDir, "usage-events.jsonl");
-  writeFileSync(
-    promptPath,
-    promptForCommit({
-      targetDir: options.targetDir,
-      targetRepo: options.targetRepo,
-      sha: options.sha,
-      baseSha: options.baseSha,
-      metadata: options.metadata,
-      additionalPrompt: options.additionalPrompt,
-    }),
-    "utf8",
-  );
-  const codexConfig = [
-    `model_reasoning_effort="${options.reasoningEffort}"`,
-    'forced_login_method="chatgpt"',
-    'approval_policy="never"',
-  ];
-  if (options.serviceTier) codexConfig.splice(1, 0, `service_tier="${options.serviceTier}"`);
-  const startedAt = Date.now();
-  const result = spawnSync(
-    "codex",
-    [
-      "exec",
-      "-m",
-      options.model,
-      ...codexConfig.flatMap((config) => ["-c", config]),
-      "-C",
-      options.targetDir,
-      "--output-last-message",
-      outputPath,
-      "--json",
-      "--sandbox",
-      options.sandboxMode,
-      "-",
-    ],
-    {
-      cwd: options.targetDir,
-      encoding: "utf8",
-      env: codexEnv({ ghToken: process.env.COMMIT_SWEEPER_TARGET_GH_TOKEN }),
-      input: readFileSync(promptPath, "utf8"),
-      maxBuffer: 128 * 1024 * 1024,
-      timeout: options.timeoutMs,
-    },
-  );
-  const elapsedMs = Date.now() - startedAt;
-  const emitUsage = (status: UsageStatus) => {
-    try {
-      const parsed = parseCodexTokenUsageFromJsonl(result.stdout ?? "");
-      appendUsageEventJsonl(
-        usageEventsPath,
-        buildUsageTelemetryEvent({
-          workflow: "commit-review",
-          mode: "commit-review",
-          phase: "commit-review",
-          target_repo: options.targetRepo,
-          commit_sha: options.sha,
-          model: options.model,
-          reasoning_effort: options.reasoningEffort,
-          service_tier: options.serviceTier,
-          sandbox: options.sandboxMode,
-          timeout_ms: options.timeoutMs,
-          elapsed_ms: elapsedMs,
-          output_path: relative(options.workDir, outputPath),
-          status,
-          tokens: parsed?.tokens ?? null,
-        }),
-      );
-    } catch {
-      // Telemetry must never change the commit review outcome.
-    }
-  };
-  if (result.error || result.status !== 0 || !existsSync(outputPath)) {
-    const timeout = Boolean(
-      result.error &&
-      "code" in result.error &&
-      (result.error as NodeJS.ErrnoException).code === "ETIMEDOUT",
-    );
-    const detail =
-      result.error instanceof Error
-        ? `${result.error.message}\n${safeOutputTail(result.stderr) || safeOutputTail(result.stdout)}`
-        : `exit ${result.status ?? "unknown"}\n${
-            safeOutputTail(result.stderr) || safeOutputTail(result.stdout) || "No output."
-          }`;
-    emitUsage(
-      timeout ? "timeout" : result.error || result.status !== 0 ? "failed" : "missing_result",
-    );
-    return failureReport({
-      targetRepo: options.targetRepo,
-      sha: options.sha,
-      baseSha: options.baseSha,
-      metadata: options.metadata,
-      detail: detail.trim(),
-      timeout,
-    });
+// Idempotently stamp the resolved provider/model into a commit report's front
+// matter (D5 provenance). splitFrontMatter tolerates the extra keys.
+function stampReviewProvenance(markdown: string, provider: string, model: string): string {
+  const match = markdown.match(/^---\n([\s\S]*?)\n---/);
+  if (!match) return markdown;
+  const fields: Array<[string, string]> = [["review_provider", yamlScalar(provider)]];
+  if (model) fields.push(["review_model", yamlScalar(model)]);
+  let frontMatter = match[1] ?? "";
+  for (const [key, value] of fields) {
+    const line = `${key}: ${value}`;
+    const pattern = new RegExp(`^${key}:.*$`, "m");
+    frontMatter = pattern.test(frontMatter)
+      ? frontMatter.replace(pattern, line)
+      : `${frontMatter}\n${line}`;
   }
-  emitUsage("success");
-  return stripMarkdownFence(readFileSync(outputPath, "utf8"));
+  return markdown.replace(/^---\n[\s\S]*?\n---/, `---\n${frontMatter}\n---`);
+}
+
+// Fail-closed guard for the non-codex providers: a usable report must carry
+// front matter with a `sha`. A free-form model that ignored the template gets
+// downgraded to a failure report rather than published as-is.
+function reportHasFrontMatter(markdown: string): boolean {
+  const { frontMatter } = splitFrontMatter(markdown);
+  return typeof frontMatter.sha === "string" && frontMatter.sha.trim().length > 0;
 }
 
 function reviewCommand(args: Args): void {
@@ -406,23 +317,82 @@ function reviewCommand(args: Args): void {
     "additional_prompt",
     process.env.COMMIT_SWEEPER_ADDITIONAL_PROMPT ?? "",
   );
-  const markdown = ensureCommitReportTimestamps(
-    runCodex({
-      targetDir,
+
+  const providerArg = argString(args, "provider", "codex");
+  if (!isCommitReviewProvider(providerArg)) {
+    throw new Error(
+      `Invalid commit-review provider: ${providerArg} (expected ${COMMIT_REVIEW_PROVIDERS.join(", ")})`,
+    );
+  }
+  const provider: CommitReviewProvider = providerArg;
+
+  // Generic flags with `codex_*` back-compat aliases so the existing
+  // commit-review workflow invocation keeps producing a byte-identical codex
+  // spawn until PR-3 wires provider branching.
+  const explicitModel = argString(args, "model", "") || argString(args, "codex_model", "");
+  const model = explicitModel || (provider === "codex" ? DEFAULT_CODEX_MODEL : "");
+  const sandboxMode =
+    argString(args, "sandbox", "") || argString(args, "codex_sandbox", "danger-full-access");
+  const timeoutMs = argNumber(args, "timeout_ms", argNumber(args, "codex_timeout_ms", 1_800_000));
+  const workDir = resolve(argString(args, "work_dir", join(reportDir, ".codex")));
+
+  const prompt = promptForCommit({
+    targetDir,
+    targetRepo,
+    sha,
+    baseSha,
+    metadata,
+    additionalPrompt,
+  });
+  const transport = {
+    prompt,
+    cwd: targetDir,
+    targetRepo,
+    sha,
+    model,
+    sandboxMode,
+    timeoutMs,
+    workDir,
+  };
+
+  let result: CommitReviewRunResult;
+  if (provider === "pi") {
+    result = runCommitReviewPi(transport);
+  } else if (provider === "claude-code") {
+    result = runCommitReviewClaudeCode(transport);
+  } else {
+    result = runCommitReviewCodex({
+      ...transport,
+      reasoningEffort: argString(args, "codex_reasoning_effort", DEFAULT_REASONING_EFFORT),
+      serviceTier: argString(args, "codex_service_tier", DEFAULT_SERVICE_TIER),
+    });
+  }
+
+  let markdown: string;
+  if (!result.ok) {
+    markdown = failureReport({
       targetRepo,
       sha,
       baseSha,
       metadata,
-      model: argString(args, "codex_model", DEFAULT_CODEX_MODEL),
-      reasoningEffort: argString(args, "codex_reasoning_effort", DEFAULT_REASONING_EFFORT),
-      sandboxMode: argString(args, "codex_sandbox", "danger-full-access"),
-      serviceTier: argString(args, "codex_service_tier", DEFAULT_SERVICE_TIER),
-      timeoutMs: argNumber(args, "codex_timeout_ms", 1_800_000),
-      workDir: resolve(argString(args, "work_dir", join(reportDir, ".codex"))),
-      additionalPrompt,
-    }),
-    metadata,
-  );
+      detail: `[${provider}] ${result.detail}`,
+      timeout: result.timeout,
+    });
+  } else {
+    const stripped = stripMarkdownFence(result.markdown);
+    markdown = reportHasFrontMatter(stripped)
+      ? stripped
+      : failureReport({
+          targetRepo,
+          sha,
+          baseSha,
+          metadata,
+          detail: `[${provider}] report was missing valid front matter:\n${safeOutputTail(stripped)}`,
+          timeout: false,
+        });
+  }
+  markdown = stampReviewProvenance(markdown, provider, model);
+  markdown = ensureCommitReportTimestamps(markdown, metadata);
   ensureDir(dirname(outputPath));
   writeFileSync(outputPath, markdown.endsWith("\n") ? markdown : `${markdown}\n`, "utf8");
   console.log(outputPath);
