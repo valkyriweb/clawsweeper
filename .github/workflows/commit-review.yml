@@ -443,10 +443,48 @@ jobs:
           working-directory: clawsweeper
           build-script: build
 
+      # Resolve the commit-review provider/model from the registry BEFORE the
+      # provider setup steps so setup-pi / setup-claude-code can be conditioned
+      # on it. Prod-inert: with CLAWSWEEPER_MODELS unset the resolver returns
+      # provider=codex / model=gpt-5.6-terra and the conditional steps skip.
+      # commit-review deliberately does NOT read CLAWSWEEPER_REVIEW_PROVIDER
+      # (that var is the sweep-review pi lock) — registry -> codex default only.
+      - id: commit-routing
+        working-directory: clawsweeper
+        env:
+          CLAWSWEEPER_MODELS: ${{ vars.CLAWSWEEPER_MODELS || '' }}
+        run: |
+          set -euo pipefail
+          echo "review_provider=$(pnpm run --silent workflow -- action-provider --action commit-review --fallback codex)" >> "$GITHUB_OUTPUT"
+          echo "review_model=$(pnpm run --silent workflow -- action-model --action commit-review --fallback gpt-5.6-terra)" >> "$GITHUB_OUTPUT"
+          echo "codex_effort=$(pnpm run --silent workflow -- codex-reasoning-effort --action commit-review)" >> "$GITHUB_OUTPUT"
+
       - uses: ./clawsweeper/.github/actions/setup-codex
         with:
           auth-mode: ${{ vars.CLAWSWEEPER_CODEX_AUTH_MODE || 'subscription' }}
           login-status: "true"
+
+      # Conditional providers: setup-claude-code / setup-pi run only when the
+      # active commit-review provider matches. setup-codex stays unconditional
+      # (cheap when warm; helper steps call the codex CLI regardless).
+      - if: ${{ steps.commit-routing.outputs.review_provider == 'claude-code' }}
+        uses: ./clawsweeper/.github/actions/setup-claude-code
+
+      - if: ${{ steps.commit-routing.outputs.review_provider == 'pi' }}
+        name: Create Pi package token
+        id: pi-package-token
+        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+        with:
+          client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
+          private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
+          owner: valkyriweb
+          repositories: my-pi
+          permission-contents: read
+
+      - if: ${{ steps.commit-routing.outputs.review_provider == 'pi' }}
+        uses: ./clawsweeper/.github/actions/setup-pi
+        with:
+          token: ${{ steps.pi-package-token.outputs.token }}
 
       - name: Check out target branch
         env:
@@ -480,29 +518,42 @@ jobs:
           GH_TOKEN: ${{ steps.target-read-token.outputs.token }}
           COMMIT_SWEEPER_TARGET_GH_TOKEN: ${{ steps.target-read-token.outputs.token }}
           COMMIT_SWEEPER_ADDITIONAL_PROMPT: ${{ github.event.inputs.additional_prompt || github.event.client_payload.additional_prompt || '' }}
-          # Registry override (bare slug); unset -> resolver returns the built-in default (gpt-5.6-terra).
-          CLAWSWEEPER_MODELS: ${{ vars.CLAWSWEEPER_MODELS || '' }}
           CLAWSWEEPER_CODEX_AUTH_MODE: ${{ vars.CLAWSWEEPER_CODEX_AUTH_MODE || '' }}
+          # Resolved once in the commit-routing step (registry -> codex default).
+          REVIEW_PROVIDER: ${{ steps.commit-routing.outputs.review_provider }}
+          REVIEW_MODEL: ${{ steps.commit-routing.outputs.review_model }}
+          CODEX_EFFORT: ${{ steps.commit-routing.outputs.codex_effort }}
         run: |
-          CODEX_EFFORT="$(pnpm run --silent workflow -- codex-reasoning-effort --action commit-review)"
-          CODEX_MODEL_BARE="$(pnpm run --silent workflow -- action-model --action commit-review --fallback gpt-5.6-terra)"
-          # ClawRouter addresses models as clawrouter/<slug> (fail-closed namespace).
-          if [ "$CLAWSWEEPER_CODEX_AUTH_MODE" = "clawrouter" ] && [ "${CODEX_MODEL_BARE#clawrouter/}" = "$CODEX_MODEL_BARE" ]; then
-            CODEX_MODEL="clawrouter/${CODEX_MODEL_BARE}"
+          set -euo pipefail
+          COMMON_ARGS=(
+            --target-repo "${{ needs.plan.outputs.target_repo }}"
+            --target-dir "../${{ needs.plan.outputs.target_checkout_dir }}"
+            --commit-sha "${{ matrix.sha }}"
+            --report-dir ../commit-artifacts
+            --artifact-mode
+            --work-dir ../commit-work
+          )
+          if [ "$REVIEW_PROVIDER" = "codex" ]; then
+            # ClawRouter addresses models as clawrouter/<slug> (fail-closed namespace).
+            if [ "$CLAWSWEEPER_CODEX_AUTH_MODE" = "clawrouter" ] && [ "${REVIEW_MODEL#clawrouter/}" = "$REVIEW_MODEL" ]; then
+              CODEX_MODEL="clawrouter/${REVIEW_MODEL}"
+            else
+              CODEX_MODEL="$REVIEW_MODEL"
+            fi
+            node dist/commit-sweeper.js review "${COMMON_ARGS[@]}" \
+              --provider codex \
+              --codex-model "${CODEX_MODEL}" \
+              --codex-reasoning-effort "${CODEX_EFFORT}" \
+              --codex-sandbox danger-full-access \
+              --codex-timeout-ms 1800000
           else
-            CODEX_MODEL="$CODEX_MODEL_BARE"
+            # pi / claude-code: bare slug, read-only tools, no reasoning effort.
+            node dist/commit-sweeper.js review "${COMMON_ARGS[@]}" \
+              --provider "$REVIEW_PROVIDER" \
+              --model "$REVIEW_MODEL" \
+              --sandbox read-only \
+              --timeout-ms 1800000
           fi
-          node dist/commit-sweeper.js review \
-            --target-repo "${{ needs.plan.outputs.target_repo }}" \
-            --target-dir "../${{ needs.plan.outputs.target_checkout_dir }}" \
-            --commit-sha "${{ matrix.sha }}" \
-            --report-dir ../commit-artifacts \
-            --artifact-mode \
-            --work-dir ../commit-work \
-            --codex-model "${CODEX_MODEL}" \
-            --codex-reasoning-effort "${CODEX_EFFORT}" \
-            --codex-sandbox danger-full-access \
-            --codex-timeout-ms 1800000
 
       - name: Create target checks token
         id: target-checks-token
