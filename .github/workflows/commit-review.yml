@@ -483,6 +483,7 @@ jobs:
           owner: valkyriweb
           repositories: my-pi
           permission-contents: read
+          permission-packages: read
 
       - if: ${{ steps.commit-routing.outputs.review_provider == 'pi' }}
         uses: ./clawsweeper/.github/actions/setup-pi
