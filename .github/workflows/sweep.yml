@@ -320,6 +320,7 @@ jobs:
           owner: valkyriweb
           repositories: my-pi
           permission-contents: read
+          permission-packages: read
 
       - if: ${{ steps.review-routing.outputs.review_provider == 'pi' }}
         uses: ./.github/actions/setup-pi
