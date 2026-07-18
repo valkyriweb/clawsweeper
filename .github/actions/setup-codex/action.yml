@@ -5,8 +5,11 @@ inputs:
     description: Codex CLI npm package version.
     default: "0.130.0"
   auth-mode:
-    description: Authentication mode. `proxy` runs codex-responses-api-proxy from OPENAI_API_KEY. `login` runs `codex login --with-api-key`. `subscription` uses the runner's existing `~/.codex/auth.json` (ChatGPT subscription JWT) — no API key required.
+    description: Authentication mode. `proxy` runs codex-responses-api-proxy from OPENAI_API_KEY. `login` runs `codex login --with-api-key`. `subscription` uses the runner's existing `~/.codex/auth.json` (ChatGPT subscription JWT) — no API key required. `clawrouter` routes the Responses wire to the ClawRouter proxy using the `CLAWROUTER_API_KEY` device-key bearer (base URL from `clawrouter-base-url`); models are passed as `clawrouter/<slug>`.
     default: "proxy"
+  clawrouter-base-url:
+    description: ClawRouter OpenAI-compatible base URL for `clawrouter` auth-mode (must end in `/v1`).
+    default: "https://clawrouter.lue-kube.bermont.digital/v1"
   codex-home:
     description: CODEX_HOME directory. Defaults to an isolated per-run ClawSweeper directory.
     default: ""
@@ -54,7 +57,8 @@ runs:
         if [[ "${{ inputs['auth-mode'] }}" == "proxy" ]] && ! npm list -g --depth=0 "@openai/codex-responses-api-proxy@${{ inputs.version }}" >/dev/null 2>&1; then
           npm install -g "@openai/codex-responses-api-proxy@${{ inputs.version }}" --prefer-offline --no-audit --no-fund
         fi
-        # subscription mode needs no extra install — uses runner's existing auth.json
+        # subscription and clawrouter modes need no extra install — subscription uses
+        # the runner's existing auth.json; clawrouter talks to a remote Responses proxy.
         codex --version
 
     - name: Resolve Codex home
@@ -161,8 +165,38 @@ runs:
           codex login status
         fi
 
+    - name: Authenticate Codex through ClawRouter
+      if: ${{ inputs['auth-mode'] == 'clawrouter' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        export CODEX_HOME="${CODEX_HOME:?}"
+        base_url="${{ inputs['clawrouter-base-url'] }}"
+        if [[ "$base_url" != */v1 ]]; then
+          echo "::error::clawrouter-base-url must end in /v1 (got: $base_url)" >&2
+          exit 1
+        fi
+        if [[ -z "${CLAWROUTER_API_KEY:-}" ]]; then
+          echo "::error::clawrouter auth-mode requires CLAWROUTER_API_KEY in the environment (set it from the repo secret)." >&2
+          exit 1
+        fi
+        # ClawRouter authenticates with the device-key bearer that codex reads
+        # from the env var named by env_key. Models are addressed as
+        # `clawrouter/<slug>` (provider-neutral, fail-closed alias namespace).
+        cat > "$CODEX_HOME/config.toml" <<EOF
+        model_provider = "clawrouter"
+
+        [model_providers.clawrouter]
+        name = "ClawRouter"
+        base_url = "$base_url"
+        wire_api = "responses"
+        env_key = "CLAWROUTER_API_KEY"
+        EOF
+        chmod 600 "$CODEX_HOME/config.toml"
+        echo "Configured Codex to route through ClawRouter at $base_url."
+
     - name: Reject unknown Codex auth mode
-      if: ${{ inputs['auth-mode'] != 'proxy' && inputs['auth-mode'] != 'login' && inputs['auth-mode'] != 'subscription' }}
+      if: ${{ inputs['auth-mode'] != 'proxy' && inputs['auth-mode'] != 'login' && inputs['auth-mode'] != 'subscription' && inputs['auth-mode'] != 'clawrouter' }}
       shell: bash
       run: |
         echo "Unsupported setup-codex auth-mode: ${{ inputs['auth-mode'] }}" >&2
