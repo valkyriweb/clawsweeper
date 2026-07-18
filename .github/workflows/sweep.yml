@@ -273,7 +273,6 @@ jobs:
         env:
           CLAWSWEEPER_REVIEW_PROVIDER: ${{ vars.CLAWSWEEPER_REVIEW_PROVIDER || '' }}
           CLAWSWEEPER_MODELS: ${{ vars.CLAWSWEEPER_MODELS || '' }}
-          CODEX_REASONING_EFFORT: ${{ vars.CODEX_REASONING_EFFORT || '' }}
           TARGET_REPO: ${{ steps.target.outputs.target_repo }}
         run: |
           set -euo pipefail
@@ -548,7 +547,7 @@ jobs:
       review_model: ${{ steps.select.outputs.review_model }}
       review_provider: ${{ steps.select.outputs.review_provider }}
       # codex_reasoning_effort threads the resolved value to all shards. Resolved
-      # in the 'review-routing' step (registry override -> CODEX_REASONING_EFFORT -> default).
+      # in the 'review-routing' step from the CLAWSWEEPER_MODELS registry (sweep-review effort).
       hot_intake: ${{ steps.mode.outputs.hot_intake }}
       matrix: ${{ steps.select.outputs.matrix }}
       max_pages: ${{ steps.mode.outputs.max_pages }}
@@ -644,7 +643,6 @@ jobs:
         env:
           CLAWSWEEPER_REVIEW_PROVIDER: ${{ vars.CLAWSWEEPER_REVIEW_PROVIDER || '' }}
           CLAWSWEEPER_MODELS: ${{ vars.CLAWSWEEPER_MODELS || '' }}
-          CODEX_REASONING_EFFORT: ${{ vars.CODEX_REASONING_EFFORT || '' }}
           TARGET_REPO: ${{ steps.target.outputs.target_repo }}
         run: |
           set -euo pipefail
