@@ -181,3 +181,29 @@ test("managedModel precedence: explicit -> override -> legacyEnv -> default", ()
     else process.env.CLAWSWEEPER_MODELS = prior;
   }
 });
+
+test("commit-review rejects claude-bridge (narrowed ACTION_PROVIDERS)", () => {
+  assert.throws(
+    () =>
+      applyRegistrySet(undefined, "commit-review", {
+        provider: "claude-bridge",
+        model: "claude-opus-4-8",
+      }),
+    /does not support provider "claude-bridge"/,
+  );
+});
+
+test("provider-only entry over an empty slot is rejected when the default model is incompatible", () => {
+  // {provider:"pi"} with no model would resolve to the codex default model.
+  assert.throws(
+    () => applyRegistrySet(undefined, "commit-review", { provider: "pi" }),
+    /requires an explicit model/,
+  );
+  // provider + a valid model for that provider is accepted.
+  const { resolved } = applyRegistrySet(undefined, "commit-review", {
+    provider: "pi",
+    model: "claude-opus-4-8",
+  });
+  assert.equal(resolved.provider, "pi");
+  assert.equal(resolved.model, "claude-opus-4-8");
+});

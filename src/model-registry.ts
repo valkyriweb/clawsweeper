@@ -56,7 +56,9 @@ export const EFFORT_PROVIDERS: ReadonlySet<ReviewProvider> = new Set(["codex"]);
  * lanes are codex-only (subscription-auth codex today). */
 export const ACTION_PROVIDERS: Readonly<Record<ModelAction, readonly ReviewProvider[]>> = {
   "sweep-review": ["codex", "pi", "claude-bridge", "claude-code"],
-  "commit-review": ["codex", "pi", "claude-bridge", "claude-code"],
+  // claude-bridge intentionally excluded for commit-review: its runtime path is
+  // Decision/tool-use-coupled and not wired for the free-form commit-report contract.
+  "commit-review": ["codex", "pi", "claude-code"],
   "repair-worker": ["codex"],
   "issue-implementation": ["codex"],
 };
@@ -132,6 +134,18 @@ export function validateActionPatch(action: ModelAction, raw: unknown): ActionCo
       );
     }
     patch.model = entry.model;
+  }
+
+  // Coherence guard: a provider-only entry (no explicit model) resolves the model
+  // to the action's built-in default; reject if that default is not valid for the
+  // chosen provider (e.g. `{provider:"pi"}` would otherwise resolve to a codex model).
+  if (patch.provider !== undefined && patch.model === undefined) {
+    const defaultModel = DEFAULT_ACTION_CONFIG[action].model;
+    if (!PROVIDER_MODELS[patch.provider].includes(defaultModel)) {
+      throw new Error(
+        `"${action}" provider "${patch.provider}" requires an explicit model (default "${defaultModel}" is not valid for it; allowed: ${PROVIDER_MODELS[patch.provider].join(", ")})`,
+      );
+    }
   }
 
   if (entry.effort !== undefined) {
