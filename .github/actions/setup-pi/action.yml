@@ -61,7 +61,14 @@ runs:
         if [ -n "$PI_PROFILE_VERSION" ]; then
           profile_package="$profile_package@$PI_PROFILE_VERSION"
         fi
-        npm install -g "$pi_package" "$profile_package"
+        # --ignore-scripts: the only dependency with an install script is koffi
+        # (pulled in via pi-tui), which ships prebuilt .node binaries for every
+        # platform in its tarball and loads fine without the cnoke prebuild step.
+        # The persistent self-hosted runner intermittently ends up with a koffi
+        # copy missing src/cnoke/cnoke.js, which fails the install script; no dep
+        # here needs a build/postinstall, so skipping scripts is both the fix and
+        # a speedup.
+        npm install -g --ignore-scripts "$pi_package" "$profile_package"
         installed="$(pi --version 2>&1 | head -1 || true)"
         echo "pi installed: $installed"
         profile_root="$(npm root -g)/$PI_PROFILE_PACKAGE"
