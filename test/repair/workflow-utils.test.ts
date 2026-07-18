@@ -6,6 +6,7 @@ import path from "node:path";
 import test from "node:test";
 
 import {
+  actionModel,
   artifactItemNumbers,
   automationLimit,
   codexReasoningEffortForAction,
@@ -670,5 +671,25 @@ test("codexReasoningEffortForAction resolves override, then env, then default", 
     else process.env.CLAWSWEEPER_MODELS = priorModels;
     if (priorEffort === undefined) delete process.env.CODEX_REASONING_EFFORT;
     else process.env.CODEX_REASONING_EFFORT = priorEffort;
+  }
+});
+
+test("actionModel resolves registry override, then fallback, then default", () => {
+  const prior = process.env.CLAWSWEEPER_MODELS;
+  try {
+    delete process.env.CLAWSWEEPER_MODELS;
+    // No override, explicit fallback wins.
+    assert.equal(actionModel("commit-review", "gpt-5.6-terra"), "gpt-5.6-terra");
+    // No override, empty fallback -> built-in default.
+    assert.equal(actionModel("commit-review", ""), "gpt-5.6-terra");
+    assert.equal(actionModel("sweep-review", ""), "claude-opus-4-8");
+    // Registry override wins over the fallback.
+    process.env.CLAWSWEEPER_MODELS = JSON.stringify({
+      "commit-review": { model: "gpt-5.5" },
+    });
+    assert.equal(actionModel("commit-review", "gpt-5.6-terra"), "gpt-5.5");
+  } finally {
+    if (prior === undefined) delete process.env.CLAWSWEEPER_MODELS;
+    else process.env.CLAWSWEEPER_MODELS = prior;
   }
 });

@@ -102,6 +102,11 @@ function runCli(): void {
         codexReasoningEffortForAction(requireModelAction(requiredString("action"))),
       );
       break;
+    case "action-model":
+      process.stdout.write(
+        actionModel(requireModelAction(requiredString("action")), optionalString("fallback")),
+      );
+      break;
     case "commit-review-ref":
       process.stdout.write(commitReviewRefForTarget(requiredString("target-repo")));
       break;
@@ -240,6 +245,18 @@ export function codexReasoningEffortForAction(action: ModelAction): string {
   const envEffort = process.env.CODEX_REASONING_EFFORT?.trim();
   if (envEffort) return envEffort;
   return DEFAULT_ACTION_CONFIG[action].effort;
+}
+
+// Resolve the bare model slug for an action: registry override wins, else the
+// caller-supplied fallback (the workflow's current expression), else the
+// built-in per-action default. The caller applies any routing prefix
+// (e.g. clawrouter/<slug>). Fallback preserves current behaviour when unset.
+export function actionModel(action: ModelAction, fallback: string): string {
+  const override = parseModelRegistry(process.env.CLAWSWEEPER_MODELS)[action]?.model;
+  if (override) return override;
+  const trimmed = fallback.trim();
+  if (trimmed) return trimmed;
+  return DEFAULT_ACTION_CONFIG[action].model;
 }
 
 export function commitReviewRefForTarget(targetRepo: string): string {
