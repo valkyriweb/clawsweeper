@@ -4881,7 +4881,7 @@ function supportsAdaptiveThinking(modelId: string): boolean {
 }
 
 // Defensive fallback: if a caller routes a non-Claude model id (e.g. the
-// workflow's `--codex-model gpt-5.5`) through the bridge, swap it for
+// workflow's `--codex-model gpt-5.6-terra`) through the bridge, swap it for
 // `DEFAULT_CLAUDE_MODEL` instead of forwarding a guaranteed-400 to Anthropic.
 function looksLikeClaudeModel(modelId: string): boolean {
   return modelId.startsWith("claude-");
@@ -5002,7 +5002,7 @@ export function runClaude(options: RunClaudeOptions): Decision {
   const item = options.item;
   const bridgeUrl =
     options.bridgeUrl ?? process.env.CLAWSWEEPER_BRIDGE_URL ?? DEFAULT_CLAUDE_BRIDGE_URL;
-  // Coerce non-Claude model ids (the workflow passes `--codex-model gpt-5.5`
+  // Coerce non-Claude model ids (the workflow passes `--codex-model gpt-5.6-terra`
   // regardless of provider) to the Claude default. Without this, a bridge
   // flip with the old flag wiring would 400 every request.
   const requestedModel = options.model || DEFAULT_CLAUDE_MODEL;

@@ -242,7 +242,7 @@ const postMergeCloseLines = [
 ];
 
 function fishNotes(provenance: LooseRecord) {
-  const model = provenance?.model ?? process.env.CLAWSWEEPER_MODEL ?? "gpt-5.5";
+  const model = provenance?.model ?? process.env.CLAWSWEEPER_MODEL ?? "gpt-5.6-terra";
   const reasoning = repairCodexReasoningEffort(provenance?.reasoning);
   const reviewedSha = provenance?.reviewedSha ?? provenance?.reviewed_sha;
   const reviewed = reviewedSha ? `; reviewed against ${String(reviewedSha).slice(0, 12)}` : "";
@@ -251,7 +251,7 @@ function fishNotes(provenance: LooseRecord) {
 
 export function externalMessageProvenance({ model, reasoning, reviewedSha }: LooseRecord = {}) {
   return {
-    model: model ?? process.env.CLAWSWEEPER_MODEL ?? "gpt-5.5",
+    model: model ?? process.env.CLAWSWEEPER_MODEL ?? "gpt-5.6-terra",
     reasoning: repairCodexReasoningEffort(reasoning),
     reviewedSha,
   };
@@ -542,7 +542,7 @@ export function postMergeCloseoutComment({ actionName, fixUrl, provenance }: Loo
 
 export function sampleExternalMessages() {
   const provenance = externalMessageProvenance({
-    model: "gpt-5.5",
+    model: "gpt-5.6-terra",
     reasoning: "high",
     reviewedSha: "ba0f2e948fc0cafe1234567890abcdef12345678",
   });
