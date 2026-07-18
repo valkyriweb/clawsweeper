@@ -9,9 +9,12 @@ inputs:
     default: "@valkyriweb/my-pi-actions"
   profile-version:
     description: Pi profile package version. Empty installs the latest published package.
-    default: "0.1.11"
+    default: "0.6.18"
   token:
-    description: GitHub Packages token with read:packages. Empty uses github.token.
+    description: >-
+      GitHub Packages token with read:packages. Must be a PAT (or other user
+      token): @valkyriweb/my-pi-actions is a user-account-scoped package that
+      GitHub App installation tokens cannot read. Empty uses github.token.
     default: ""
   cache-suffix:
     description: Extra cache key suffix for target-tool downloads.
