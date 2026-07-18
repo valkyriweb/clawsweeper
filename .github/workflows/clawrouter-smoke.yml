@@ -28,6 +28,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # Idle Linux runners aren't Node-provisioned (only the mac-minis are), so
+      # install Node here to keep the smoke runnable on any tailnet runner.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
       - name: Fail fast if the secret is missing
         shell: bash
         run: |
