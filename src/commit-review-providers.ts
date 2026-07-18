@@ -12,7 +12,13 @@
 // clawsweeper.ts (runPi ~L5506, runClaudeCode ~L5299) but send the plain
 // commit-review prompt (no JSON-schema wrapper) and take the terminal
 // assistant text / envelope `.result` as free-form markdown.
-import { spawnSync } from "node:child_process";
+import {
+  REVIEW_MAX_TOTAL_MS,
+  codexStartupTimeoutMs,
+  reviewInactivityTimeoutMs,
+  reviewMaxTotalMs,
+  runCliWithActivityWatchdog,
+} from "./cli-activity-watchdog.js";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { safeOutputTail } from "./clawsweeper-text.js";
@@ -40,9 +46,11 @@ export function isCommitReviewProvider(value: string): value is CommitReviewProv
 }
 
 // Spawn seam shared by all commit-review providers. Tests inject a fake
-// matching this shape so they never touch real binaries. Mirrors
-// clawsweeper.ts `SpawnFn` (~L5247) but commit-review uses a plain spawnSync
-// (no activity watchdog — D6 keeps the v1 timeout model as a single total cap).
+// matching this shape so they never touch real binaries. Mirrors the sweep
+// lane's `SpawnFn`: the default routes the child through the shared streaming
+// activity-watchdog (runCliWithActivityWatchdog) so a slow-but-active review
+// runs to completion and only a genuinely stalled (idle) one is killed —
+// inactivity/startup/backstop parity with sweep (closes the D6 gap).
 export type SpawnFn = (
   command: string,
   args: readonly string[],
@@ -62,13 +70,27 @@ export type SpawnFn = (
 };
 
 const defaultSpawn: SpawnFn = (command, args, options) => {
-  const result = spawnSync(command, [...args], options);
-  const base = {
+  const base =
+    typeof options.timeout === "number" && options.timeout > 0
+      ? options.timeout
+      : REVIEW_MAX_TOTAL_MS;
+  const result = runCliWithActivityWatchdog({
+    command,
+    args: [...args],
+    cwd: options.cwd ?? process.cwd(),
+    env: options.env ?? process.env,
+    input: options.input ?? "",
+    inactivityMs: reviewInactivityTimeoutMs(),
+    maxTotalMs: reviewMaxTotalMs(base),
+    startupTimeoutMs: codexStartupTimeoutMs(),
+  });
+  const normalized: ReturnType<SpawnFn> = {
     status: result.status,
-    stdout: result.stdout ?? "",
-    stderr: result.stderr ?? "",
+    stdout: result.stdout,
+    stderr: result.stderr,
   };
-  return result.error ? { ...base, error: result.error } : base;
+  if (result.error) normalized.error = result.error;
+  return normalized;
 };
 
 export type CommitReviewRunResult =
