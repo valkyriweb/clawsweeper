@@ -473,22 +473,13 @@ jobs:
       - if: ${{ steps.commit-routing.outputs.review_provider == 'claude-code' }}
         uses: ./clawsweeper/.github/actions/setup-claude-code
 
-      - if: ${{ steps.commit-routing.outputs.review_provider == 'pi' }}
-        name: Create Pi package token
-        id: pi-package-token
-        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
-        with:
-          client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
-          private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
-          owner: valkyriweb
-          repositories: my-pi
-          permission-contents: read
-          permission-packages: read
-
+      # @valkyriweb/my-pi-actions is a user-account-scoped GitHub Packages npm
+      # package; App installation tokens can only read org-owned packages, so we
+      # authenticate with a classic read:packages PAT stored as a repo secret.
       - if: ${{ steps.commit-routing.outputs.review_provider == 'pi' }}
         uses: ./clawsweeper/.github/actions/setup-pi
         with:
-          token: ${{ steps.pi-package-token.outputs.token }}
+          token: ${{ secrets.PI_PACKAGES_TOKEN }}
 
       - name: Check out target branch
         env:
