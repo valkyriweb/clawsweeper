@@ -1,0 +1,66 @@
+name: clawsweeper reviewTier drift watch
+
+# After a sweep completes, audit the recorded Z/L reviewTier distribution and
+# post to a dedicated Discord channel ONLY when a drift warning fires. No cron,
+# no model calls; skips cleanly when there is no drift or no channel configured.
+#
+# Runs on the mac-mini self-hosted runner so it can reach the OpenClaw gateway
+# hooks endpoint over the tailnet (same reason github-activity.yml notifies from
+# there); a GitHub-hosted runner cannot reach the loopback/tailnet gateway.
+on:
+  workflow_run:
+    workflows:
+      - ClawSweeper
+    types:
+      - completed
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  CLAWSWEEPER_APP_CLIENT_ID: Iv23lirdjmVqYd1gwY26
+
+concurrency:
+  group: clawsweeper-tier-drift-watch
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    # Only inspect state that a successful sweep actually produced.
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: [self-hosted, macOS, ARM64, mac-mini]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          filter: blob:none
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-pnpm
+        with:
+          build-script: build:repair
+
+      - name: Create state token
+        id: state-token
+        uses: ./.github/actions/create-state-token
+        with:
+          client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
+          private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
+
+      - uses: ./.github/actions/setup-state
+        with:
+          token: ${{ steps.state-token.outputs.token }}
+
+      - name: Notify on reviewTier drift
+        shell: bash
+        env:
+          CLAWSWEEPER_OPENCLAW_HOOK_URL: ${{ secrets.CLAWSWEEPER_OPENCLAW_HOOK_URL }}
+          CLAWSWEEPER_OPENCLAW_HOOK_TOKEN: ${{ secrets.CLAWSWEEPER_OPENCLAW_HOOK_TOKEN }}
+          CLAWSWEEPER_OPENCLAW_AGENT_ID: ${{ vars.CLAWSWEEPER_OPENCLAW_AGENT_ID || 'clawsweeper' }}
+          # Dedicated drift channel in Luke's personal Discord (repo variable).
+          CLAWSWEEPER_TIER_DRIFT_DISCORD_TARGET: ${{ vars.CLAWSWEEPER_TIER_DRIFT_DISCORD_TARGET }}
+        run: |
+          set -euo pipefail
+          pnpm run repair:notify-tier-drift -- --records="${CLAWSWEEPER_STATE_DIR}/records"

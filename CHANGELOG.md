@@ -9,6 +9,17 @@ checkpoint, and status-only commits are intentionally omitted.
 
 ### Added
 
+- Added an automatic reviewTier-drift alert: a `tier-drift-watch` workflow runs
+  after each `ClawSweeper` sweep, audits the recorded `reviewTier` distribution,
+  and posts to a dedicated Discord channel (`CLAWSWEEPER_TIER_DRIFT_DISCORD_TARGET`
+  via the existing OpenClaw hook) **only when a drift warning fires** — critical
+  dominating a large-enough sample, or tiers going unrecorded. It skips cleanly
+  (never fails the run) when there is no drift, no records yet, or the channel is
+  unconfigured, and dedupes repeat alerts by distribution signature. No cron, no
+  model calls. The drift logic now lives in `src/review-tier-drift.ts`, shared by
+  the CLI and the notifier, with a min-sample floor so a lone critical review
+  cannot false-alarm at 100%.
+
 - Added a `reviewTier` field to the review decision schema and parser: the
   reviewer records the Z/L change tier it assigned (`routine`/`important`/
   `critical`, or `not_applicable` for non-PR items) on every verdict, so
