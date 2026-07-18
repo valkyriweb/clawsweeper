@@ -5,6 +5,7 @@ import { assertRepo, commaSet, positiveInteger } from "./comment-router-utils.js
 import { AUTOMATION_LIMITS } from "./limits.js";
 import { DEFAULT_HEAD_PREFIX, REPAIR_CLUSTER_WORKFLOW, SWEEP_WORKFLOW } from "./constants.js";
 import { requireTargetRepo } from "../repository-profiles.js";
+import { managedModel } from "../model-registry.js";
 export { DEFAULT_HEAD_PREFIX, DEFAULT_TARGET_REPO } from "./constants.js";
 
 const DEFAULT_ALLOWED_ASSOCIATIONS = ["OWNER", "MEMBER", "COLLABORATOR"];
@@ -72,7 +73,11 @@ export function readCommentRouterConfig(args: LooseRecord): CommentRouterConfig 
     args["execution-runner"] ?? args.execution_runner ?? process.env.CLAWSWEEPER_EXECUTION_RUNNER,
     "blacksmith-16vcpu-ubuntu-2404",
   );
-  const model = stringSetting(args.model ?? process.env.CLAWSWEEPER_MODEL, "gpt-5.6-terra");
+  const model = managedModel(
+    "repair-worker",
+    typeof args.model === "string" ? args.model : undefined,
+    process.env.CLAWSWEEPER_MODEL,
+  );
   const headPrefix = stringSetting(
     args["head-prefix"] ?? process.env.CLAWSWEEPER_HEAD_PREFIX,
     DEFAULT_HEAD_PREFIX,

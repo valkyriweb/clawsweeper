@@ -3,6 +3,7 @@ import type { JsonValue, LooseRecord } from "./json-types.js";
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { managedModel } from "../model-registry.js";
 import {
   activeRepairWorkflowRunForJob,
   assertLiveWorkerCapacity,
@@ -29,7 +30,11 @@ const runner = args.runner ?? defaultRunner;
 const executionRunner = args["execution-runner"] ?? args.execution_runner ?? defaultExecutionRunner;
 const workflow = args.workflow ?? REPAIR_CLUSTER_WORKFLOW;
 const repo = String(args.repo ?? currentProjectRepo());
-const model = String(args.model ?? process.env.CLAWSWEEPER_MODEL ?? "gpt-5.6-terra");
+const model = managedModel(
+  "repair-worker",
+  typeof args.model === "string" ? args.model : undefined,
+  process.env.CLAWSWEEPER_MODEL,
+);
 const waitForCapacity = Boolean(args["wait-for-capacity"]);
 const ref = args.ref ? String(args.ref) : "";
 const files = args._;

@@ -6,6 +6,7 @@ import {
   MODEL_ACTIONS,
   applyRegistrySet,
   isModelAction,
+  managedModel,
   modelCatalogRows,
   parseModelRegistry,
   resolveActionConfig,
@@ -155,4 +156,28 @@ test("isModelAction guards the action union", () => {
   assert.ok(isModelAction("sweep-review"));
   assert.ok(!isModelAction("sweep"));
   assert.ok(!isModelAction(42));
+});
+
+test("managedModel precedence: explicit -> override -> legacyEnv -> default", () => {
+  const prior = process.env.CLAWSWEEPER_MODELS;
+  try {
+    delete process.env.CLAWSWEEPER_MODELS;
+    // Default when nothing supplied.
+    assert.equal(managedModel("repair-worker", undefined, undefined), "gpt-5.6-terra");
+    // Legacy env used when no explicit/override.
+    assert.equal(managedModel("repair-worker", undefined, "gpt-5.5"), "gpt-5.5");
+    // Explicit wins over legacy env.
+    assert.equal(managedModel("repair-worker", "gpt-5.6-terra", "gpt-5.5"), "gpt-5.6-terra");
+    // Whitespace-only explicit/env is ignored.
+    assert.equal(managedModel("repair-worker", "  ", "  "), "gpt-5.6-terra");
+    // Registry override beats legacy env but loses to explicit.
+    process.env.CLAWSWEEPER_MODELS = JSON.stringify({
+      "repair-worker": { model: "gpt-5.5" },
+    });
+    assert.equal(managedModel("repair-worker", undefined, "gpt-5.6-terra"), "gpt-5.5");
+    assert.equal(managedModel("repair-worker", "opus-explicit", "gpt-5.6-terra"), "opus-explicit");
+  } finally {
+    if (prior === undefined) delete process.env.CLAWSWEEPER_MODELS;
+    else process.env.CLAWSWEEPER_MODELS = prior;
+  }
 });
