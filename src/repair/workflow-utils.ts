@@ -2,6 +2,7 @@
 import type { JsonValue, LooseRecord } from "./json-types.js";
 import fs from "node:fs";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "./lib.js";
 import { isJsonObject } from "./json-types.js";
@@ -12,6 +13,19 @@ import {
   reviewModelForProvider,
   type ReviewProvider,
 } from "../repository-profiles.js";
+import {
+  MODEL_ACTIONS,
+  PROVIDER_MODELS,
+  REASONING_EFFORTS,
+  applyRegistrySet,
+  isModelAction,
+  modelCatalogRows,
+  parseModelRegistry,
+  resolveActionConfig,
+  resolveAllActions,
+  type ModelAction,
+  type ReasoningEffort,
+} from "../model-registry.js";
 import { AUTOMATION_LIMITS, WORKER_CONFIG, workerLimit, type WorkerLane } from "./limits.js";
 
 type ApplyAction = {
@@ -19,6 +33,9 @@ type ApplyAction = {
 };
 
 const args = parseArgs(process.argv.slice(2));
+
+const MODELS_VARIABLE = "CLAWSWEEPER_MODELS";
+const DEFAULT_MODELS_REPO = "valkyriweb/clawsweeper";
 
 if (isCliEntrypoint()) runCli();
 
@@ -81,6 +98,9 @@ function runCli(): void {
       break;
     case "commit-review-ref":
       process.stdout.write(commitReviewRefForTarget(requiredString("target-repo")));
+      break;
+    case "models":
+      runModelsCommand();
       break;
     case "target-auth":
       printOutput(
@@ -206,6 +226,124 @@ export function reviewModelForTarget(targetRepo: string): string {
 
 export function commitReviewRefForTarget(targetRepo: string): string {
   return repositoryProfileFor(targetRepo).commitReviewRef ?? DEFAULT_COMMIT_REVIEW_REF;
+}
+
+// --- clawsweeper models: remote model/effort registry CLI ---
+
+function runModelsCommand(): void {
+  const sub = positionalString(1);
+  switch (sub) {
+    case "list":
+      printModelsList();
+      break;
+    case "catalog":
+      printModelsCatalog();
+      break;
+    case "get":
+      printModelsGet();
+      break;
+    case "set":
+      runModelsSet();
+      break;
+    default:
+      throw new Error(
+        `unknown models subcommand: ${sub || "(none)"} (expected: list, catalog, get, set)`,
+      );
+  }
+}
+
+function printModelsList(): void {
+  const registry = parseModelRegistry(process.env[MODELS_VARIABLE]);
+  const resolved = resolveAllActions(registry);
+  const width = Math.max(...MODEL_ACTIONS.map((action) => action.length));
+  for (const action of MODEL_ACTIONS) {
+    const config = resolved[action];
+    const source = registry[action] ? "override" : "default";
+    console.log(
+      `${action.padEnd(width)}  provider=${config.provider}  model=${config.model}  effort=${config.effort}  (${source})`,
+    );
+  }
+}
+
+function printModelsCatalog(): void {
+  for (const row of modelCatalogRows()) {
+    const flags = [row.deprecated ? "deprecated" : "", row.supportsEffort ? "effort" : ""]
+      .filter(Boolean)
+      .join(",");
+    console.log(`${row.provider}\t${row.model}${flags ? `\t[${flags}]` : ""}`);
+  }
+}
+
+function printModelsGet(): void {
+  const action = requireModelAction(positionalString(2) || optionalString("action"));
+  const registry = parseModelRegistry(process.env[MODELS_VARIABLE]);
+  process.stdout.write(JSON.stringify(resolveActionConfig(action, registry)));
+}
+
+function runModelsSet(): void {
+  const action = requireModelAction(positionalString(2) || optionalString("action"));
+  const provider = optionalReviewProvider("provider");
+  const model = optionalString("model");
+  const effort = optionalReasoningEffort("effort");
+  if (!provider && !model && !effort) {
+    throw new Error("models set requires at least one of --provider, --model, --effort");
+  }
+  const patch: { provider?: ReviewProvider; model?: string; effort?: ReasoningEffort } = {};
+  if (provider) patch.provider = provider;
+  if (model) patch.model = model;
+  if (effort) patch.effort = effort;
+  const repo = optionalString("repo") || DEFAULT_MODELS_REPO;
+  const { json, resolved } = applyRegistrySet(readModelsVariable(repo), action, patch);
+  if (args["dry-run"] === true) {
+    console.log(json);
+    return;
+  }
+  writeModelsVariable(repo, json);
+  console.log(
+    `set ${action}: provider=${resolved.provider} model=${resolved.model} effort=${resolved.effort}`,
+  );
+}
+
+function requireModelAction(value: string): ModelAction {
+  if (isModelAction(value)) return value;
+  throw new Error(
+    `unknown model action: ${value || "(none)"} (expected: ${MODEL_ACTIONS.join(", ")})`,
+  );
+}
+
+function optionalReviewProvider(name: string): ReviewProvider | undefined {
+  const value = optionalString(name);
+  if (!value) return undefined;
+  if (value in PROVIDER_MODELS) return value as ReviewProvider;
+  throw new Error(`--${name} is not a known provider: ${value}`);
+}
+
+function optionalReasoningEffort(name: string): ReasoningEffort | undefined {
+  const value = optionalString(name);
+  if (!value) return undefined;
+  if ((REASONING_EFFORTS as readonly string[]).includes(value)) return value as ReasoningEffort;
+  throw new Error(`--${name} must be one of: ${REASONING_EFFORTS.join(", ")}`);
+}
+
+function readModelsVariable(repo: string): string | undefined {
+  const result = spawnSync(
+    "gh",
+    ["api", `/repos/${repo}/actions/variables/${MODELS_VARIABLE}`, "--jq", ".value"],
+    { encoding: "utf8" },
+  );
+  if (result.status === 0) return result.stdout.trim();
+  return undefined; // unset -> gh returns non-zero (404)
+}
+
+function writeModelsVariable(repo: string, json: string): void {
+  const result = spawnSync(
+    "gh",
+    ["variable", "set", MODELS_VARIABLE, "--repo", repo, "--body", json],
+    { encoding: "utf8", stdio: ["ignore", "inherit", "inherit"] },
+  );
+  if (result.status !== 0) {
+    throw new Error(`failed to set ${MODELS_VARIABLE} variable (gh exit ${String(result.status)})`);
+  }
 }
 
 export type TargetTokenAccessMode = "read" | "comment" | "mutate";
