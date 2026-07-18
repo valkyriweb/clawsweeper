@@ -3,6 +3,7 @@ import type { JsonValue, LooseRecord } from "./json-types.js";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { managedModel } from "../model-registry.js";
 import {
   spawn,
   spawnSync,
@@ -137,7 +138,11 @@ const jobPath = args._[0];
 const resultPathArg = args._[1];
 const latest = Boolean(args.latest);
 const dryRun = Boolean(args["dry-run"] || process.env.CLAWSWEEPER_FIX_DRY_RUN === "1");
-const model = String(args.model ?? process.env.CLAWSWEEPER_MODEL ?? "gpt-5.6-terra");
+const model = managedModel(
+  "repair-worker",
+  typeof args.model === "string" ? args.model : undefined,
+  process.env.CLAWSWEEPER_MODEL,
+);
 const requestedCodexTimeoutMs = Number(
   process.env.CLAWSWEEPER_FIX_CODEX_TIMEOUT_MS ?? 25 * 60 * 1000,
 );

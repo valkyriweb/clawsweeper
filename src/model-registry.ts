@@ -236,6 +236,22 @@ export function serializeRegistry(registry: ModelRegistry): string {
   return JSON.stringify(ordered, null, 2);
 }
 
+/** Resolve a managed model for an action: explicit value wins (e.g. a manual
+ * `--model` input), then the registry override, then a legacy env fallback, then
+ * the built-in per-action default. Preserves current behaviour when the registry
+ * variable is unset. */
+export function managedModel(
+  action: ModelAction,
+  explicit: string | undefined,
+  legacyEnv: string | undefined,
+): string {
+  if (explicit && explicit.trim()) return explicit.trim();
+  const override = parseModelRegistry(process.env.CLAWSWEEPER_MODELS)[action]?.model;
+  if (override) return override;
+  if (legacyEnv && legacyEnv.trim()) return legacyEnv.trim();
+  return DEFAULT_ACTION_CONFIG[action].model;
+}
+
 export interface CatalogRow {
   readonly provider: ReviewProvider;
   readonly model: string;
