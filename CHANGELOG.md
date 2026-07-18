@@ -9,6 +9,15 @@ checkpoint, and status-only commits are intentionally omitted.
 
 ### Added
 
+- Added a `clawrouter` auth-mode to the `setup-codex` composite action. It writes
+  a Codex `model_provider` that routes the Responses wire to ClawRouter
+  (`clawrouter-base-url`, default the lue-kube tailnet endpoint) using the
+  `CLAWROUTER_API_KEY` device-key bearer via `env_key`. Models are addressed as
+  `clawrouter/<slug>` (provider-neutral, fail-closed alias). Pure addition — the
+  existing `proxy`/`login`/`subscription` modes are untouched, and no lane routes
+  through ClawRouter until it explicitly opts in. First slice of the remote model
+  registry + clawrouter routing program (#171).
+
 - Added an automatic reviewTier-drift alert: a `tier-drift-watch` workflow runs
   after each `ClawSweeper` sweep, audits the recorded `reviewTier` distribution,
   and posts to a dedicated Discord channel (`CLAWSWEEPER_TIER_DRIFT_DISCORD_TARGET`

@@ -1,0 +1,61 @@
+name: ClawRouter smoke
+
+# Manual connectivity smoke for the `clawrouter` setup-codex auth-mode (#171).
+# Proves the self-hosted runner can reach ClawRouter with CLAWROUTER_API_KEY and
+# that codex actually routes a Responses call through it. Not wired into any
+# review/repair lane — dispatch by hand.
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: ClawRouter model slug to smoke.
+        default: "clawrouter/gpt-5.6-terra"
+      runner:
+        description: JSON runner labels.
+        default: '["self-hosted","macOS","ARM64","mac-mini"]'
+
+concurrency:
+  group: clawrouter-smoke
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    runs-on: ${{ fromJson(github.event.inputs.runner) }}
+    timeout-minutes: 10
+    env:
+      CLAWROUTER_API_KEY: ${{ secrets.CLAWROUTER_API_KEY }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Fail fast if the secret is missing
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${CLAWROUTER_API_KEY:-}" ]]; then
+            echo "::error::CLAWROUTER_API_KEY secret is not set on this repo." >&2
+            exit 1
+          fi
+
+      - name: Setup Codex (clawrouter)
+        uses: ./.github/actions/setup-codex
+        with:
+          auth-mode: clawrouter
+
+      - name: Route a Responses call through ClawRouter
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/clawrouter-smoke.txt"
+          printf 'Reply with exactly the two characters: ok\n' \
+            | codex exec -m "${{ github.event.inputs.model }}" \
+                --skip-git-repo-check \
+                --sandbox read-only \
+                --output-last-message "$out" \
+                - 
+          if [[ ! -s "$out" ]]; then
+            echo "::error::codex produced no output — ClawRouter route did not return a message." >&2
+            exit 1
+          fi
+          echo "ClawRouter smoke response:"
+          cat "$out"
