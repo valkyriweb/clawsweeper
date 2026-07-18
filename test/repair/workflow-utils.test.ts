@@ -8,8 +8,10 @@ import test from "node:test";
 import {
   artifactItemNumbers,
   automationLimit,
+  codexReasoningEffortForAction,
   commentSyncBatchOutput,
   commitReviewRefForTarget,
+  reviewModelForTarget,
   countActions,
   countCommandActions,
   countRequeueRequired,
@@ -630,3 +632,43 @@ function writeCommentSyncRecord(root, number, type, actionTaken) {
     ].join("\n"),
   );
 }
+
+test("reviewModelForTarget honours a sweep-review registry override", () => {
+  const prior = process.env.CLAWSWEEPER_MODELS;
+  try {
+    process.env.CLAWSWEEPER_MODELS = JSON.stringify({
+      "sweep-review": { model: "claude-sonnet-4-6" },
+    });
+    assert.equal(reviewModelForTarget("valkyriweb/pi-mono"), "claude-sonnet-4-6");
+    delete process.env.CLAWSWEEPER_MODELS;
+    // Unset registry falls back to the provider's default review model.
+    assert.equal(typeof reviewModelForTarget("valkyriweb/pi-mono"), "string");
+    assert.ok(reviewModelForTarget("valkyriweb/pi-mono").length > 0);
+  } finally {
+    if (prior === undefined) delete process.env.CLAWSWEEPER_MODELS;
+    else process.env.CLAWSWEEPER_MODELS = prior;
+  }
+});
+
+test("codexReasoningEffortForAction resolves override, then env, then default", () => {
+  const priorModels = process.env.CLAWSWEEPER_MODELS;
+  const priorEffort = process.env.CODEX_REASONING_EFFORT;
+  try {
+    delete process.env.CLAWSWEEPER_MODELS;
+    delete process.env.CODEX_REASONING_EFFORT;
+    // Default: commit-review is high, sweep-review is none.
+    assert.equal(codexReasoningEffortForAction("commit-review"), "high");
+    assert.equal(codexReasoningEffortForAction("sweep-review"), "none");
+    // Env wins over the built-in default.
+    process.env.CODEX_REASONING_EFFORT = "medium";
+    assert.equal(codexReasoningEffortForAction("sweep-review"), "medium");
+    // Registry override wins over env.
+    process.env.CLAWSWEEPER_MODELS = JSON.stringify({ "sweep-review": { effort: "low" } });
+    assert.equal(codexReasoningEffortForAction("sweep-review"), "low");
+  } finally {
+    if (priorModels === undefined) delete process.env.CLAWSWEEPER_MODELS;
+    else process.env.CLAWSWEEPER_MODELS = priorModels;
+    if (priorEffort === undefined) delete process.env.CODEX_REASONING_EFFORT;
+    else process.env.CODEX_REASONING_EFFORT = priorEffort;
+  }
+});
