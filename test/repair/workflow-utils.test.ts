@@ -190,7 +190,9 @@ test("manual sweep routes every target token through the facade and keeps contro
   assert.doesNotMatch(workflow, /^\s+repository_dispatch:\s*$/m);
   assert.doesNotMatch(workflow, /^\s+schedule:\s*$/m);
   assert.match(workflow, /repositories: clawsweeper-state/);
-  assert.match(workflow, /repositories: my-pi/);
+  // The Pi package is pulled with a read:packages PAT (secret), not an app token
+  // scoped to my-pi, because it is a user-account-scoped GitHub Packages package.
+  assert.match(workflow, /token: \$\{\{ secrets\.PI_PACKAGES_TOKEN \}\}/);
   assert.match(workflow, /BERMONT_DIGITAL_CLAWSWEEPER_APP_PRIVATE_KEY/);
   assert.match(workflow, /persist-credentials: false/);
   assert.match(
