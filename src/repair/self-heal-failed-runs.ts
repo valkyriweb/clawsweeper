@@ -32,7 +32,7 @@ const runner = String(args.runner ?? DEFAULT_RUNNER);
 const executionRunner = String(
   args["execution-runner"] ?? args.execution_runner ?? DEFAULT_EXECUTION_RUNNER,
 );
-const model = String(args.model ?? process.env.CLAWSWEEPER_MODEL ?? "gpt-5.5");
+const model = String(args.model ?? process.env.CLAWSWEEPER_MODEL ?? "gpt-5.6-terra");
 const maxJobs = Number(args["max-jobs"] ?? args.limit ?? 5);
 const maxAgeHours = Number(
   args["max-age-hours"] ??

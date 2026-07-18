@@ -51,7 +51,7 @@ const executionRunner = String(
     "blacksmith-16vcpu-ubuntu-2404",
 );
 const requestedMode = typeof args.mode === "string" ? args.mode : null;
-const model = String(args.model ?? process.env.CLAWSWEEPER_MODEL ?? "gpt-5.5");
+const model = String(args.model ?? process.env.CLAWSWEEPER_MODEL ?? "gpt-5.6-terra");
 const maxPrs = Number(args["max-prs"] ?? args.limit ?? 5);
 const maxLiveWorkers = readMaxLiveWorkers(args);
 const waitForCapacity = Boolean(args["wait-for-capacity"]);

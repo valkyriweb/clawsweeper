@@ -7,6 +7,14 @@ checkpoint, and status-only commits are intentionally omitted.
 
 ## 0.2.1 - Unreleased
 
+### Changed
+
+- Deprecated `gpt-5.5`: the repair/fix cluster workers and issue-implementation
+  intake now default to `gpt-5.6-terra` (matching the review lanes switched in
+  #170). Affects the `CLAWSWEEPER_MODEL` / `CLAWSWEEPER_FIX_MODEL` fallbacks in
+  `src/repair/*` and the repair workflow env defaults; an explicit
+  `CLAWSWEEPER_MODEL` repo variable still overrides. Part of #171.
+
 ### Added
 
 - Added a `clawrouter` auth-mode to the `setup-codex` composite action. It writes
