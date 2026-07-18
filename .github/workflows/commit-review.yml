@@ -381,6 +381,12 @@ jobs:
       contents: read
     env:
       CLAWSWEEPER_USAGE_OTLP_HEADERS: ${{ secrets.CLAWSWEEPER_USAGE_OTLP_HEADERS || vars.CLAWSWEEPER_USAGE_OTLP_HEADERS || vars.OTEL_EXPORTER_OTLP_HEADERS || '' }}
+      # Codex auth routing (#171): `subscription` (default) needs the runner's
+      # ~/.codex/auth.json (mac-minis only); `clawrouter` auths via the
+      # CLAWROUTER_API_KEY secret and runs on any runner with Node 24.
+      CODEX_AUTH_MODE: ${{ vars.CLAWSWEEPER_CODEX_AUTH_MODE || 'subscription' }}
+      # Read at codex runtime via config env_key in clawrouter mode; unused otherwise.
+      CLAWROUTER_API_KEY: ${{ secrets.CLAWROUTER_API_KEY }}
     strategy:
       fail-fast: false
       matrix:
@@ -439,7 +445,7 @@ jobs:
 
       - uses: ./clawsweeper/.github/actions/setup-codex
         with:
-          auth-mode: subscription
+          auth-mode: ${{ vars.CLAWSWEEPER_CODEX_AUTH_MODE || 'subscription' }}
           login-status: "true"
 
       - name: Check out target branch
@@ -474,6 +480,8 @@ jobs:
           GH_TOKEN: ${{ steps.target-read-token.outputs.token }}
           COMMIT_SWEEPER_TARGET_GH_TOKEN: ${{ steps.target-read-token.outputs.token }}
           COMMIT_SWEEPER_ADDITIONAL_PROMPT: ${{ github.event.inputs.additional_prompt || github.event.client_payload.additional_prompt || '' }}
+          # ClawRouter addresses models as clawrouter/<slug> (fail-closed namespace).
+          CODEX_MODEL: ${{ (vars.CLAWSWEEPER_CODEX_AUTH_MODE == 'clawrouter' && 'clawrouter/gpt-5.6-terra') || 'gpt-5.6-terra' }}
         run: |
           node dist/commit-sweeper.js review \
             --target-repo "${{ needs.plan.outputs.target_repo }}" \
@@ -482,7 +490,7 @@ jobs:
             --report-dir ../commit-artifacts \
             --artifact-mode \
             --work-dir ../commit-work \
-            --codex-model gpt-5.6-terra \
+            --codex-model "${CODEX_MODEL}" \
             --codex-reasoning-effort high \
             --codex-sandbox danger-full-access \
             --codex-timeout-ms 1800000
