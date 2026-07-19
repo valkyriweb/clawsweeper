@@ -514,6 +514,14 @@ jobs:
           echo "Target $BRANCH head: $(git -C "$TARGET_NAME" rev-parse --short HEAD)"
           echo "Commit under review: $(git -C "$TARGET_NAME" rev-parse --short "$COMMIT_SHA")"
 
+      - name: Reset stale commit output dirs
+        # Self-hosted workspaces persist between runs, so ../commit-artifacts and
+        # ../commit-work accumulate reports from prior (possibly cross-repo) runs.
+        # upload-artifact packs the whole dir, so leftovers get swept into the
+        # artifact and the aggregate Commit reports job then POSTs foreign SHAs to
+        # this run's target repo -> HTTP 422. Start each review from a clean dir.
+        run: rm -rf commit-artifacts commit-work
+
       - name: Review commit
         working-directory: clawsweeper
         env:
