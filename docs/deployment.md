@@ -46,28 +46,46 @@ ssh <host> '/usr/local/bin/gh-native --version; readlink /usr/local/bin/gh-nativ
 ssh <host> 'sudo ln -sf /usr/bin/gh /usr/local/bin/gh-native'   # Linux w/ apt gh
 ```
 
-`GH_BIN` defaults to `/usr/local/bin/gh-native`. To trial ghx again, first install
-a ghx build that forwards the client environment to daemon-executed `gh` calls
-(the valkyriweb ghx fork's env-forwarding fix). Then choose **one** safe rollout
-shape:
+### Current state (resolved 2026-07-19, #197)
 
-1. install the fixed ghx at the same path on every runner/image that can run
-   `sweep.yml`, then set `CLAWSWEEPER_GH_BIN` to that fleet-wide path; or
-2. pin the trial workflow/run to runner labels where the fixed ghx path exists.
+The env-forwarding fix shipped: **ghx fork ≥ v1.7.0** adopts upstream `authenv`
+(brunoborges/ghx#18) so the per-call `GH_TOKEN` is captured → applied → the
+cache/singleflight is isolated by token fingerprint. The scoped checks token is
+forwarded to `gh` instead of the daemon's cached auth, so `Publish commit check`
+no longer 403s.
 
-Do not set a repo-wide `CLAWSWEEPER_GH_BIN` to a host-specific path such as
-`/opt/homebrew/bin/ghx` while Linux/ARC runners are eligible; those jobs will fail
-before the private-target smoke proves the token fix.
+Rollout shape **1** (fleet-wide) is live:
+
+- Fixed `ghx`+`ghxd` (v1.7.0 build) installed at `/usr/local/bin/{ghx,ghxd}` on
+  every Linux self-hosted host (`old-mbp`, `x99`) and at
+  `/Users/luke/.local/bin/{ghx,ghxd}` on the `mac-mini` (its `/usr/local/bin/ghx`
+  is a symlink to that). Deploy each ghx **next to** its ghxd — `findGHXD` prefers
+  the dir-adjacent daemon over PATH, so the fixed daemon is always used.
+- Repo var `CLAWSWEEPER_GH_BIN=/usr/local/bin/ghx` is set (resolves `GH_BIN`).
+- Old binaries are backed up as `ghx.bak-20260719` next to each install (rollback).
 
 ```bash
-# example only after the path exists on every eligible runner
+# deploy the fixed pair to a Linux runner host (backup, stop stale daemon, install)
+scp ghx ghxd luke@<host>:/tmp/
+ssh luke@<host> 'sudo cp -a /usr/local/bin/ghx /usr/local/bin/ghx.bak-$(date +%Y%m%d); \
+  pkill -x ghxd || true; \
+  sudo install -m755 /tmp/ghx /usr/local/bin/ghx && sudo install -m755 /tmp/ghxd /usr/local/bin/ghxd'
+# repo var (already set)
 gh variable set CLAWSWEEPER_GH_BIN --repo valkyriweb/clawsweeper --body /usr/local/bin/ghx
-# rollback
+# rollback: restore the .bak and delete the var
 gh variable delete CLAWSWEEPER_GH_BIN --repo valkyriweb/clawsweeper
 ```
 
-Do **not** point ClawSweeper at old ghx builds. Verify with a private target smoke
-run before broad rollout; native gh remains the rollback/default.
+**Critical caveat — GitHub-hosted jobs must NOT inherit the ghx path.** The
+repo-wide `CLAWSWEEPER_GH_BIN` resolves `GH_BIN` at the *workflow* level, so it
+leaks into GitHub-hosted `ubuntu-latest` jobs (e.g. the `Commit reports` job)
+where `/usr/local/bin/ghx` does not exist → `spawnSync ENOENT`. Those jobs pin
+`GH_BIN: gh` at the job level to use the runner's PATH-resolved native gh (#200).
+Self-hosted review jobs also reset `commit-artifacts`/`commit-work` before each
+run so stale cross-repo reports are not swept into the aggregate publish (#201).
+
+Do **not** point ClawSweeper at old ghx builds (pre-v1.7.0) — they drop the
+per-call token. Native gh remains the rollback/default.
 
 ## Runner fleet & job distribution
 
