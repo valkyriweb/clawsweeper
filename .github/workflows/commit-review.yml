@@ -612,6 +612,12 @@ jobs:
     if: ${{ always() && (needs.plan.outputs.planned_count != '0' || needs.plan.outputs.skipped_count != '0') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # GitHub-hosted runner: force PATH-resolved native gh. The workflow-level
+    # GH_BIN may be pinned to a self-hosted absolute path (e.g. the ghx trial
+    # via CLAWSWEEPER_GH_BIN=/usr/local/bin/ghx), which does not exist here and
+    # makes runText("gh") ENOENT -> Publish commit checks fails. See #197.
+    env:
+      GH_BIN: gh
     steps:
       - uses: actions/checkout@v6
         with:
