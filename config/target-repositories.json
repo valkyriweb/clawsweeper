@@ -273,6 +273,19 @@
       }
     },
     {
+      "target_repo": "valkyriweb/clawrouter",
+      "display_name": "ClawRouter (LLM routing gateway)",
+      "checkout_dir": "clawrouter",
+      "github_app_credential_route": "valkyriweb",
+      "automation_policy": "review_only",
+      "include_maintainer_authored": true,
+      "prompt_note": "ClawRouter is Luke's private LLM routing gateway: a Cloudflare Worker data plane plus an admin frontend, running in production on lue-kube as `deploy/clawrouter` in namespace `clawrouter` (Flux-managed, `claude-bridge` sidecar, admin CLI `clawctl` baked into the pod). GitHub repo `valkyriweb/clawrouter` (private). Service areas: `area:worker` (worker/ request classification, key checks, routing, budget preflight, provider transforms, usage events), `area:providers` (providers/*.provider.yaml manifests and worker/adapters/* TypeScript adapters), `area:admin` (admin/ frontend, Cloudflare Access/GitHub glue, generated clients), `area:scripts` (scripts/ provisioning, clawctl, key/oauth management), `area:deploy` (deploy/, config/deployments, wrangler config, lue-kube/Flux wiring), `area:docs`, `area:tests`. Use at most two area tags; `area:cross-cutting` when it spans many. Keep the data plane provider-neutral and the hot path small; prefer a provider manifest over a bespoke adapter. Security-sensitive contracts must fail closed: no upstream provider secrets in source, tests, fixtures, logs, screenshots, or docs; no raw prompts or completions logged by default; key revocation and hard budget enforcement must stay faster and more authoritative than reporting/billing. Validation: `pnpm worker:check` (tsc + `node --test worker/test/*.test.mjs`), `pnpm --dir admin check && pnpm --dir admin test` for admin changes, `pnpm test:scripts` for scripts, and `pnpm provider:compile` after any provider-manifest change; `pnpm check` is the full gate. Conservative close policy: this is a live production gateway, so do not auto-close — routing, budget, credential, and deployment decisions always require human review.",
+      "apply_close_rules": {
+        "issue": [],
+        "pull_request": []
+      }
+    },
+    {
       "target_repo": "valkyriweb/clawsweeper",
       "display_name": "ClawSweeper",
       "checkout_dir": "clawsweeper",
