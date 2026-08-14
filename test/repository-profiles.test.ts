@@ -64,6 +64,13 @@ test("target repository schema rejects missing or unknown automation policies", 
     /automation_policy.*full.*review_only/,
   );
 
+  const invalidReviewLabel = structuredClone(config);
+  invalidReviewLabel.repositories[0].post_repair_review_label = "bad\nlabel";
+  assert.throws(
+    () => validateTargetRepositoryConfig(invalidReviewLabel),
+    /post_repair_review_label.*safe GitHub label/,
+  );
+
   const oldSchema = structuredClone(config);
   oldSchema.schema_version = 1;
   assert.throws(
@@ -119,6 +126,12 @@ test("valkyriweb/paperclip scopes commit-review to its bermont production branch
   // Targets that ship from main leave the field unset; the default applies downstream.
   const piMono = repositoryProfileFor("valkyriweb/pi-mono");
   assert.equal(piMono.commitReviewRef, undefined);
+});
+
+test("valkyriweb/my-pi profile configures the post-repair review handoff", () => {
+  const profile = repositoryProfileFor("valkyriweb/my-pi");
+
+  assert.equal(profile.postRepairReviewLabel, "agentic-review");
 });
 
 test("valkyriweb/pi-mono profile carries pi service-area routing notes", () => {

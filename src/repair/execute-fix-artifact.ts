@@ -10,7 +10,14 @@ import {
   type ChildProcess,
   type SpawnSyncOptionsWithStringEncoding,
 } from "node:child_process";
-import { assertAllowedOwner, parseArgs, parseJob, repoRoot, validateJob } from "./lib.js";
+import {
+  assertAllowedOwner,
+  currentProjectRepo,
+  parseArgs,
+  parseJob,
+  repoRoot,
+  validateJob,
+} from "./lib.js";
 import {
   automergeRepairOutcomeComment,
   externalMessageProvenance,
@@ -87,6 +94,10 @@ import {
   firstTargetSourcePullRequest,
 } from "./source-pr-checkout.js";
 import { mergeAutomergeTimelineSection } from "./automerge-status-timeline.js";
+import {
+  hasAutofixAuthorization,
+  postRepairReviewLabelTransition,
+} from "./review-label-transition.js";
 import { sleepMs } from "./timing.js";
 import {
   isRepairBranchPushBlocked,
@@ -1062,6 +1073,16 @@ function pushRepairBranchAndUpdateStatus({
     }
     throw error;
   }
+  const reviewLabelTransition = hasAutofixAuthorization(livePull)
+    ? applyPostRepairReviewLabelTransition({
+        repo: result.repo,
+        pullNumber: sourcePr.number,
+        targetDir,
+      })
+    : null;
+  const nativeReviewHandoff = ["completed", "partial"].includes(
+    String(reviewLabelTransition?.status ?? ""),
+  );
   const threadResolution = prepareReviewThreadsForMerge({
     repo: result.repo,
     number: sourcePr.number,
@@ -1073,6 +1094,7 @@ function pushRepairBranchAndUpdateStatus({
     validationCommands: prep.merge_preflight.validation_commands,
     commit: prep.commit,
     fastRepair,
+    nativeReviewHandoff,
   });
   if (!statusCommentUpdated) {
     const comment = repairContributorBranchComment({
@@ -1094,10 +1116,12 @@ function pushRepairBranchAndUpdateStatus({
       },
     );
   }
-  const shepherd = waitForAutomergeAfterBranchRepair({
-    target: sourcePr.number,
-    commit: prep.commit,
-  });
+  const shepherd = nativeReviewHandoff
+    ? { status: "skipped", reason: "target native review owns the repaired head" }
+    : waitForAutomergeAfterBranchRepair({
+        target: sourcePr.number,
+        commit: prep.commit,
+      });
   return {
     action: "repair_contributor_branch",
     status: "pushed",
@@ -1109,8 +1133,71 @@ function pushRepairBranchAndUpdateStatus({
     fast_rebase: fastRepair?.status === "ready" ? fastRepair : null,
     automerge_shepherd: shepherd,
     status_comment_updated: statusCommentUpdated,
+    review_label_transition: reviewLabelTransition,
     merge_preflight: prep.merge_preflight,
     review_threads: threadResolution,
+  };
+}
+
+function applyPostRepairReviewLabelTransition({ repo, pullNumber, targetDir }: LooseRecord) {
+  const targetRepo = String(repo);
+  const targetNumber = Number(pullNumber);
+  const transition = postRepairReviewLabelTransition(targetRepo, targetNumber);
+  if (!transition) return null;
+  const commandOptions = {
+    cwd: targetDir,
+    env: ghEnv(),
+    timeoutMs: currentNetworkCommandTimeoutMs(),
+  };
+  try {
+    run("gh", transition.addArgs, commandOptions);
+    const labels = JSON.parse(
+      run(
+        "gh",
+        [
+          "pr",
+          "view",
+          String(targetNumber),
+          "--repo",
+          targetRepo,
+          "--json",
+          "labels",
+          "--jq",
+          "[.labels[].name]",
+        ],
+        commandOptions,
+      ) || "[]",
+    );
+    if (!Array.isArray(labels) || !labels.includes(transition.addedLabel)) {
+      return {
+        status: "failed",
+        stage: "verify_review_label",
+        reason: `GitHub did not report ${transition.addedLabel} after adding it; retained ${transition.removedLabel}`,
+      };
+    }
+  } catch (error) {
+    return {
+      status: "failed",
+      stage: "add_review_label",
+      reason: compactText(error instanceof Error ? error.message : String(error), 500),
+    };
+  }
+
+  try {
+    run("gh", transition.removeArgs, commandOptions);
+  } catch (error) {
+    return {
+      status: "partial",
+      stage: "remove_autofix_label",
+      added_label: transition.addedLabel,
+      retained_label: transition.removedLabel,
+      reason: compactText(error instanceof Error ? error.message : String(error), 500),
+    };
+  }
+  return {
+    status: "completed",
+    removed_label: transition.removedLabel,
+    added_label: transition.addedLabel,
   };
 }
 
@@ -3763,12 +3850,20 @@ function updateAutomergeStatusCommentForBranchRepair({
   validationCommands,
   commit,
   fastRepair = null,
+  nativeReviewHandoff = false,
 }: LooseRecord) {
   if (!isAutomergeRepairJob()) return false;
   if (Number(target) !== Number(automergeOutcomeTargetPrNumber())) return false;
   const existingStatus = findAutomergeStatusComment(target);
   const runUrl = currentActionsRunUrl();
-  const reviewDispatch = dispatchAutomergeReviewAfterBranchRepair({ target, commit });
+  const reviewDispatch = nativeReviewHandoff
+    ? {
+        status: "skipped",
+        reason: "target native review owns the repaired head",
+        repo: currentProjectRepo(),
+        dispatched_at: new Date().toISOString(),
+      }
+    : dispatchAutomergeReviewAfterBranchRepair({ target, commit });
   const body = [
     "🦞🔧",
     "ClawSweeper applied a repair to this PR branch.",
@@ -3782,7 +3877,9 @@ function updateAutomergeStatusCommentForBranchRepair({
     "",
     reviewDispatch.status === "executed"
       ? "Current state: exact-head review queued immediately; GitHub checks and the review verdict gate final merge."
-      : "Current state: waiting for GitHub checks and the next router pass to continue automerge.",
+      : nativeReviewHandoff
+        ? "Current state: target native review owns the repaired head."
+        : "Current state: waiting for GitHub checks and the next router pass to continue automerge.",
     ...(reviewDispatch.status === "failed" ? [`Review dispatch: ${reviewDispatch.reason}`] : []),
   ].join("\n");
   const bodyWithTimeline = mergeAutomergeTimelineSection({
@@ -3903,6 +4000,11 @@ function waitForAutomergeAfterBranchRepair({ target, commit }: LooseRecord) {
   };
 }
 
+function reviewDispatchEnv() {
+  const token = String(process.env.CLAWSWEEPER_REVIEW_TOKEN ?? "").trim();
+  return token ? { ...ghEnv(), GH_TOKEN: token } : ghEnv();
+}
+
 function dispatchAutomergeCommentRouter({
   target,
   reason,
@@ -3910,7 +4012,7 @@ function dispatchAutomergeCommentRouter({
   maxComments = "20",
   forceReprocess = false,
 }: LooseRecord) {
-  const reviewRepo = String(process.env.CLAWSWEEPER_REVIEW_REPO ?? "openclaw/clawsweeper").trim();
+  const reviewRepo = String(process.env.CLAWSWEEPER_REVIEW_REPO ?? currentProjectRepo()).trim();
   const dispatchedAt = new Date().toISOString();
   const payloadPath = writePayload(`automerge-router-dispatch-${target}-${Date.now()}`, {
     event_type: "clawsweeper_comment",
@@ -3931,7 +4033,7 @@ function dispatchAutomergeCommentRouter({
       ["api", `repos/${reviewRepo}/dispatches`, "--method", "POST", "--input", payloadPath],
       {
         cwd: repoRoot(),
-        env: ghEnv(),
+        env: reviewDispatchEnv(),
         timeoutMs: currentNetworkCommandTimeoutMs(),
       },
     );
@@ -3947,10 +4049,10 @@ function dispatchAutomergeCommentRouter({
 }
 
 function dispatchAutomergeReviewAfterBranchRepair({ target, commit }: LooseRecord) {
-  const reviewRepo = String(process.env.CLAWSWEEPER_REVIEW_REPO ?? "openclaw/clawsweeper").trim();
+  const reviewRepo = String(process.env.CLAWSWEEPER_REVIEW_REPO ?? currentProjectRepo()).trim();
   const dispatchedAt = new Date().toISOString();
   const payloadPath = writePayload(`automerge-review-dispatch-${target}-${commit}`, {
-    event_type: "clawsweeper_item",
+    event_type: "clawsweeper_repair_item",
     client_payload: {
       target_repo: result.repo,
       item_number: String(target),
@@ -3966,7 +4068,7 @@ function dispatchAutomergeReviewAfterBranchRepair({ target, commit }: LooseRecor
       ["api", `repos/${reviewRepo}/dispatches`, "--method", "POST", "--input", payloadPath],
       {
         cwd: repoRoot(),
-        env: ghEnv(),
+        env: reviewDispatchEnv(),
         timeoutMs: currentNetworkCommandTimeoutMs(),
       },
     );

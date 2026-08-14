@@ -7,8 +7,10 @@ name: ClawSweeper
 run-name: ${{ github.event_name == 'repository_dispatch' && format('Review event item {0}#{1}', github.event.client_payload.target_repo || 'bermont-digital/multica', github.event.client_payload.item_number || '?') || (github.event_name == 'workflow_dispatch' && github.event.inputs.apply_existing == 'true' && github.event.inputs.apply_sync_comments_only == 'true') && format('Sync Codex review comments — {0}', github.event.inputs.target_repo || 'bermont-digital/multica') || (github.event_name == 'workflow_dispatch' && github.event.inputs.apply_existing == 'true') && format('Apply ClawSweeper closures — {0}', github.event.inputs.target_repo || 'bermont-digital/multica') || (github.event_name == 'workflow_dispatch' && github.event.inputs.audit_dashboard == 'true') && format('Audit ClawSweeper state — {0}', github.event.inputs.target_repo || 'bermont-digital/multica') || (github.event_name == 'workflow_dispatch' && github.event.inputs.hot_intake == 'true') && format('Review hot ClawSweeper items — {0}', github.event.inputs.target_repo || 'bermont-digital/multica') || (github.event_name == 'workflow_dispatch' && github.event.inputs.item_number != '') && format('Review ClawSweeper items — {0}#{1}', github.event.inputs.target_repo || 'bermont-digital/multica', github.event.inputs.item_number) || (github.event_name == 'workflow_dispatch' && github.event.inputs.item_numbers != '') && format('Review ClawSweeper items — {0} [{1}]', github.event.inputs.target_repo || 'bermont-digital/multica', github.event.inputs.item_numbers) || github.event_name == 'workflow_dispatch' && format('Review ClawSweeper items — {0}', github.event.inputs.target_repo || 'bermont-digital/multica') || 'Review ClawSweeper items' }}
 
 on:
-  # Manual only. Repository-dispatch hot intake and scheduled sweeps are paused
-  # so ClawSweeper does not spend Codex quota without an operator request.
+  # Broad hot-intake and scheduled sweeps stay paused. This exact-item event is
+  # emitted only by an explicit autofix/repair authorization.
+  repository_dispatch:
+    types: [clawsweeper_repair_item]
   workflow_dispatch:
     inputs:
       target_repo:
@@ -178,11 +180,15 @@ jobs:
 
       - name: Resolve event payload
         id: target
+        env:
+          EVENT_TARGET_REPO: ${{ github.event.client_payload.target_repo || '' }}
+          EVENT_ITEM_NUMBER: ${{ github.event.client_payload.item_number || '' }}
+          EVENT_ITEM_KIND: ${{ github.event.client_payload.item_kind || '' }}
         run: |
           set -euo pipefail
-          target_repo="${{ github.event.client_payload.target_repo || '' }}"
-          item_number="${{ github.event.client_payload.item_number || '' }}"
-          item_kind="${{ github.event.client_payload.item_kind || '' }}"
+          target_repo="$EVENT_TARGET_REPO"
+          item_number="$EVENT_ITEM_NUMBER"
+          item_kind="$EVENT_ITEM_KIND"
           if ! printf '%s' "$target_repo" | grep -Eq '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$'; then
             echo "Invalid target_repo: $target_repo" >&2
             exit 1

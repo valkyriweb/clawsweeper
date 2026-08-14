@@ -17,7 +17,10 @@ back to the Valkyriweb App. Missing selected credentials fail during token mint.
 
 Do **not** install the Bermont App on `valkyriweb/*`. Do **not** add either
 Bermont credential to SaleSight, Smilerite, Multica, or any other target repo.
-Do **not** add a target dispatcher or enable `repository_dispatch`.
+Do **not** add a Bermont target dispatcher. The engine's narrow
+`clawsweeper_repair_item` receiver is reserved for explicitly authorized
+personal/Valkyriweb repair traffic; broad or Bermont target-side dispatch
+remains disabled.
 
 ## Manual canary order
 

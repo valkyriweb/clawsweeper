@@ -24,6 +24,16 @@ The loader rejects missing or unknown policy values. Mutation executors also
 resolve the policy independently and fail closed for missing or unsupported
 targets, so prompts and workflow inputs cannot grant automation.
 
+A target may set `post_repair_review_label` to hand a successfully pushed repair
+back to its native review lane. The branch push itself triggers the target's
+review workflow; the label records lane ownership and need not emit a separate
+event. After the push, ClawSweeper adds and verifies that configured review
+label before removing `clawsweeper:autofix`.
+Metadata failures are reported without turning an already-pushed repair into a
+replacement PR; the autofix label is retained whenever the review handoff could
+not be verified. The field is optional; targets without it retain the normal
+ClawSweeper review loop.
+
 `openclaw/openclaw` remains a built-in profile because it has broader
 auto-close policy. Other configured targets default to safer repo-local rules:
 issues are review/comment-only, and PRs may auto-close only when the same

@@ -187,7 +187,8 @@ test("manual sweep routes every target token through the facade and keeps contro
     workflow,
     /target_repo:\n\s+description: "Repository to sweep \(explicit configured profile required\)"\n\s+required: true/,
   );
-  assert.doesNotMatch(workflow, /^\s+repository_dispatch:\s*$/m);
+  assert.match(workflow, /^\s+repository_dispatch:\s*\n\s+types: \[clawsweeper_repair_item\]$/m);
+  assert.doesNotMatch(workflow, /types: \[clawsweeper_item\]/);
   assert.doesNotMatch(workflow, /^\s+schedule:\s*$/m);
   assert.match(workflow, /repositories: clawsweeper-state/);
   // The Pi package is pulled with a read:packages PAT (secret), not an app token
