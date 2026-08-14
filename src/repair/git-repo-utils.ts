@@ -98,7 +98,7 @@ export function branchHasBaseDiff({ targetDir, baseBranch }: TargetBaseBranch): 
 }
 
 export function ensureMergeBaseAvailable({ targetDir, baseBranch }: TargetBaseBranch): string {
-  gitFetch(targetDir, ["origin", `${baseBranch}:refs/remotes/origin/${baseBranch}`]);
+  gitFetch(targetDir, baseBranchFetchArgs(baseBranch));
   const baseRef = `origin/${baseBranch}`;
   const first = spawnSync("git", ["merge-base", baseRef, "HEAD"], {
     cwd: targetDir,
@@ -249,7 +249,26 @@ function fetchDeeperHistory({ targetDir, baseBranch }: TargetBaseBranch): void {
   } else {
     gitFetch(targetDir, ["origin", "--prune"]);
   }
-  gitFetch(targetDir, ["origin", `${baseBranch}:refs/remotes/origin/${baseBranch}`]);
+  gitFetch(targetDir, baseBranchFetchArgs(baseBranch));
+}
+
+/**
+ * Fetch args for the base branch that cannot delete the ref they are meant to
+ * create.
+ *
+ * Two hazards, both only visible when the environment enables pruning
+ * (`fetch.prune=true`, common in developer and self-hosted runner git config):
+ *
+ * - An abbreviated source ref (`main:refs/remotes/origin/main`) makes prune
+ *   treat `refs/remotes/origin/main` as unmatched and delete it, so the very
+ *   next `git merge-base origin/main HEAD` fails with
+ *   "Not a valid object name origin/main". Fully qualifying the source ref
+ *   avoids this.
+ * - `--no-prune` keeps a targeted single-branch fetch from pruning anything at
+ *   all. Wholesale pruning stays in `fetchDeeperHistory`, where it is intended.
+ */
+function baseBranchFetchArgs(baseBranch: string): string[] {
+  return ["--no-prune", "origin", `+refs/heads/${baseBranch}:refs/remotes/origin/${baseBranch}`];
 }
 
 function gitFetch(targetDir: string, args: string[]): void {

@@ -5,7 +5,31 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
 
-import { completeRebaseIfResolved, rebaseOntoBase } from "../../dist/repair/git-repo-utils.js";
+import {
+  completeRebaseIfResolved,
+  ensureMergeBaseAvailable,
+  rebaseOntoBase,
+} from "../../dist/repair/git-repo-utils.js";
+
+test("ensureMergeBaseAvailable keeps the base ref when pruning is enabled", () => {
+  const { work } = fixtureRepo();
+  run("git", ["config", "fetch.prune", "true"], { cwd: work });
+  const expected = run("git", ["rev-parse", "HEAD"], { cwd: work });
+
+  assert.equal(ensureMergeBaseAvailable({ targetDir: work, baseBranch: "main" }), expected);
+  assert.equal(run("git", ["rev-parse", "origin/main"], { cwd: work }), expected);
+});
+
+test("rebaseOntoBase survives a pruning git configuration", () => {
+  const { work } = fixtureRepo();
+  run("git", ["config", "fetch.prune", "true"], { cwd: work });
+  run("git", ["checkout", "-b", "feature"], { cwd: work });
+  fs.writeFileSync(path.join(work, "feature.txt"), "feature\n");
+  run("git", ["add", "feature.txt"], { cwd: work });
+  run("git", ["commit", "-m", "feature"], { cwd: work });
+
+  assert.equal(rebaseOntoBase({ targetDir: work, baseBranch: "main" }).status, "already-current");
+});
 
 test("rebaseOntoBase rebases a repair branch onto latest origin main", () => {
   const { work } = fixtureRepo();
