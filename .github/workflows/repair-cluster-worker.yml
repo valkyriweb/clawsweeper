@@ -304,6 +304,17 @@ jobs:
           permission-pull-requests: write
           permission-workflows: write
 
+      - name: Create engine dispatch token
+        id: engine-token
+        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+        with:
+          client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
+          private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-actions: write
+          permission-contents: write
+
       - name: Create state token
         id: state-token
         uses: ./.github/actions/create-state-token
@@ -352,6 +363,8 @@ jobs:
         timeout-minutes: 40
         env:
           GH_TOKEN: ${{ steps.app_token.outputs.token }}
+          CLAWSWEEPER_REVIEW_REPO: ${{ github.repository }}
+          CLAWSWEEPER_REVIEW_TOKEN: ${{ steps.engine-token.outputs.token }}
         run: pnpm run repair:execute-fix -- "${{ inputs.job }}" --latest
 
       - name: Apply safe closure actions
@@ -390,7 +403,7 @@ jobs:
       - name: Requeue source-head repair races
         if: ${{ steps.repair_requeue.outputs.count != '' && steps.repair_requeue.outputs.count != '0' }}
         env:
-          GH_TOKEN: ${{ steps.app_token.outputs.token }}
+          GH_TOKEN: ${{ steps.engine-token.outputs.token }}
           CLAWSWEEPER_MUTATION_TOKEN_SOURCE: clawsweeper-app
         run: |
           set -euo pipefail

@@ -1914,7 +1914,7 @@ function dispatchClawSweeperReview(command: LooseRecord) {
         }
       : {};
   const payload = JSON.stringify({
-    event_type: "clawsweeper_item",
+    event_type: "clawsweeper_repair_item",
     client_payload: {
       target_repo: command.repo,
       item_number: String(command.issue_number),

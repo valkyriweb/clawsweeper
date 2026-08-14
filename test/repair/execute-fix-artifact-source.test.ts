@@ -51,6 +51,45 @@ test("repair source branch writability preflight runs before expensive repair pr
   );
 });
 
+test("successful contributor branch pushes hand configured targets back to review", () => {
+  const sourcePath = path.join(process.cwd(), "src/repair/execute-fix-artifact.ts");
+  const source = fs.readFileSync(sourcePath, "utf8");
+  const start = source.indexOf("function pushRepairBranchAndUpdateStatus(");
+  const end = source.indexOf("function applyPostRepairReviewLabelTransition(", start);
+  assert.notEqual(start, -1);
+  assert.notEqual(end, -1);
+  const pushFlow = source.slice(start, end);
+
+  const pushIndex = pushFlow.indexOf("runGitNetwork(pushArgs, targetDir);");
+  const transitionIndex = pushFlow.indexOf("applyPostRepairReviewLabelTransition({");
+  assert.notEqual(pushIndex, -1);
+  assert.notEqual(transitionIndex, -1);
+  assert.match(
+    pushFlow,
+    /hasAutofixAuthorization\(livePull\)[\s\S]*applyPostRepairReviewLabelTransition/,
+  );
+  assert.match(pushFlow, /nativeReviewHandoff[\s\S]*target native review owns the repaired head/);
+  assert.ok(
+    pushIndex < transitionIndex,
+    "the review-label handoff must happen only after a successful push",
+  );
+  assert.match(pushFlow, /review_label_transition: reviewLabelTransition/);
+
+  const transitionHelper = source.slice(
+    end,
+    source.indexOf("function openReplacementPrFromPreparedRepairCheckout(", end),
+  );
+  const addIndex = transitionHelper.indexOf("transition.addArgs");
+  const verifyIndex = transitionHelper.indexOf('"[.labels[].name]"');
+  const removeIndex = transitionHelper.indexOf("transition.removeArgs");
+  assert.ok(
+    addIndex < verifyIndex && verifyIndex < removeIndex,
+    "review label must be added and verified before autofix authorization is removed",
+  );
+  assert.match(transitionHelper, /status: "failed"/);
+  assert.match(transitionHelper, /status: "partial"/);
+});
+
 test("merged source replacement skip runs before publishing replacement PRs", () => {
   const sourcePath = path.join(process.cwd(), "src/repair/execute-fix-artifact.ts");
   const source = fs.readFileSync(sourcePath, "utf8");

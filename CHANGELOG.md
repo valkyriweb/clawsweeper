@@ -9,6 +9,9 @@ checkpoint, and status-only commits are intentionally omitted.
 
 ### Changed
 
+- Added an optional per-target `post_repair_review_label` handoff. After a successful contributor-branch repair push, ClawSweeper adds and verifies the configured native review label before removing `clawsweeper:autofix`; `valkyriweb/my-pi` now returns repaired heads to `agentic-review` without converting metadata failures into replacement PRs.
+- Enabled the narrow `clawsweeper_repair_item` repository-dispatch receiver for explicitly authorized autofix/re-review work while keeping broad `clawsweeper_item` intake and scheduled sweeps paused. Repair workers now mint a separate engine-scoped dispatch token instead of reusing the target-repository token; targets with a native review handoff skip the duplicate ClawSweeper re-review.
+
 - Deprecated `gpt-5.5`: the repair/fix cluster workers and issue-implementation
   intake now default to `gpt-5.6-terra` (matching the review lanes switched in
   #170). Affects the `CLAWSWEEPER_MODEL` / `CLAWSWEEPER_FIX_MODEL` fallbacks in

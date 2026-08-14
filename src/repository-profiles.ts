@@ -87,6 +87,9 @@ export interface RepositoryProfile {
   // set this so commit-review runs on the branch that actually ships instead of
   // being rejected at the branch gate. Full ref form: `refs/heads/<branch>`.
   commitReviewRef?: string;
+  // Optional label applied after a successful contributor-branch repair push.
+  // Targets use this to hand the new head back to their native review lane.
+  postRepairReviewLabel?: string;
 }
 
 interface TargetRepositoryConfig {
@@ -114,6 +117,7 @@ interface ConfiguredRepositoryProfile {
   reviewProvider?: ReviewProvider;
   includeMaintainerAuthored?: boolean;
   commitReviewRef?: string;
+  postRepairReviewLabel?: string;
 }
 
 // Branch whose pushes commit-review accepts when a target sets no explicit
@@ -351,6 +355,7 @@ function configuredRepositoryProfile(profile: ConfiguredRepositoryProfile): Repo
     result.includeMaintainerAuthored = profile.includeMaintainerAuthored;
   }
   if (profile.commitReviewRef) result.commitReviewRef = profile.commitReviewRef;
+  if (profile.postRepairReviewLabel) result.postRepairReviewLabel = profile.postRepairReviewLabel;
   return result;
 }
 
@@ -513,6 +518,12 @@ function validateConfiguredRepositoryProfile(
     result.commitReviewRef = branchRefValue(
       profile.commit_review_ref,
       `${label}.commit_review_ref`,
+    );
+  }
+  if (profile.post_repair_review_label !== undefined) {
+    result.postRepairReviewLabel = githubLabelValue(
+      profile.post_repair_review_label,
+      `${label}.post_repair_review_label`,
     );
   }
   return result;
@@ -687,6 +698,14 @@ function branchRefValue(value: unknown, label: string): string {
     branch.split("/").every((part) => part && !part.startsWith(".") && !part.endsWith(".lock"));
   if (!safe) throw new Error(`${label} must be a safe refs/heads/<branch> ref`);
   return ref;
+}
+
+function githubLabelValue(value: unknown, label: string): string {
+  const name = stringValue(value, label).trim();
+  if (name.length > 50 || hasControlCharacter(name) || name.includes(",")) {
+    throw new Error(`${label} must be a safe GitHub label`);
+  }
+  return name;
 }
 
 function pathSegmentValue(value: unknown, label: string): string {
