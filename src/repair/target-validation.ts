@@ -17,6 +17,7 @@ import {
   looksLikePathArgument,
   packageScriptRequirement,
   parseAllowedValidationCommand,
+  pnpmCommandStart,
   stripEnvPrefix,
   uniqueStrings,
 } from "./validation-command-utils.js";
@@ -556,10 +557,7 @@ function resolveAllowedValidationCommands(
     }
   }
   if (commandParts[0] === "pnpm") {
-    let commandStart = commandParts[1] === "-s" || commandParts[1] === "--silent" ? 2 : 1;
-    while (commandParts[commandStart] === "--filter" || commandParts[commandStart] === "-F") {
-      commandStart += 2;
-    }
+    const commandStart = pnpmCommandStart(commandParts);
     const pnpmScript = commandParts[commandStart];
     if (isExpensivePnpmValidation(commandParts, commandStart, options.allowExpensiveValidation)) {
       return [["pnpm", "check:changed"]];
