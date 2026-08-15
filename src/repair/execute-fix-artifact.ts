@@ -897,7 +897,15 @@ function executeRepairBranch({ fixArtifact, targetDir }: LooseRecord) {
     `clawsweeper-repair/repair-${result.cluster_id}-${sourcePr.number}`,
   );
   logProgress("fetching latest base for contributor repair", { base_branch: baseBranch });
-  runGitNetwork(["fetch", "origin", `${baseBranch}:refs/remotes/origin/${baseBranch}`], targetDir);
+  runGitNetwork(
+    [
+      "fetch",
+      "--no-prune",
+      "origin",
+      `+refs/heads/${baseBranch}:refs/remotes/origin/${baseBranch}`,
+    ],
+    targetDir,
+  );
   logProgress("fetching contributor PR head", {
     source_pr: sourcePr.url,
     head_repo: pull.head.repo.full_name,
@@ -2396,7 +2404,15 @@ function reconcileLatestBaseBeforePush({
   repositoryContext,
   sourceHead,
 }: LooseRecord) {
-  runGitNetwork(["fetch", "origin", `${baseBranch}:refs/remotes/origin/${baseBranch}`], targetDir);
+  runGitNetwork(
+    [
+      "fetch",
+      "--no-prune",
+      "origin",
+      `+refs/heads/${baseBranch}:refs/remotes/origin/${baseBranch}`,
+    ],
+    targetDir,
+  );
   const baseRef = `origin/${baseBranch}`;
   if (isAncestor({ targetDir, ancestor: baseRef, descendant: "HEAD" })) {
     return { status: "already-current" };
