@@ -93,7 +93,9 @@ jobs:
             results
             scripts/hydrate-state.ts
             src/repair
+            src/model-registry.ts
             src/repository-profiles.ts
+            src/review-tier-drift.ts
             src/usage-telemetry.ts
             package.json
             pnpm-lock.yaml
