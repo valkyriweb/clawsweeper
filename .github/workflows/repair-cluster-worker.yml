@@ -324,6 +324,21 @@ jobs:
           permission-pull-requests: write
           permission-workflows: write
 
+      # Target installs may pull @valkyriweb npm packages from GitHub
+      # Packages (e.g. my-pi → @valkyriweb/agent-relay, published from the
+      # agent-relay repo). Packages are linked to their source repo, so the
+      # target-scoped app_token above cannot read them — mint an
+      # installation-wide packages:read token and expose it as
+      # NODE_AUTH_TOKEN for target .npmrc auth.
+      - name: Create packages read token
+        id: packages-token
+        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+        with:
+          client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
+          private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
+          owner: ${{ steps.target.outputs.owner }}
+          permission-packages: read
+
       - name: Create engine dispatch token
         id: engine-token
         uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
@@ -369,6 +384,7 @@ jobs:
         timeout-minutes: 40
         env:
           GH_TOKEN: ${{ steps.app_token.outputs.token }}
+          NODE_AUTH_TOKEN: ${{ steps.packages-token.outputs.token }}
           CLAWSWEEPER_REVIEW_REPO: ${{ github.repository }}
           CLAWSWEEPER_REVIEW_TOKEN: ${{ steps.engine-token.outputs.token }}
         run: pnpm run repair:execute-fix -- "${{ inputs.job }}" --latest
