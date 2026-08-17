@@ -92,6 +92,22 @@ jobs:
         with:
           filter: blob:none
 
+      - name: Create state token
+        id: state-token
+        uses: ./.github/actions/create-state-token
+        with:
+          client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
+          private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
+          owner: valkyriweb
+          repository: clawsweeper-state
+
+      # Jobs live in the generated state repo; hydrate before resolving the
+      # target so JOB_PATH exists in the worktree.
+      - uses: ./.github/actions/setup-state
+        with:
+          token: ${{ steps.state-token.outputs.token }}
+          state-repository: valkyriweb/clawsweeper-state
+
       - name: Resolve target repository
         id: target
         env:
@@ -129,20 +145,6 @@ jobs:
           permission-contents: read
           permission-issues: read
           permission-pull-requests: read
-
-      - name: Create state token
-        id: state-token
-        uses: ./.github/actions/create-state-token
-        with:
-          client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
-          private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
-          owner: valkyriweb
-          repository: clawsweeper-state
-
-      - uses: ./.github/actions/setup-state
-        with:
-          token: ${{ steps.state-token.outputs.token }}
-          state-repository: valkyriweb/clawsweeper-state
 
       - name: Check job file
         id: check_job
@@ -264,6 +266,22 @@ jobs:
         with:
           filter: blob:none
 
+      - name: Create state token
+        id: state-token
+        uses: ./.github/actions/create-state-token
+        with:
+          client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
+          private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
+          owner: valkyriweb
+          repository: clawsweeper-state
+
+      # Jobs live in the generated state repo; hydrate before resolving the
+      # target so JOB_PATH exists in the worktree.
+      - uses: ./.github/actions/setup-state
+        with:
+          token: ${{ steps.state-token.outputs.token }}
+          state-repository: valkyriweb/clawsweeper-state
+
       - name: Resolve target repository
         id: target
         env:
@@ -314,20 +332,6 @@ jobs:
           repositories: ${{ github.event.repository.name }}
           permission-actions: write
           permission-contents: write
-
-      - name: Create state token
-        id: state-token
-        uses: ./.github/actions/create-state-token
-        with:
-          client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
-          private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
-          owner: valkyriweb
-          repository: clawsweeper-state
-
-      - uses: ./.github/actions/setup-state
-        with:
-          token: ${{ steps.state-token.outputs.token }}
-          state-repository: valkyriweb/clawsweeper-state
 
       - name: Check job file
         id: check_job
