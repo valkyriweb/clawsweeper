@@ -75,10 +75,46 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Scheduled ticks fan out one workflow_dispatch per configured target
+  # repository instead of routing a single vars.CLAWSWEEPER_TARGET_REPO.
+  # Each child run resolves its own owner-scoped app token, and per-repo
+  # concurrency groups keep overlapping sweeps serialized. GITHUB_TOKEN is
+  # allowed to create workflow_dispatch runs (documented exception to the
+  # no-recursive-triggers rule).
+  fan-out-scheduled-sweep:
+    if: ${{ github.event_name == 'schedule' && (vars.CLAWSWEEPER_COMMENT_ROUTER_EXECUTE || '0') == '1' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: |
+            config/target-repositories.json
+          sparse-checkout-cone-mode: false
+
+      - name: Dispatch router per target repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          failed=0
+          while IFS= read -r repo; do
+            echo "dispatching router for $repo"
+            if ! gh workflow run repair-comment-router.yml \
+              -R "${{ github.repository }}" \
+              -r "${{ github.ref_name }}" \
+              -f execute=true \
+              -f target_repo="$repo"; then
+              echo "::warning::dispatch failed for $repo"
+              failed=$((failed+1))
+            fi
+          done < <(jq -r '.repositories[].target_repo' config/target-repositories.json)
+          [ "$failed" -eq 0 ] || exit 1
+
   route-comments:
-    # Scheduled runs only matter when execute mode is on; skip the full
-    # build + state clone for scan-only ticks (event/dispatch runs always run).
-    if: ${{ github.event_name != 'schedule' || (vars.CLAWSWEEPER_COMMENT_ROUTER_EXECUTE || '0') == '1' }}
+    # Scheduled ticks are handled by fan-out-scheduled-sweep above; this job
+    # only runs for real events and per-repo dispatches.
+    if: ${{ github.event_name != 'schedule' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -313,3 +349,27 @@ jobs:
             --path results/comment-router-latest.json \
             --path jobs \
             --rebase-strategy theirs
+
+  # Scheduled/automated router failures were previously silent (nobody
+  # watches the Actions tab for cron runs). Keep one sticky alert issue
+  # up to date instead of opening a new issue per failure.
+  alert-on-failure:
+    needs: [fan-out-scheduled-sweep, route-comments]
+    if: ${{ always() && contains(needs.*.result, 'failure') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Create or update alert issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          title="ClawSweeper comment router failing"
+          run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          body="Scheduled/automated comment-router run failed (event: ${{ github.event_name }}): $run_url"
+          existing="$(gh issue list -R "${{ github.repository }}" --state open --search "in:title \"$title\"" --json number --jq '.[0].number // empty')"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" -R "${{ github.repository }}" --body "$body"
+          else
+            gh issue create -R "${{ github.repository }}" --title "$title" --body "$body"
+          fi
