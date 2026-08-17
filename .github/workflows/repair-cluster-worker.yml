@@ -114,7 +114,7 @@ jobs:
           JOB_PATH: ${{ inputs.job }}
         run: |
           set -euo pipefail
-          target_repo="$(node -e 'const fs = require("fs"); const value = fs.readFileSync(process.env.JOB_PATH, "utf8").match(/^repository:\s*([^\s#]+)\s*$/m)?.[1]; if (!value) process.exit(1); process.stdout.write(value)' || true)"
+          target_repo="$(node -e 'const fs = require("fs"); const value = fs.readFileSync(process.env.JOB_PATH, "utf8").match(/^(?:repo|repository):\s*([^\s#]+)\s*$/m)?.[1]; if (!value) process.exit(1); process.stdout.write(value)' || true)"
           if ! printf '%s' "$target_repo" | grep -Eq '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$'; then
             echo "Could not resolve target repository from job: $JOB_PATH" >&2
             exit 1
@@ -288,7 +288,7 @@ jobs:
           JOB_PATH: ${{ inputs.job }}
         run: |
           set -euo pipefail
-          target_repo="$(node -e 'const fs = require("fs"); const value = fs.readFileSync(process.env.JOB_PATH, "utf8").match(/^repository:\s*([^\s#]+)\s*$/m)?.[1]; if (!value) process.exit(1); process.stdout.write(value)' || true)"
+          target_repo="$(node -e 'const fs = require("fs"); const value = fs.readFileSync(process.env.JOB_PATH, "utf8").match(/^(?:repo|repository):\s*([^\s#]+)\s*$/m)?.[1]; if (!value) process.exit(1); process.stdout.write(value)' || true)"
           if ! printf '%s' "$target_repo" | grep -Eq '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$'; then
             echo "Could not resolve target repository from job: $JOB_PATH" >&2
             exit 1
