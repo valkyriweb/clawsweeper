@@ -545,6 +545,20 @@ function resolveAllowedValidationCommands(
   const envPrefix = parts[0] === "env" ? parts.slice(0, parts.length - commandParts.length) : [];
   const scripts = readPackageScriptSet(cwd);
   if (
+    options.targetRepo !== "openclaw/openclaw" &&
+    commandParts[0] === "pnpm" &&
+    commandParts[1] === "check:changed" &&
+    commandParts.length === 2 &&
+    !scripts.has("check:changed")
+  ) {
+    // `pnpm check:changed` is the OpenClaw changed-surface gate. Fix
+    // artifacts (e.g. deterministic automerge) request it by default, but
+    // non-OpenClaw targets often have no such script — substitute the
+    // target's best available validation script instead of blocking with
+    // validation_script_missing.
+    return nonOpenClawChangedGateSubstitute(cwd, scripts);
+  }
+  if (
     !options.strictTargetValidation &&
     scripts.has("check:changed") &&
     commandParts[0] !== "git"
@@ -664,6 +678,14 @@ function readPackageScriptSet(cwd: string) {
   } catch {
     return new Set<string>();
   }
+}
+
+function nonOpenClawChangedGateSubstitute(cwd: string, scripts: Set<string>): string[][] {
+  const runner = fs.existsSync(path.join(cwd, "pnpm-lock.yaml")) ? ["pnpm"] : ["npm", "run"];
+  for (const name of ["validate", "check", "test"]) {
+    if (scripts.has(name)) return [[...runner, name]];
+  }
+  return [];
 }
 
 function requiresOpenClawChangedGate(cwd: string, options: TargetValidationOptions) {
