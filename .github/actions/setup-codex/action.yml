@@ -59,6 +59,18 @@ runs:
         fi
         # subscription and clawrouter modes need no extra install — subscription uses
         # the runner's existing auth.json; clawrouter talks to a remote Responses proxy.
+
+        # macOS AMFI can SIGKILL the npm-extracted platform binary with
+        # "code signature error 4" (invalid Team ID signature) after an
+        # in-place install — seen 2026-08-17 on mac-mini-1. An ad-hoc
+        # re-sign replaces the broken signature and clears the cached
+        # kernel verdict, so the binary runs again.
+        if [[ "$(uname -s)" == "Darwin" ]] && ! codex --version >/dev/null 2>&1; then
+          echo "codex binary failed to run; ad-hoc re-signing vendor binaries (macOS AMFI signature kill)"
+          while IFS= read -r bin; do
+            codesign --force -s - "$bin" || true
+          done < <(find "$HOME/.clawsweeper-repair/codex/lib/node_modules/@openai/codex" -type f -perm -111 -path '*vendor*' 2>/dev/null)
+        fi
         codex --version
 
     - name: Resolve Codex home
