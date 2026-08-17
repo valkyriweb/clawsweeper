@@ -142,6 +142,7 @@ jobs:
           private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
           owner: ${{ steps.target.outputs.owner }}
           repositories: ${{ steps.target.outputs.name }}
+          permission-checks: read
           permission-contents: read
           permission-issues: read
           permission-pull-requests: read
@@ -317,6 +318,7 @@ jobs:
           owner: ${{ steps.target.outputs.owner }}
           repositories: ${{ steps.target.outputs.name }}
           permission-actions: write
+          permission-checks: read
           permission-contents: write
           permission-issues: write
           permission-pull-requests: write
