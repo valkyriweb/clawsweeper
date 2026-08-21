@@ -60,7 +60,7 @@ This was completed by making the planner filter per-target opt-in:
   `include_maintainer_authored: boolean` flag (default false preserves the
   upstream skip).
 - `valkyriweb/openclaw-claude`, `valkyriweb/clawsweeper`, `valkyriweb/lue-kube`,
-  `valkyriweb/pi-mono`, `valkyriweb/openclaw` opt in (these are Luke's
+  `lue-labs/pi-mono`, `valkyriweb/openclaw` opt in (these are Luke's
   personal/ops repos where every issue is OWNER-authored).
 - Client targets (`bermont-digital/multica`, `CLIP-SA/core-ai`,
   `CLIP-SA/core-wholesale`) stay opted-out so bot review comments don't appear

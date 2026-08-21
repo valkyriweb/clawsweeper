@@ -124,7 +124,7 @@ test("valkyriweb/paperclip scopes commit-review to its bermont production branch
   assert.equal(paperclip.commitReviewRef, "refs/heads/bermont");
 
   // Targets that ship from main leave the field unset; the default applies downstream.
-  const piMono = repositoryProfileFor("valkyriweb/pi-mono");
+  const piMono = repositoryProfileFor("lue-labs/pi-mono");
   assert.equal(piMono.commitReviewRef, undefined);
 });
 
@@ -134,11 +134,11 @@ test("valkyriweb/my-pi profile configures the post-repair review handoff", () =>
   assert.equal(profile.postRepairReviewLabel, "agentic-review");
 });
 
-test("valkyriweb/pi-mono profile carries pi service-area routing notes", () => {
-  const profile = repositoryProfileFor("valkyriweb/pi-mono");
+test("lue-labs/pi-mono profile carries pi service-area routing notes", () => {
+  const profile = repositoryProfileFor("lue-labs/pi-mono");
 
-  assert.equal(profile.targetRepo, "valkyriweb/pi-mono");
-  assert.equal(profile.slug, "valkyriweb-pi-mono");
+  assert.equal(profile.targetRepo, "lue-labs/pi-mono");
+  assert.equal(profile.slug, "lue-labs-pi-mono");
   assert.equal(profile.checkoutDir, "pi-mono-fork");
   assert.match(profile.promptNote, /area:coding-agent/);
   assert.match(profile.promptNote, /area:extensions/);

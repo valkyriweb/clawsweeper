@@ -570,7 +570,7 @@ test("detectTargetPackageManager falls back to lockfile heuristic for pnpm", () 
 });
 
 test("detectTargetPackageManager detects npm from package-lock.json", () => {
-  // valkyriweb/pi-mono shape: npm workspaces, no packageManager field, no
+  // lue-labs/pi-mono shape: npm workspaces, no packageManager field, no
   // pnpm-lock.yaml. Without lockfile-driven detection the bootstrap would
   // default to pnpm and fail to install workspace-internal packages.
   const cwd = pmFixture(

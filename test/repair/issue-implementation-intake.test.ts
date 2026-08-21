@@ -159,14 +159,14 @@ test("strict docs reports are eligible for implementation intake", () => {
 
 test("strict regression reports are eligible for implementation intake", () => {
   const markdown = report({
-    repository: "valkyriweb/pi-mono",
+    repository: "lue-labs/pi-mono",
     item_category: "regression",
     labels: JSON.stringify(["area:ci"]),
     work_validation: JSON.stringify(["pnpm -F @pi-mono/ai check"]),
     work_likely_files: JSON.stringify(["packages/ai/src/models.generated.ts"]),
   });
   const decision = reportOnlyDecision({
-    targetRepo: "valkyriweb/pi-mono",
+    targetRepo: "lue-labs/pi-mono",
     report: parseReviewReport(markdown),
     reportMarkdown: markdown,
   });

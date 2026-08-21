@@ -825,7 +825,7 @@ test("target-repositories.json opts Luke's personal repos into maintainer-author
     "valkyriweb/openclaw-claude",
     "valkyriweb/clawsweeper",
     "valkyriweb/lue-kube",
-    "valkyriweb/pi-mono",
+    "lue-labs/pi-mono",
     "valkyriweb/openclaw",
   ]) {
     const profile = repositoryProfileFor(repo);
@@ -4938,7 +4938,7 @@ test("GitHub not found errors are recognizable non-retryable lookup misses", () 
 
 test("GitHub commit PR lookup 422 misses do not fail implemented-on-main reviews", () => {
   const error = new Error(
-    "Command failed: gh api repos/valkyriweb/pi-mono/commits/c5831df6f1e3f7a2bc7e7ad61fb53669840c438a/pulls\ngh: No commit found for SHA: c5831df6f1e3f7a2bc7e7ad61fb53669840c438a (HTTP 422)",
+    "Command failed: gh api repos/lue-labs/pi-mono/commits/c5831df6f1e3f7a2bc7e7ad61fb53669840c438a/pulls\ngh: No commit found for SHA: c5831df6f1e3f7a2bc7e7ad61fb53669840c438a (HTTP 422)",
   );
 
   assert.equal(isGitHubCommitPullLookupMiss(error), true);
