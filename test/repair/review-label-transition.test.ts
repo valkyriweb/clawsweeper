@@ -7,22 +7,14 @@ import {
 } from "../../dist/repair/review-label-transition.js";
 
 test("my-pi repair pushes hand the PR back to agentic review", () => {
-  assert.deepEqual(postRepairReviewLabelTransition("valkyriweb/my-pi", 1477), {
-    addArgs: [
-      "issue",
-      "edit",
-      "1477",
-      "--repo",
-      "valkyriweb/my-pi",
-      "--add-label",
-      "agentic-review",
-    ],
+  assert.deepEqual(postRepairReviewLabelTransition("lue-labs/my-pi", 1477), {
+    addArgs: ["issue", "edit", "1477", "--repo", "lue-labs/my-pi", "--add-label", "agentic-review"],
     removeArgs: [
       "issue",
       "edit",
       "1477",
       "--repo",
-      "valkyriweb/my-pi",
+      "lue-labs/my-pi",
       "--remove-label",
       "clawsweeper:autofix",
     ],
@@ -42,5 +34,5 @@ test("targets without a configured review handoff keep the existing repair flow"
 });
 
 test("repair review label transitions reject invalid pull request numbers", () => {
-  assert.throws(() => postRepairReviewLabelTransition("valkyriweb/my-pi", 0), /positive integer/);
+  assert.throws(() => postRepairReviewLabelTransition("lue-labs/my-pi", 0), /positive integer/);
 });

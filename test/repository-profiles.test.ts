@@ -128,8 +128,8 @@ test("valkyriweb/paperclip scopes commit-review to its bermont production branch
   assert.equal(piMono.commitReviewRef, undefined);
 });
 
-test("valkyriweb/my-pi profile configures the post-repair review handoff", () => {
-  const profile = repositoryProfileFor("valkyriweb/my-pi");
+test("lue-labs/my-pi profile configures the post-repair review handoff", () => {
+  const profile = repositoryProfileFor("lue-labs/my-pi");
 
   assert.equal(profile.postRepairReviewLabel, "agentic-review");
 });
