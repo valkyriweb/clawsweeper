@@ -17,7 +17,7 @@ Use these before anything larger:
 1. `valkyriweb/openclaw-claude` — low-risk ops/release hub target for release-risk, docs-state, and workflow triage.
 2. `valkyriweb/clawsweeper` — self-review, but watch recursion/noise.
 3. `valkyriweb/lue-kube` — ops repo; manual exact items only.
-4. `valkyriweb/pi-mono` — larger active fork; only after the first three look sane.
+4. `lue-labs/pi-mono` — larger active fork; only after the first three look sane.
 
 Avoid during ramp:
 

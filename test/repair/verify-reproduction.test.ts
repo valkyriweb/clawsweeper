@@ -14,7 +14,7 @@ import {
 function report(overrides: Record<string, string> = {}) {
   const fields: Record<string, string> = {
     number: "13",
-    repository: "valkyriweb/pi-mono",
+    repository: "lue-labs/pi-mono",
     type: "issue",
     state_at_review: "open",
     review_status: "complete",
@@ -45,7 +45,7 @@ function report(overrides: Record<string, string> = {}) {
 test("verifiable lane accepts source_reproducible reports that are otherwise strict", () => {
   const markdown = report();
   const decision = reportOnlyDecision({
-    targetRepo: "valkyriweb/pi-mono",
+    targetRepo: "lue-labs/pi-mono",
     report: parseReviewReport(markdown),
     reportMarkdown: markdown,
     lane: "verifiable",
@@ -58,7 +58,7 @@ test("verifiable lane accepts source_reproducible reports that are otherwise str
 test("verifiable lane rejects reports that already reproduce on main", () => {
   const markdown = report({ reproduction_status: "reproduced" });
   const decision = reportOnlyDecision({
-    targetRepo: "valkyriweb/pi-mono",
+    targetRepo: "lue-labs/pi-mono",
     report: parseReviewReport(markdown),
     reportMarkdown: markdown,
     lane: "verifiable",
@@ -71,7 +71,7 @@ test("verifiable lane rejects reports that already reproduce on main", () => {
 test("default reproduced lane still rejects source_reproducible reports", () => {
   const markdown = report();
   const decision = reportOnlyDecision({
-    targetRepo: "valkyriweb/pi-mono",
+    targetRepo: "lue-labs/pi-mono",
     report: parseReviewReport(markdown),
     reportMarkdown: markdown,
   });
@@ -89,7 +89,7 @@ test("verifiable lane still enforces other intake invariants", () => {
   ]) {
     const markdown = report(overrides);
     const decision = reportOnlyDecision({
-      targetRepo: "valkyriweb/pi-mono",
+      targetRepo: "lue-labs/pi-mono",
       report: parseReviewReport(markdown),
       reportMarkdown: markdown,
       lane: "verifiable",

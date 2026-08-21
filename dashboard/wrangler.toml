@@ -12,10 +12,11 @@ custom_domain = true
 CLAWSWEEPER_REPO = "valkyriweb/clawsweeper"
 CLAWSWEEPER_APP_ID = "3711554"
 CLAWSWEEPER_APP_CLIENT_ID = "Iv23lirdjmVqYd1gwY26"
-# Bermont targets use the engine-only App route and are intentionally absent:
-# this dashboard holds only Valkyriweb App credentials.
-TARGET_REPOS = "valkyriweb/pi-mono,valkyriweb/lue-kube,valkyriweb/openclaw-claude,valkyriweb/clawsweeper"
-ACTIONS_REPOS = "valkyriweb/clawsweeper,valkyriweb/paperclip,valkyriweb/pi-mono,valkyriweb/lue-kube,valkyriweb/openclaw-claude"
+# Bermont targets use the engine-only App route and are intentionally absent.
+# lue-labs/pi-mono uses the same valkyriweb-clawsweeper App credentials, with
+# a separate installation on lue-labs.
+TARGET_REPOS = "lue-labs/pi-mono,valkyriweb/lue-kube,valkyriweb/openclaw-claude,valkyriweb/clawsweeper"
+ACTIONS_REPOS = "valkyriweb/clawsweeper,valkyriweb/paperclip,lue-labs/pi-mono,valkyriweb/lue-kube,valkyriweb/openclaw-claude"
 WORKER_BUDGET = "80"
 CACHE_TTL_SECONDS = "20"
 INCLUDE_CI_STATUS = "1"

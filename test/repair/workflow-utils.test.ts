@@ -31,7 +31,7 @@ test("commitReviewRefForTarget returns the per-target override or the main defau
   // paperclip ships from its bermont production overlay, not main.
   assert.equal(commitReviewRefForTarget("valkyriweb/paperclip"), "refs/heads/bermont");
   // A target with no override falls back to the shared main default.
-  assert.equal(commitReviewRefForTarget("valkyriweb/pi-mono"), "refs/heads/main");
+  assert.equal(commitReviewRefForTarget("lue-labs/pi-mono"), "refs/heads/main");
 });
 
 test("commit-review-ref CLI resolves the target via --target-repo, as the workflow invokes it", () => {
@@ -644,11 +644,11 @@ test("reviewModelForTarget honours a sweep-review registry override", () => {
     process.env.CLAWSWEEPER_MODELS = JSON.stringify({
       "sweep-review": { model: "claude-sonnet-4-6" },
     });
-    assert.equal(reviewModelForTarget("valkyriweb/pi-mono"), "claude-sonnet-4-6");
+    assert.equal(reviewModelForTarget("lue-labs/pi-mono"), "claude-sonnet-4-6");
     delete process.env.CLAWSWEEPER_MODELS;
     // Unset registry falls back to the provider's default review model.
-    assert.equal(typeof reviewModelForTarget("valkyriweb/pi-mono"), "string");
-    assert.ok(reviewModelForTarget("valkyriweb/pi-mono").length > 0);
+    assert.equal(typeof reviewModelForTarget("lue-labs/pi-mono"), "string");
+    assert.ok(reviewModelForTarget("lue-labs/pi-mono").length > 0);
   } finally {
     if (prior === undefined) delete process.env.CLAWSWEEPER_MODELS;
     else process.env.CLAWSWEEPER_MODELS = prior;
