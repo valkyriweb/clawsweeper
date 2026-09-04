@@ -1,0 +1,166 @@
+{
+  "requested": {
+    "provider": "pi",
+    "model": "clawrouter/claude-opus-5",
+    "effort": "none"
+  },
+  "startedAt": "2026-09-04T22:48:35.979Z",
+  "wallMs": 30777,
+  "fixture": "frozen-sanitized-issue.json",
+  "status": "success",
+  "decision": {
+    "decision": "keep_open",
+    "closeReason": "none",
+    "confidence": "medium",
+    "summary": "Thanks for the report \u2014 the pre-collected context shows a plausible defect: the current `main` excerpt of `src/foo.ts` returns a hardcoded `'broken'` value, and a commenter confirms it still reproduces, so this stays open. However, the report does not state the expected output or the user-facing surface affected, so the fix boundary is not yet tight enough to hand to an implementation agent unattended.",
+    "changeSummary": "The issue reports that `foo()` in `src/foo.ts` returns an incorrect value on current `main`, regressing since commit abc1234.",
+    "evidence": [
+      {
+        "label": "Current main source excerpt",
+        "detail": "`src/foo.ts` lines 30-60 define `foo()` returning the literal string `'broken'`, consistent with the reporter's pointer to line 42.",
+        "file": "src/foo.ts",
+        "line": 42,
+        "command": null,
+        "sha": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+      },
+      {
+        "label": "History provenance",
+        "detail": "The supplied file history shows one commit touching this path: abc1234 `refactor: foo` by Alice on 2026-03-01, matching the regression window named in the report.",
+        "file": "src/foo.ts",
+        "line": null,
+        "command": null,
+        "sha": "abc1234"
+      },
+      {
+        "label": "Release provenance",
+        "detail": "Release metadata places abc1234 in v1.2.0, and the current release v1.2.3 points at the same SHA as current main, so the behaviour is shipped, not main-only.",
+        "file": null,
+        "line": null,
+        "command": null,
+        "sha": "abc1234"
+      },
+      {
+        "label": "Discussion confirms live reproduction",
+        "detail": "A commenter states the behaviour still reproduces on main, so the report is not obsolete.",
+        "file": null,
+        "line": null,
+        "command": null,
+        "sha": null
+      },
+      {
+        "label": "Related prior discussion",
+        "detail": "https://github.com/openclaw/openclaw/issues/4100 previously traced the root cause to `foo()`, but it is background discussion rather than a canonical duplicate tracking the same remaining work.",
+        "file": null,
+        "line": null,
+        "command": null,
+        "sha": null
+      }
+    ],
+    "likelyOwners": [
+      {
+        "person": "Alice",
+        "role": "introduced current behaviour",
+        "reason": "Behaviour appears to date to commit abc1234 (`refactor: foo`), the only commit on `src/foo.ts` in the supplied history and the commit named in the report.",
+        "commits": [
+          "abc1234"
+        ],
+        "files": [
+          "src/foo.ts"
+        ],
+        "confidence": "medium"
+      },
+      {
+        "person": "contributor",
+        "role": "recent area participant",
+        "reason": "Likely related by confirming current-main behaviour in the issue discussion; useful for validating any fix.",
+        "commits": [],
+        "files": [
+          "src/foo.ts"
+        ],
+        "confidence": "low"
+      }
+    ],
+    "risks": [
+      "The expected return value of `foo()` is not stated anywhere in the supplied context, so the correct replacement behaviour is undefined.",
+      "No test or docs excerpt in the supplied context defines the contract for `foo()`, so a change could silently alter downstream callers.",
+      "Callers of `foo()` are not visible in the supplied excerpts, so blast radius is unknown."
+    ],
+    "bestSolution": "Restore `foo()` in `src/foo.ts` to its pre-abc1234 contract with a regression test pinning the expected value.",
+    "triagePriority": "P2",
+    "impactLabels": [],
+    "mergeRiskLabels": [],
+    "mergeRiskOptions": [],
+    "labelJustifications": [
+      {
+        "label": "P2",
+        "reason": "A confirmed but narrowly scoped defect in a single function with no evidence of data loss, security exposure, or availability impact."
+      }
+    ],
+    "prRating": {
+      "proofTier": "NA",
+      "patchTier": "NA",
+      "overallTier": "NA",
+      "summary": "Not applicable \u2014 this item is an issue, so there is no patch or proof to rate.",
+      "nextSteps": [],
+      "requiredActions": [
+        "Confirm the expected return value of `foo()` so the fix boundary is unambiguous."
+      ],
+      "suggestions": [
+        "Link or quote the pre-abc1234 behaviour or a test that pinned it."
+      ]
+    },
+    "mantisRecommendation": {
+      "status": "not_recommended",
+      "scenario": "none",
+      "reason": "Not applicable \u2014 Mantis lanes apply to pull requests needing live transport or visual proof.",
+      "maintainerComment": ""
+    },
+    "itemCategory": "bug",
+    "reproductionStatus": "source_reproducible",
+    "reproductionConfidence": "medium",
+    "requiresNewFeature": false,
+    "requiresNewConfigOption": false,
+    "requiresProductDecision": false,
+    "reproductionAssessment": "Partly \u2014 the code path is clear from the `src/foo.ts` excerpt at current main SHA deadbeef and a commenter says it still reproduces, but no failing command, test, or expected-value baseline was supplied, so this is source-reproducible rather than reproduced.",
+    "solutionAssessment": "Unclear \u2014 reverting the behaviour introduced in abc1234 is the obvious direction, but without the expected return value or visible callers in the supplied context, the correct target state cannot be confirmed from evidence alone.",
+    "reviewFindings": [],
+    "securityReview": {
+      "status": "not_applicable",
+      "summary": "This is an issue with no diff and no security-sensitive surface in the reported behaviour.",
+      "concerns": []
+    },
+    "realBehaviorProof": {
+      "status": "not_applicable",
+      "summary": "Not applicable \u2014 this item is an issue, not a pull request.",
+      "evidenceKind": "not_applicable",
+      "needsContributorAction": false
+    },
+    "telegramVisibleProof": {
+      "status": "not_needed",
+      "summary": "Not a Telegram-related item and not a pull request, so no visible-proof lane applies."
+    },
+    "overallCorrectness": "not a patch",
+    "reviewTier": "not_applicable",
+    "overallConfidenceScore": 0.62,
+    "fixedRelease": null,
+    "fixedSha": null,
+    "fixedAt": null,
+    "closeComment": "",
+    "workCandidate": "manual_review",
+    "workConfidence": "medium",
+    "workPriority": "medium",
+    "workReason": "The defect is credible and localized to `src/foo.ts`, but the expected behaviour is undefined in the supplied context, so a maintainer should confirm the target contract before an implementation agent touches it.",
+    "workPrompt": "Maintainer input needed before this can be queued as a fix PR. The issue points at `src/foo.ts:42`, where `foo()` currently returns the literal `'broken'` on main (SHA deadbeef, shipped in v1.2.3). History shows the behaviour dates to abc1234 (`refactor: foo`, 2026-03-01, v1.2.0). Confirm what `foo()` is supposed to return and which callers depend on it; once that is stated, the fix is a narrow revert-plus-regression-test in `src/foo.ts` and its adjacent test file, with no new feature, config option, or policy change. Do not broaden scope to the surrounding module.",
+    "workClusterRefs": [
+      "https://github.com/openclaw/openclaw/issues/4100"
+    ],
+    "workValidation": [
+      "Run the repository's unit test suite for the module containing `src/foo.ts`",
+      "Run the repository's typecheck and lint tasks"
+    ],
+    "workLikelyFiles": [
+      "src/foo.ts"
+    ]
+  },
+  "labelMatch": true
+}

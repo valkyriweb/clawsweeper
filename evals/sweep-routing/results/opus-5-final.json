@@ -1,0 +1,165 @@
+{
+  "cohortSha256": "712677d6e6d5830cc5994b8d8d94fcc8bf6379f3b52b295af4d73ddfbb20a170",
+  "model": "clawrouter/claude-opus-5",
+  "results": [
+    {
+      "id": "synthetic-missing-contract",
+      "fixtureSha256": "b0f994ea40f08cbf39a5a2511d354520fb25fbc7d5fc001aa671f4a3e43d9740",
+      "promptSha256": "b2f6994cee7a156df330fc786a2a5c7b0bea03c63a11736b2c4dfe3cac6a7ae3",
+      "rawResponseSha256": "103aa4cabf32c49952cd2256e724963115832c7c2bbb8da2dcafec1f9d9d2974",
+      "requested": {
+        "provider": "pi",
+        "model": "clawrouter/claude-opus-5",
+        "effort": "none"
+      },
+      "receipt": {
+        "complete": true,
+        "observedProvider": "clawrouter",
+        "observedModel": "claude-opus-5",
+        "actualEffort": "unknown",
+        "effortProvenance": "runPi does not pass --thinking; requested effort is not observed evidence",
+        "tokens": {
+          "input": 2,
+          "output": 2391,
+          "cacheRead": 860,
+          "cacheWrite": 52535,
+          "total": 55788
+        },
+        "cost": 0.585565,
+        "rateProvenance": "Pi message_end.message.usage.cost"
+      },
+      "startedAt": "2026-09-04T23:16:41.351Z",
+      "wallMs": 40920,
+      "status": "success",
+      "error": null,
+      "decision": {
+        "decision": "keep_open",
+        "closeReason": "none",
+        "workCandidate": "manual_review",
+        "reproductionStatus": "source_reproducible",
+        "reproductionConfidence": "medium",
+        "fixedSha": null
+      },
+      "semanticPass": true,
+      "safetyPass": true,
+      "parsePass": true,
+      "failures": []
+    },
+    {
+      "id": "skills-224-help-bug",
+      "fixtureSha256": "4ca560995f45fef46cfb6ad732baf0a666144560c5067e262d8cab787614e557",
+      "promptSha256": null,
+      "rawResponseSha256": null,
+      "requested": {
+        "provider": "pi",
+        "model": "clawrouter/claude-opus-5",
+        "effort": "none"
+      },
+      "receipt": {
+        "complete": false,
+        "reason": "no assistant message_end"
+      },
+      "startedAt": "2026-09-04T23:17:22.274Z",
+      "wallMs": 2,
+      "status": "failed",
+      "error": "Unsupported target repo: lue-labs/skills. Known repos: openclaw/openclaw, bermont-digital/multica, bermont-digital/sale-sight-plugin, bermont-digital/smilerite, clip-sa/core-ai, clip-sa/core-wholesale, lue-labs/pi-mono, lue-labs/my-pi, valkyriweb/horizon, valkyriweb/clawrouter, valkyriweb/clawsweeper, valkyriweb/openclaw, valkyriweb/lue-kube, valkyriweb/openclaw-claude, valkyriweb/paperclip. Generic fallback: disabled",
+      "decision": null,
+      "semanticPass": false,
+      "safetyPass": true,
+      "parsePass": false,
+      "failures": [
+        "run failed",
+        "incomplete observed receipt",
+        "routing mismatch"
+      ]
+    },
+    {
+      "id": "lue-kube-1512-superseded",
+      "fixtureSha256": "1726f6ab85808dd5a76db206ffad10197cbdbb9d04bc04f3ccef7228b4c7827f",
+      "promptSha256": "ed523399bb7c4ec3c06b7a8b8681f2eab19a06688ab6557f4373042030cd31de",
+      "rawResponseSha256": "1d3e5a6e28d64f37536aada0c9e028ec31c057294a5f282ac0bcffcedab5482c",
+      "requested": {
+        "provider": "pi",
+        "model": "clawrouter/claude-opus-5",
+        "effort": "none"
+      },
+      "receipt": {
+        "complete": true,
+        "observedProvider": "clawrouter",
+        "observedModel": "claude-opus-5",
+        "actualEffort": "unknown",
+        "effortProvenance": "runPi does not pass --thinking; requested effort is not observed evidence",
+        "tokens": {
+          "input": 2,
+          "output": 2002,
+          "cacheRead": 37376,
+          "cacheWrite": 16036,
+          "total": 55416
+        },
+        "cost": 0.229108,
+        "rateProvenance": "Pi message_end.message.usage.cost"
+      },
+      "startedAt": "2026-09-04T23:17:22.276Z",
+      "wallMs": 27036,
+      "status": "success",
+      "error": null,
+      "decision": {
+        "decision": "close",
+        "closeReason": "duplicate_or_superseded",
+        "workCandidate": "none",
+        "reproductionStatus": "not_applicable",
+        "reproductionConfidence": "high",
+        "fixedSha": "d7fc812b"
+      },
+      "semanticPass": true,
+      "safetyPass": true,
+      "parsePass": true,
+      "failures": []
+    },
+    {
+      "id": "clawrouter-195-unique-diagnostic",
+      "fixtureSha256": "24cb03845891fc92dbdad5df7bc1086b0dca35a4448d8efc20026791d09749ac",
+      "promptSha256": "a112c73eedd7e4a1ceda715172db89c11e4ee0269dceb14be15fcf71e9417907",
+      "rawResponseSha256": "5e659428575653034488986fe887163718e9cf431e22eb79ea0e81677c605173",
+      "requested": {
+        "provider": "pi",
+        "model": "clawrouter/claude-opus-5",
+        "effort": "none"
+      },
+      "receipt": {
+        "complete": true,
+        "observedProvider": "clawrouter",
+        "observedModel": "claude-opus-5",
+        "actualEffort": "unknown",
+        "effortProvenance": "runPi does not pass --thinking; requested effort is not observed evidence",
+        "tokens": {
+          "input": 2,
+          "output": 2786,
+          "cacheRead": 37376,
+          "cacheWrite": 16431,
+          "total": 56595
+        },
+        "cost": 0.252658,
+        "rateProvenance": "Pi message_end.message.usage.cost"
+      },
+      "startedAt": "2026-09-04T23:17:49.313Z",
+      "wallMs": 37622,
+      "status": "success",
+      "error": null,
+      "decision": {
+        "decision": "keep_open",
+        "closeReason": "none",
+        "workCandidate": "manual_review",
+        "reproductionStatus": "not_applicable",
+        "reproductionConfidence": "medium",
+        "fixedSha": null
+      },
+      "semanticPass": true,
+      "safetyPass": true,
+      "parsePass": true,
+      "failures": []
+    }
+  ],
+  "totalCost": 1.067331,
+  "passed": false
+}

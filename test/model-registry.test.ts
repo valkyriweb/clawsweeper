@@ -28,7 +28,7 @@ test("unset registry resolves to production defaults", () => {
 test("defaults reflect the intended balance", () => {
   assert.deepEqual(DEFAULT_ACTION_CONFIG["sweep-review"], {
     provider: "pi",
-    model: "claude-opus-4-8",
+    model: "clawrouter/claude-opus-5",
     effort: "none",
   });
   assert.equal(DEFAULT_ACTION_CONFIG["commit-review"].model, "gpt-5.6-terra");
@@ -50,12 +50,12 @@ test("partial overrides merge field-by-field over defaults", () => {
 test("full override replaces every field", () => {
   const registry = parseModelRegistry(
     JSON.stringify({
-      "sweep-review": { provider: "pi", model: "claude-sonnet-4-6", effort: "low" },
+      "sweep-review": { provider: "pi", model: "clawrouter/claude-opus-5", effort: "low" },
     }),
   );
   assert.deepEqual(resolveActionConfig("sweep-review", registry), {
     provider: "pi",
-    model: "claude-sonnet-4-6",
+    model: "clawrouter/claude-opus-5",
     effort: "low",
   });
 });
@@ -88,7 +88,21 @@ test("rejects provider an action does not support", () => {
   );
 });
 
-test("rejects model that does not belong to the chosen provider", () => {
+test("accepts both legacy and qualified Pi model overrides", () => {
+  assert.deepEqual(
+    parseModelRegistry(
+      JSON.stringify({ "sweep-review": { provider: "pi", model: "claude-opus-4-8" } }),
+    )["sweep-review"],
+    { provider: "pi", model: "claude-opus-4-8" },
+  );
+  assert.deepEqual(
+    parseModelRegistry(
+      JSON.stringify({
+        "sweep-review": { provider: "pi", model: "clawrouter/gpt-5.6-terra-200k" },
+      }),
+    )["sweep-review"],
+    { provider: "pi", model: "clawrouter/gpt-5.6-terra-200k" },
+  );
   assert.throws(
     () =>
       parseModelRegistry(
@@ -135,21 +149,28 @@ test("applyRegistrySet validates the merged entry as a whole", () => {
 test("serializeRegistry emits canonical action order and field order", () => {
   const json = serializeRegistry({
     "issue-implementation": { effort: "high" },
-    "sweep-review": { effort: "none", model: "claude-opus-4-8", provider: "pi" },
+    "sweep-review": { effort: "none", model: "clawrouter/claude-opus-5", provider: "pi" },
   });
   const keys = Object.keys(JSON.parse(json));
   assert.deepEqual(keys, ["sweep-review", "issue-implementation"]);
   assert.deepEqual(Object.keys(JSON.parse(json)["sweep-review"]), ["provider", "model", "effort"]);
 });
 
-test("catalog lists codex + anthropic models and flags deprecated/effort", () => {
+test("catalog retains legacy Pi aliases and lists unique qualified routes", () => {
   const rows = modelCatalogRows();
   const terra = rows.find((row) => row.model === "gpt-5.6-terra");
   const legacy = rows.find((row) => row.model === "gpt-5.5");
-  const opus = rows.find((row) => row.provider === "pi" && row.model === "claude-opus-4-8");
+  const legacyPi = rows.find((row) => row.provider === "pi" && row.model === "claude-opus-4-8");
+  const opus = rows.find((row) => row.provider === "pi" && row.model === "clawrouter/claude-opus-5");
+  const challenger = rows.find(
+    (row) => row.provider === "pi" && row.model === "clawrouter/gpt-5.6-terra-200k",
+  );
   assert.ok(terra && terra.provider === "codex" && terra.supportsEffort && !terra.deprecated);
   assert.ok(legacy && legacy.deprecated);
+  assert.ok(legacyPi && !legacyPi.supportsEffort);
   assert.ok(opus && !opus.supportsEffort);
+  assert.ok(challenger && !challenger.supportsEffort);
+  assert.equal(new Set(rows.map((row) => `${row.provider}/${row.model}`)).size, rows.length);
 });
 
 test("isModelAction guards the action union", () => {
@@ -187,7 +208,7 @@ test("commit-review rejects claude-bridge (narrowed ACTION_PROVIDERS)", () => {
     () =>
       applyRegistrySet(undefined, "commit-review", {
         provider: "claude-bridge",
-        model: "claude-opus-4-8",
+        model: "clawrouter/claude-opus-5",
       }),
     /does not support provider "claude-bridge"/,
   );
@@ -202,8 +223,8 @@ test("provider-only entry over an empty slot is rejected when the default model 
   // provider + a valid model for that provider is accepted.
   const { resolved } = applyRegistrySet(undefined, "commit-review", {
     provider: "pi",
-    model: "claude-opus-4-8",
+    model: "clawrouter/claude-opus-5",
   });
   assert.equal(resolved.provider, "pi");
-  assert.equal(resolved.model, "claude-opus-4-8");
+  assert.equal(resolved.model, "clawrouter/claude-opus-5");
 });

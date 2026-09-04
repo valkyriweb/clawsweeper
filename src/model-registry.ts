@@ -41,7 +41,14 @@ const REASONING_EFFORT_SET = new Set<ReasoningEffort>(REASONING_EFFORTS);
  * are flagged by the catalog. */
 export const PROVIDER_MODELS: Readonly<Record<ReviewProvider, readonly string[]>> = {
   codex: ["gpt-5.6-terra", "gpt-5.5"],
-  pi: ["claude-opus-4-8", "claude-sonnet-4-6"],
+  // Keep historic unqualified aliases parseable while steering new configuration
+  // to catalog-qualified ClawRouter ids.
+  pi: [
+    "claude-opus-4-8",
+    "claude-sonnet-4-6",
+    "clawrouter/claude-opus-5",
+    "clawrouter/gpt-5.6-terra-200k",
+  ],
   "claude-bridge": ["claude-opus-4-8", "claude-sonnet-4-6"],
   "claude-code": ["claude-opus-4-8", "claude-sonnet-4-6"],
 };
@@ -82,7 +89,7 @@ export type ModelRegistry = Partial<Record<ModelAction, ActionConfigPatch>>;
 /** Production defaults — the live behaviour when the registry variable is unset.
  * `sweep-review` reflects the `CLAWSWEEPER_REVIEW_PROVIDER=pi` lock (opus). */
 export const DEFAULT_ACTION_CONFIG: Readonly<Record<ModelAction, ResolvedActionConfig>> = {
-  "sweep-review": { provider: "pi", model: "claude-opus-4-8", effort: "none" },
+  "sweep-review": { provider: "pi", model: "clawrouter/claude-opus-5", effort: "none" },
   "commit-review": { provider: "codex", model: "gpt-5.6-terra", effort: "high" },
   "repair-worker": { provider: "codex", model: "gpt-5.6-terra", effort: "high" },
   "issue-implementation": { provider: "codex", model: "gpt-5.6-terra", effort: "high" },
