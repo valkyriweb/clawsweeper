@@ -4070,7 +4070,7 @@ function watchdogReviewOptions(
     item: item({ number: provider === "claude" ? 75201 : 75301 }) as never,
     context: {} as never,
     git: {} as never,
-    model: provider === "claude" ? "claude-sonnet-4-6" : "pi-test",
+    model: provider === "claude" ? "clawrouter/claude-sonnet-5-200k" : "pi-test",
     openclawDir,
     reasoningEffort: "low",
     sandboxMode: "read-only",
@@ -5825,7 +5825,7 @@ test("runClaude post-fn timeouts surface a 'timed out' marker so slice B's escal
   assert.equal(isCodexTimeoutError(caught), true);
 });
 
-test("runClaude defaults to sonnet-4-6 with adaptive thinking when model is omitted", () => {
+test("runClaude defaults to opus-5-200k with adaptive thinking when model is omitted", () => {
   let capturedBody: unknown = null;
   const stubPost: ClaudeBridgePostFn = ({ body }) => {
     capturedBody = body;
@@ -5842,7 +5842,7 @@ test("runClaude defaults to sonnet-4-6 with adaptive thinking when model is omit
   (opts as unknown as { model: string }).model = "";
   runClaude(opts);
   const sent = capturedBody as { model: string; thinking?: { type: string; display: string } };
-  assert.equal(sent.model, "claude-sonnet-4-6");
+  assert.equal(sent.model, "clawrouter/claude-opus-5-200k");
   assert.deepEqual(sent.thinking, { type: "adaptive", display: "summarized" });
 });
 
@@ -5863,7 +5863,7 @@ test("runClaude swaps non-Claude model ids for the Claude default before calling
     claudeOptionsForTest({ item: { number: 21 } as never, model: "gpt-5.5", postFn: stubPost }),
   );
   const sent = capturedBody as { model: string; thinking?: unknown };
-  assert.equal(sent.model, "claude-sonnet-4-6");
+  assert.equal(sent.model, "clawrouter/claude-opus-5-200k");
   // Adaptive thinking attaches because the *coerced* model supports it.
   assert.deepEqual(sent.thinking, { type: "adaptive", display: "summarized" });
 });
@@ -5882,12 +5882,12 @@ test("runClaude omits the thinking block for models that don't support adaptive 
   runClaude(
     claudeOptionsForTest({
       item: { number: 22 } as never,
-      model: "claude-sonnet-4-5-20250929",
+      model: "clawrouter/claude-haiku-4-5",
       postFn: stubPost,
     }),
   );
   const sent = capturedBody as { model: string; thinking?: unknown };
-  assert.equal(sent.model, "claude-sonnet-4-5-20250929");
+  assert.equal(sent.model, "clawrouter/claude-haiku-4-5");
   assert.equal(sent.thinking, undefined);
 });
 
@@ -6007,7 +6007,7 @@ function claudeCodeOptionsForTest(
     item: { number: 11, repo: "valkyriweb/clawsweeper" } as never,
     context: {} as never,
     git: {} as never,
-    model: "claude-sonnet-4-6",
+    model: "clawrouter/claude-sonnet-5-200k",
     openclawDir: "/tmp/ignored",
     reasoningEffort: "low",
     sandboxMode: "read-only",
@@ -6217,7 +6217,7 @@ function piOptionsForTest(
     item: { number: 13, repo: "valkyriweb/clawsweeper" } as never,
     context: {} as never,
     git: {} as never,
-    model: "anthropic/claude-sonnet-4-6",
+    model: "clawrouter/claude-sonnet-5-200k",
     openclawDir: "/tmp/ignored",
     reasoningEffort: "low",
     sandboxMode: "read-only",
@@ -6355,7 +6355,7 @@ test("runReview dispatches pi to runPi", () => {
     item: { number: 88, repo: "valkyriweb/clawsweeper" } as never,
     context: {} as never,
     git: {} as never,
-    model: "anthropic/claude-sonnet-4-6",
+    model: "clawrouter/claude-sonnet-5-200k",
     openclawDir: "/tmp/ignored",
     reasoningEffort: "low",
     sandboxMode: "read-only",
@@ -6384,7 +6384,7 @@ test("runReview dispatches claude-code to runClaudeCode", () => {
     item: { number: 99, repo: "valkyriweb/clawsweeper" } as never,
     context: {} as never,
     git: {} as never,
-    model: "claude-sonnet-4-6",
+    model: "clawrouter/claude-sonnet-5-200k",
     openclawDir: "/tmp/ignored",
     reasoningEffort: "low",
     sandboxMode: "read-only",

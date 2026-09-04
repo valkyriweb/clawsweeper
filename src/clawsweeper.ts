@@ -4842,27 +4842,21 @@ export function resolveReviewProvider(opts: {
 }
 
 const DEFAULT_CLAUDE_BRIDGE_URL = "http://127.0.0.1:9100";
-// Defaults to Sonnet 4.6 so the bridge picks up the adaptive-thinking shape
-// below. Older sonnet 4.5 model ids still work — adaptive thinking just
-// degrades to a no-op for non-supporting models (see `supportsAdaptiveThinking`).
-const DEFAULT_CLAUDE_MODEL = "claude-sonnet-4-6";
+const DEFAULT_CLAUDE_MODEL = "clawrouter/claude-opus-5-200k";
 const DEFAULT_CLAUDE_REVIEW_MAX_TOKENS = 16_384;
 const DEFAULT_CLAUDE_REVIEW_RETRY_MAX_TOKENS = 32_768;
 const CLAUDE_REVIEW_MAX_TOKENS_ENV = "CLAWSWEEPER_CLAUDE_REVIEW_MAX_TOKENS";
 const CLAUDE_REVIEW_RETRY_MAX_TOKENS_ENV = "CLAWSWEEPER_CLAUDE_REVIEW_RETRY_MAX_TOKENS";
 
-// Mirrors pi-mono-fork/packages/ai/src/providers/anthropic.ts:supportsAdaptiveThinking.
-// Adaptive thinking lets the model self-regulate its thinking budget per turn;
-// only Sonnet 4.6+, Opus 4.6+, and Opus 4.7 understand `thinking.type=adaptive`.
 function supportsAdaptiveThinking(modelId: string): boolean {
-  return /^claude-(?:sonnet-4-6|opus-4-(?:6|7))(?:[-.]|$)/.test(modelId);
+  return /^(?:clawrouter\/)?claude-(?:sonnet-5|opus-5)(?:[-.]|$)/.test(modelId);
 }
 
 // Defensive fallback: if a caller routes a non-Claude model id (e.g. the
 // workflow's `--codex-model gpt-5.6-terra`) through the bridge, swap it for
 // `DEFAULT_CLAUDE_MODEL` instead of forwarding a guaranteed-400 to Anthropic.
 function looksLikeClaudeModel(modelId: string): boolean {
-  return modelId.startsWith("claude-");
+  return /^(?:clawrouter\/)?claude-/.test(modelId);
 }
 
 function positiveIntegerEnv(name: string, fallback: number): number {

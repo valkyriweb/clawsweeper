@@ -28,10 +28,11 @@ test("unset registry resolves to production defaults", () => {
 test("defaults reflect the intended balance", () => {
   assert.deepEqual(DEFAULT_ACTION_CONFIG["sweep-review"], {
     provider: "pi",
-    model: "claude-opus-4-8",
+    model: "clawrouter/claude-opus-5-200k",
     effort: "none",
   });
   assert.equal(DEFAULT_ACTION_CONFIG["commit-review"].model, "gpt-5.6-terra");
+  assert.equal(DEFAULT_ACTION_CONFIG["commit-review"].effort, "medium");
   assert.equal(DEFAULT_ACTION_CONFIG["repair-worker"].model, "gpt-5.6-terra");
   assert.equal(DEFAULT_ACTION_CONFIG["issue-implementation"].model, "gpt-5.6-terra");
 });
@@ -50,14 +51,23 @@ test("partial overrides merge field-by-field over defaults", () => {
 test("full override replaces every field", () => {
   const registry = parseModelRegistry(
     JSON.stringify({
-      "sweep-review": { provider: "pi", model: "claude-sonnet-4-6", effort: "low" },
+      "sweep-review": { provider: "pi", model: "clawrouter/claude-sonnet-5-200k", effort: "low" },
     }),
   );
   assert.deepEqual(resolveActionConfig("sweep-review", registry), {
     provider: "pi",
-    model: "claude-sonnet-4-6",
+    model: "clawrouter/claude-sonnet-5-200k",
     effort: "low",
   });
+});
+
+test("deprecated Claude 4.x models remain parseable", () => {
+  const registry = parseModelRegistry(
+    JSON.stringify({
+      "sweep-review": { provider: "pi", model: "claude-opus-4-8", effort: "none" },
+    }),
+  );
+  assert.equal(resolveActionConfig("sweep-review", registry).model, "claude-opus-4-8");
 });
 
 test("resolveAllActions covers every action", () => {
@@ -79,6 +89,9 @@ test("rejects unknown action, provider, model, and effort", () => {
     () => parseModelRegistry(JSON.stringify({ "commit-review": { effort: "ludicrous" } })),
     /effort must be one of/,
   );
+  assert.deepEqual(parseModelRegistry(JSON.stringify({ "commit-review": { effort: "xhigh" } })), {
+    "commit-review": { effort: "xhigh" },
+  });
 });
 
 test("rejects provider an action does not support", () => {
@@ -135,7 +148,7 @@ test("applyRegistrySet validates the merged entry as a whole", () => {
 test("serializeRegistry emits canonical action order and field order", () => {
   const json = serializeRegistry({
     "issue-implementation": { effort: "high" },
-    "sweep-review": { effort: "none", model: "claude-opus-4-8", provider: "pi" },
+    "sweep-review": { effort: "none", model: "clawrouter/claude-opus-5-200k", provider: "pi" },
   });
   const keys = Object.keys(JSON.parse(json));
   assert.deepEqual(keys, ["sweep-review", "issue-implementation"]);
@@ -146,7 +159,9 @@ test("catalog lists codex + anthropic models and flags deprecated/effort", () =>
   const rows = modelCatalogRows();
   const terra = rows.find((row) => row.model === "gpt-5.6-terra");
   const legacy = rows.find((row) => row.model === "gpt-5.5");
-  const opus = rows.find((row) => row.provider === "pi" && row.model === "claude-opus-4-8");
+  const opus = rows.find(
+    (row) => row.provider === "pi" && row.model === "clawrouter/claude-opus-5-200k",
+  );
   assert.ok(terra && terra.provider === "codex" && terra.supportsEffort && !terra.deprecated);
   assert.ok(legacy && legacy.deprecated);
   assert.ok(opus && !opus.supportsEffort);
@@ -187,7 +202,7 @@ test("commit-review rejects claude-bridge (narrowed ACTION_PROVIDERS)", () => {
     () =>
       applyRegistrySet(undefined, "commit-review", {
         provider: "claude-bridge",
-        model: "claude-opus-4-8",
+        model: "clawrouter/claude-opus-5-200k",
       }),
     /does not support provider "claude-bridge"/,
   );
@@ -202,8 +217,8 @@ test("provider-only entry over an empty slot is rejected when the default model 
   // provider + a valid model for that provider is accepted.
   const { resolved } = applyRegistrySet(undefined, "commit-review", {
     provider: "pi",
-    model: "claude-opus-4-8",
+    model: "clawrouter/claude-opus-5-200k",
   });
   assert.equal(resolved.provider, "pi");
-  assert.equal(resolved.model, "claude-opus-4-8");
+  assert.equal(resolved.model, "clawrouter/claude-opus-5-200k");
 });
