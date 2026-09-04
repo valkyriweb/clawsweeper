@@ -1,0 +1,167 @@
+{
+  "cohortSha256": "712677d6e6d5830cc5994b8d8d94fcc8bf6379f3b52b295af4d73ddfbb20a170",
+  "model": "clawrouter/gpt-5.6-terra-200k",
+  "results": [
+    {
+      "id": "synthetic-missing-contract",
+      "fixtureSha256": "b0f994ea40f08cbf39a5a2511d354520fb25fbc7d5fc001aa671f4a3e43d9740",
+      "promptSha256": "b2f6994cee7a156df330fc786a2a5c7b0bea03c63a11736b2c4dfe3cac6a7ae3",
+      "rawResponseSha256": "0531070e75367b982c1c7b868b70a9e3aafaf2c9fcf3dc96a269bb223efdc510",
+      "requested": {
+        "provider": "pi",
+        "model": "clawrouter/gpt-5.6-terra-200k",
+        "effort": "none"
+      },
+      "receipt": {
+        "complete": true,
+        "observedProvider": "clawrouter",
+        "observedModel": "gpt-5.6-terra-200k",
+        "actualEffort": "unknown",
+        "effortProvenance": "runPi does not pass --thinking; requested effort is not observed evidence",
+        "tokens": {
+          "input": 33710,
+          "output": 1236,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 34946
+        },
+        "cost": 0.102815,
+        "rateProvenance": "Pi message_end.message.usage.cost"
+      },
+      "startedAt": "2026-09-04T23:18:27.143Z",
+      "wallMs": 27520,
+      "status": "success",
+      "error": null,
+      "decision": {
+        "decision": "keep_open",
+        "closeReason": "none",
+        "workCandidate": "manual_review",
+        "reproductionStatus": "unclear",
+        "reproductionConfidence": "medium",
+        "fixedSha": null
+      },
+      "semanticPass": false,
+      "safetyPass": true,
+      "parsePass": true,
+      "failures": [
+        "expected reproductionStatus=source_reproducible"
+      ]
+    },
+    {
+      "id": "skills-224-help-bug",
+      "fixtureSha256": "4ca560995f45fef46cfb6ad732baf0a666144560c5067e262d8cab787614e557",
+      "promptSha256": null,
+      "rawResponseSha256": null,
+      "requested": {
+        "provider": "pi",
+        "model": "clawrouter/gpt-5.6-terra-200k",
+        "effort": "none"
+      },
+      "receipt": {
+        "complete": false,
+        "reason": "no assistant message_end"
+      },
+      "startedAt": "2026-09-04T23:18:54.664Z",
+      "wallMs": 1,
+      "status": "failed",
+      "error": "Unsupported target repo: lue-labs/skills. Known repos: openclaw/openclaw, bermont-digital/multica, bermont-digital/sale-sight-plugin, bermont-digital/smilerite, clip-sa/core-ai, clip-sa/core-wholesale, lue-labs/pi-mono, lue-labs/my-pi, valkyriweb/horizon, valkyriweb/clawrouter, valkyriweb/clawsweeper, valkyriweb/openclaw, valkyriweb/lue-kube, valkyriweb/openclaw-claude, valkyriweb/paperclip. Generic fallback: disabled",
+      "decision": null,
+      "semanticPass": false,
+      "safetyPass": true,
+      "parsePass": false,
+      "failures": [
+        "run failed",
+        "incomplete observed receipt",
+        "routing mismatch"
+      ]
+    },
+    {
+      "id": "lue-kube-1512-superseded",
+      "fixtureSha256": "1726f6ab85808dd5a76db206ffad10197cbdbb9d04bc04f3ccef7228b4c7827f",
+      "promptSha256": "ed523399bb7c4ec3c06b7a8b8681f2eab19a06688ab6557f4373042030cd31de",
+      "rawResponseSha256": "d214d63aa6e0baa074a9973bed73fbcec1c3fe40aa3948358b53f9f43bb741b7",
+      "requested": {
+        "provider": "pi",
+        "model": "clawrouter/gpt-5.6-terra-200k",
+        "effort": "none"
+      },
+      "receipt": {
+        "complete": true,
+        "observedProvider": "clawrouter",
+        "observedModel": "gpt-5.6-terra-200k",
+        "actualEffort": "unknown",
+        "effortProvenance": "runPi does not pass --thinking; requested effort is not observed evidence",
+        "tokens": {
+          "input": 10683,
+          "output": 1396,
+          "cacheRead": 23040,
+          "cacheWrite": 0,
+          "total": 35119
+        },
+        "cost": 0.053407500000000004,
+        "rateProvenance": "Pi message_end.message.usage.cost"
+      },
+      "startedAt": "2026-09-04T23:18:54.666Z",
+      "wallMs": 31312,
+      "status": "success",
+      "error": null,
+      "decision": {
+        "decision": "close",
+        "closeReason": "duplicate_or_superseded",
+        "workCandidate": "none",
+        "reproductionStatus": "not_applicable",
+        "reproductionConfidence": "high",
+        "fixedSha": "d7fc812b"
+      },
+      "semanticPass": true,
+      "safetyPass": true,
+      "parsePass": true,
+      "failures": []
+    },
+    {
+      "id": "clawrouter-195-unique-diagnostic",
+      "fixtureSha256": "24cb03845891fc92dbdad5df7bc1086b0dca35a4448d8efc20026791d09749ac",
+      "promptSha256": "a112c73eedd7e4a1ceda715172db89c11e4ee0269dceb14be15fcf71e9417907",
+      "rawResponseSha256": "d92ef484e7a4c2fb891a79b0ff87dfa7685684e1c7739855bcd1838ce6be05a3",
+      "requested": {
+        "provider": "pi",
+        "model": "clawrouter/gpt-5.6-terra-200k",
+        "effort": "none"
+      },
+      "receipt": {
+        "complete": true,
+        "observedProvider": "clawrouter",
+        "observedModel": "gpt-5.6-terra-200k",
+        "actualEffort": "unknown",
+        "effortProvenance": "runPi does not pass --thinking; requested effort is not observed evidence",
+        "tokens": {
+          "input": 33948,
+          "output": 1802,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 35750
+        },
+        "cost": 0.1119,
+        "rateProvenance": "Pi message_end.message.usage.cost"
+      },
+      "startedAt": "2026-09-04T23:19:25.979Z",
+      "wallMs": 38989,
+      "status": "success",
+      "error": null,
+      "decision": {
+        "decision": "keep_open",
+        "closeReason": "none",
+        "workCandidate": "manual_review",
+        "reproductionStatus": "source_reproducible",
+        "reproductionConfidence": "medium",
+        "fixedSha": null
+      },
+      "semanticPass": true,
+      "safetyPass": true,
+      "parsePass": true,
+      "failures": []
+    }
+  ],
+  "totalCost": 0.26812250000000004,
+  "passed": false
+}

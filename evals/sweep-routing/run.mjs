@@ -74,7 +74,10 @@ for (const entry of cohort.cases) {
   const receipt = observedReceipt(raw);
   const failures = status === "success" ? evaluate(decision, entry.expected, entry.safety) : ["run failed"];
   if (!receipt.complete) failures.push("incomplete observed receipt");
-  if (receipt.observedModel !== model || receipt.observedProvider !== "clawrouter") failures.push("routing mismatch");
+  const requestedModelId = model.includes("/") ? model.slice(model.indexOf("/") + 1) : model;
+  if (receipt.observedModel !== requestedModelId || receipt.observedProvider !== "clawrouter") {
+    failures.push("routing mismatch");
+  }
   results.push({
     id: entry.id,
     fixtureSha256: hash(fixtureText),
