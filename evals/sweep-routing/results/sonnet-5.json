@@ -1,0 +1,141 @@
+{
+  "requested": {
+    "provider": "pi",
+    "model": "clawrouter/claude-sonnet-5",
+    "effort": "none"
+  },
+  "startedAt": "2026-09-04T22:49:07.012Z",
+  "wallMs": 55789,
+  "fixture": "frozen-sanitized-issue.json",
+  "status": "success",
+  "decision": {
+    "decision": "keep_open",
+    "closeReason": "none",
+    "confidence": "medium",
+    "summary": "The referenced function `foo()` at src/foo.ts still literally returns the string 'broken' on current main (matching the current main SHA), and a second commenter confirms it still reproduces. This looks like a genuine, narrow regression traceable to a refactor commit, not a stale or superseded report.",
+    "changeSummary": "Reporter states foo() at src/foo.ts:42 has been broken since commit abc1234 and asks that the regression be fixed.",
+    "evidence": [
+      {
+        "label": "current-main source excerpt",
+        "detail": "src/foo.ts on the current main SHA shows `function foo() { return 'broken'; }`, matching the reported broken behaviour.",
+        "file": "src/foo.ts",
+        "line": 42,
+        "command": null,
+        "sha": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+      },
+      {
+        "label": "history provenance",
+        "detail": "History snippet for src/foo.ts shows a 'refactor: foo' commit by Alice on 2026-03-01, matching the commit the reporter cites as when the behaviour broke.",
+        "file": "src/foo.ts",
+        "line": null,
+        "command": "git log --follow -- src/foo.ts",
+        "sha": "abc1234"
+      },
+      {
+        "label": "comment confirmation",
+        "detail": "Contributor comment: 'Still reproduces on main.'",
+        "file": null,
+        "line": null,
+        "command": null,
+        "sha": null
+      },
+      {
+        "label": "related issue",
+        "detail": "Related issue #4100 says root cause was already traced to foo(), corroborating the regression location.",
+        "file": null,
+        "line": null,
+        "command": null,
+        "sha": null
+      }
+    ],
+    "likelyOwners": [
+      {
+        "person": "Alice",
+        "role": "introduced behavior",
+        "reason": "Authored the 'refactor: foo' commit (abc1234) on src/foo.ts, which the reporter identifies as the point the function started returning 'broken'.",
+        "commits": [
+          "abc1234"
+        ],
+        "files": [
+          "src/foo.ts"
+        ],
+        "confidence": "medium"
+      }
+    ],
+    "risks": [
+      "The pre-collected context does not show the pre-abc1234 implementation of foo(), so the correct/expected return value is not established from the supplied evidence.",
+      "Only one external comment corroborates reproduction; no CI or test evidence is included in the supplied context."
+    ],
+    "bestSolution": "Restore foo() to its correct pre-regression behaviour (informed by the abc1234 diff and any related tests) and add a regression test covering the reported case.",
+    "triagePriority": "P2",
+    "impactLabels": [],
+    "mergeRiskLabels": [],
+    "mergeRiskOptions": [],
+    "labelJustifications": [
+      {
+        "label": "P2",
+        "reason": "Single-function regression with limited blast radius and no indication of data loss, security, or crash-loop impact in the supplied context."
+      }
+    ],
+    "prRating": {
+      "proofTier": "NA",
+      "patchTier": "NA",
+      "overallTier": "NA",
+      "summary": "Not applicable \u2014 this is an issue, not a pull request.",
+      "nextSteps": []
+    },
+    "mantisRecommendation": {
+      "status": "not_recommended",
+      "scenario": "none",
+      "reason": "This is a source-level function regression with no live transport or visual UI surface, so Mantis proof would not add useful signal.",
+      "maintainerComment": ""
+    },
+    "itemCategory": "bug",
+    "reproductionStatus": "reproduced",
+    "reproductionConfidence": "high",
+    "requiresNewFeature": false,
+    "requiresNewConfigOption": false,
+    "requiresProductDecision": false,
+    "reproductionAssessment": "Yes, high confidence: the source excerpt for src/foo.ts at the current main SHA (deadbeef...) shows the function literally returning 'broken', matching the reporter's claim, and a separate commenter confirms it still reproduces on main.",
+    "solutionAssessment": "Unclear from the supplied context \u2014 the fix direction (restore prior behaviour vs. something else) depends on the actual pre-abc1234 implementation, which is not included in the provided source excerpts or history snippets, so the exact correct fix cannot be fully verified here.",
+    "reviewFindings": [],
+    "securityReview": {
+      "status": "not_applicable",
+      "summary": "This is a functional regression report with no security-relevant surface indicated in the supplied context.",
+      "concerns": []
+    },
+    "realBehaviorProof": {
+      "status": "not_applicable",
+      "summary": "This is an issue, not a pull request, so contributor real-behaviour proof does not apply.",
+      "evidenceKind": "not_applicable",
+      "needsContributorAction": false
+    },
+    "telegramVisibleProof": {
+      "status": "not_needed",
+      "summary": "Not a Telegram-related change; no live transport proof is relevant."
+    },
+    "overallCorrectness": "not a patch",
+    "reviewTier": "not_applicable",
+    "overallConfidenceScore": 0.55,
+    "fixedRelease": null,
+    "fixedSha": null,
+    "fixedAt": null,
+    "closeComment": "Keeping this open rather than closing.\n\n- `src/foo.ts` at the current main SHA (`deadbeefdeadbeefdeadbeefdeadbeefdeadbeef`) still shows `foo()` returning the literal `'broken'`, matching the reported behaviour.\n- A contributor comment confirms it still reproduces on main.\n- History shows a `refactor: foo` commit (`abc1234`) by Alice around the time the reporter says the behaviour broke; related issue #4100 previously traced the root cause to `foo()`.\n- This looks like a real, narrow regression, not stale or superseded \u2014 routing to manual review since the correct expected return value isn't established in the available evidence.\n\nLikely related people: Alice (author of the `abc1234` refactor touching `src/foo.ts`) \u2014 medium confidence, noted for routing only, not blame.\n\n\u2014 ClawSweeper review",
+    "workCandidate": "manual_review",
+    "workConfidence": "medium",
+    "workPriority": "medium",
+    "workReason": "Regression is narrow and reproducible on main, but the correct expected return value for foo() isn't established in the supplied context, so a human/maintainer should confirm intended behaviour before an autonomous fix PR is queued.",
+    "workPrompt": "Service area: core source utility (src/foo.ts). Investigate whether `foo()` in src/foo.ts should return something other than the literal string 'broken' \u2014 check git history/blame around commit abc1234 ('refactor: foo') to recover the pre-refactor logic and any related tests, since the exact intended output is not established from the currently available evidence. If a clear prior/expected implementation is found, restore correct behaviour without adding new functionality, options, or scope beyond this function. Do not touch unrelated files. Add or update a regression test covering this case. Run the project's standard test suite (e.g. `npm test` or repo-equivalent) before opening a PR. No docs/ updates are expected unless foo()'s documented contract changes.",
+    "workClusterRefs": [
+      "https://github.com/openclaw/openclaw/issues/4100"
+    ],
+    "workValidation": [
+      "Run the project test suite covering src/foo.ts",
+      "Add a regression test for the reported broken behaviour"
+    ],
+    "workLikelyFiles": [
+      "src/foo.ts"
+    ]
+  },
+  "labelMatch": false
+}
