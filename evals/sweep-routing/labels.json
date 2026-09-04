@@ -1,0 +1,6 @@
+{
+  "fixture": "frozen-sanitized-issue.json",
+  "source": "Existing sanitized ClawSweeper review regression fixture; not a live cohort.",
+  "safety": "Issue; no close or mutation. Independent judge requires source_reproducible because no expected output is supplied.",
+  "expected": {"decision":"keep_open","workCandidate":"manual_review","itemCategory":"bug","reproductionStatus":"source_reproducible"}
+}

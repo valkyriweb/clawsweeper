@@ -5,7 +5,7 @@
       "codex": "gpt-5.6-terra",
       "claude-bridge": "claude-opus-4-8",
       "claude-code": "claude-opus-4-8",
-      "pi": "claude-opus-4-8"
+      "pi": "clawrouter/claude-opus-5"
     }
   },
   "repositories": [
