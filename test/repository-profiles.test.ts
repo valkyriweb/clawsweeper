@@ -187,10 +187,10 @@ test("openclaw-claude profile uses pi for the narrow review canary", () => {
   assert.match(profile.promptNote, /ops\/release triage/);
 });
 
-test("review routing maps codex to gpt-5.6-terra and pi to opus 4.8", () => {
+test("review routing maps codex to gpt-5.6-terra and Claude providers to opus 5 200k", () => {
   assert.equal(reviewModelForProvider("codex"), "gpt-5.6-terra");
-  assert.equal(reviewModelForProvider("pi"), "claude-opus-4-8");
-  assert.equal(reviewModelForProvider("claude-bridge"), "claude-opus-4-8");
+  assert.equal(reviewModelForProvider("pi"), "clawrouter/claude-opus-5-200k");
+  assert.equal(reviewModelForProvider("claude-bridge"), "clawrouter/claude-opus-5-200k");
 });
 
 test("review provider resolution keeps per-target config ahead of env override", () => {

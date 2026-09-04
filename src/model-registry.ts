@@ -29,9 +29,15 @@ export const MODEL_ACTIONS: readonly ModelAction[] = [
 const MODEL_ACTION_SET = new Set<ModelAction>(MODEL_ACTIONS);
 
 /** Codex reasoning-effort levels (advisory for non-codex providers). */
-export type ReasoningEffort = "none" | "low" | "medium" | "high";
+export type ReasoningEffort = "none" | "low" | "medium" | "high" | "xhigh";
 
-export const REASONING_EFFORTS: readonly ReasoningEffort[] = ["none", "low", "medium", "high"];
+export const REASONING_EFFORTS: readonly ReasoningEffort[] = [
+  "none",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+];
 
 const REASONING_EFFORT_SET = new Set<ReasoningEffort>(REASONING_EFFORTS);
 
@@ -40,14 +46,52 @@ const REASONING_EFFORT_SET = new Set<ReasoningEffort>(REASONING_EFFORTS);
  * `claude-code`. Deprecated entries stay listed so existing config validates but
  * are flagged by the catalog. */
 export const PROVIDER_MODELS: Readonly<Record<ReviewProvider, readonly string[]>> = {
-  codex: ["gpt-5.6-terra", "gpt-5.5"],
-  pi: ["claude-opus-4-8", "claude-sonnet-4-6"],
-  "claude-bridge": ["claude-opus-4-8", "claude-sonnet-4-6"],
-  "claude-code": ["claude-opus-4-8", "claude-sonnet-4-6"],
+  codex: [
+    "gpt-5.6-terra",
+    "gpt-5.5",
+    "gpt-5.6-luna",
+    "gpt-5.6-terra-200k",
+    "gpt-5.6-sol",
+    "gpt-6-astra",
+    "gpt-6-astra-200k",
+  ],
+  pi: [
+    "clawrouter/claude-opus-5",
+    "clawrouter/claude-opus-5-200k",
+    "clawrouter/claude-sonnet-5-200k",
+    "clawrouter/claude-fable-5-1-200k",
+    "clawrouter/claude-haiku-4-5",
+    "clawrouter/xai/grok-4.6",
+    "clawrouter/gpt-6-astra",
+    "claude-opus-4-8",
+    "claude-sonnet-4-6",
+  ],
+  "claude-bridge": [
+    "clawrouter/claude-opus-5",
+    "clawrouter/claude-opus-5-200k",
+    "clawrouter/claude-sonnet-5-200k",
+    "clawrouter/claude-fable-5-1-200k",
+    "clawrouter/claude-haiku-4-5",
+    "claude-opus-4-8",
+    "claude-sonnet-4-6",
+  ],
+  "claude-code": [
+    "clawrouter/claude-opus-5",
+    "clawrouter/claude-opus-5-200k",
+    "clawrouter/claude-sonnet-5-200k",
+    "clawrouter/claude-fable-5-1-200k",
+    "clawrouter/claude-haiku-4-5",
+    "claude-opus-4-8",
+    "claude-sonnet-4-6",
+  ],
 };
 
 /** Models that are retired: still valid to parse, surfaced as deprecated. */
-export const DEPRECATED_MODELS: ReadonlySet<string> = new Set(["gpt-5.5"]);
+export const DEPRECATED_MODELS: ReadonlySet<string> = new Set([
+  "gpt-5.5",
+  "claude-opus-4-8",
+  "claude-sonnet-4-6",
+]);
 
 /** Reasoning effort is a codex-only knob; other providers ignore it. */
 export const EFFORT_PROVIDERS: ReadonlySet<ReviewProvider> = new Set(["codex"]);
@@ -82,10 +126,10 @@ export type ModelRegistry = Partial<Record<ModelAction, ActionConfigPatch>>;
 /** Production defaults — the live behaviour when the registry variable is unset.
  * `sweep-review` reflects the `CLAWSWEEPER_REVIEW_PROVIDER=pi` lock (opus). */
 export const DEFAULT_ACTION_CONFIG: Readonly<Record<ModelAction, ResolvedActionConfig>> = {
-  "sweep-review": { provider: "pi", model: "claude-opus-4-8", effort: "none" },
-  "commit-review": { provider: "codex", model: "gpt-5.6-terra", effort: "high" },
-  "repair-worker": { provider: "codex", model: "gpt-5.6-terra", effort: "high" },
-  "issue-implementation": { provider: "codex", model: "gpt-5.6-terra", effort: "high" },
+  "sweep-review": { provider: "pi", model: "clawrouter/claude-opus-5-200k", effort: "none" },
+  "commit-review": { provider: "codex", model: "gpt-5.6-terra", effort: "medium" },
+  "repair-worker": { provider: "codex", model: "gpt-5.6-terra", effort: "medium" },
+  "issue-implementation": { provider: "codex", model: "gpt-5.6-terra", effort: "medium" },
 };
 
 export function isModelAction(value: unknown): value is ModelAction {

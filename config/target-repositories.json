@@ -3,9 +3,9 @@
   "review_routing": {
     "models": {
       "codex": "gpt-5.6-terra",
-      "claude-bridge": "claude-opus-4-8",
-      "claude-code": "claude-opus-4-8",
-      "pi": "claude-opus-4-8"
+      "claude-bridge": "clawrouter/claude-opus-5-200k",
+      "claude-code": "clawrouter/claude-opus-5-200k",
+      "pi": "clawrouter/claude-opus-5-200k"
     }
   },
   "repositories": [

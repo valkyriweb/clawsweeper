@@ -370,7 +370,7 @@ test("workflow utilities expose review capacity telemetry from plans", () => {
         oldestUnreviewedAt: "2026-01-01T00:00:00Z",
         capacityReason: "under capacity: due backlog below planned capacity",
         reviewProvider: "pi",
-        reviewPolicy: { model: "claude-opus-4-8" },
+        reviewPolicy: { model: "clawrouter/claude-opus-5-200k" },
       },
       { batchSize: 3, shardCount: 100 },
     ),
@@ -381,7 +381,7 @@ test("workflow utilities expose review capacity telemetry from plans", () => {
       planned_item_numbers: "42,43",
       planned_shards: "1",
       active_codex_target: "1",
-      review_model: "claude-opus-4-8",
+      review_model: "clawrouter/claude-opus-5-200k",
       review_provider: "pi",
       due_backlog: "17",
       oldest_unreviewed_at: "2026-01-01T00:00:00Z",
@@ -642,9 +642,9 @@ test("reviewModelForTarget honours a sweep-review registry override", () => {
   const prior = process.env.CLAWSWEEPER_MODELS;
   try {
     process.env.CLAWSWEEPER_MODELS = JSON.stringify({
-      "sweep-review": { model: "claude-sonnet-4-6" },
+      "sweep-review": { model: "clawrouter/claude-sonnet-5-200k" },
     });
-    assert.equal(reviewModelForTarget("lue-labs/pi-mono"), "claude-sonnet-4-6");
+    assert.equal(reviewModelForTarget("lue-labs/pi-mono"), "clawrouter/claude-sonnet-5-200k");
     delete process.env.CLAWSWEEPER_MODELS;
     // Unset registry falls back to the provider's default review model.
     assert.equal(typeof reviewModelForTarget("lue-labs/pi-mono"), "string");
@@ -661,8 +661,8 @@ test("codexReasoningEffortForAction resolves override, then env, then default", 
   try {
     delete process.env.CLAWSWEEPER_MODELS;
     delete process.env.CODEX_REASONING_EFFORT;
-    // Default: commit-review is high, sweep-review is none.
-    assert.equal(codexReasoningEffortForAction("commit-review"), "high");
+    // Default: commit-review is medium, sweep-review is none.
+    assert.equal(codexReasoningEffortForAction("commit-review"), "medium");
     assert.equal(codexReasoningEffortForAction("sweep-review"), "none");
     // Env wins over the built-in default.
     process.env.CODEX_REASONING_EFFORT = "medium";
@@ -686,7 +686,7 @@ test("actionModel resolves registry override, then fallback, then default", () =
     assert.equal(actionModel("commit-review", "gpt-5.6-terra"), "gpt-5.6-terra");
     // No override, empty fallback -> built-in default.
     assert.equal(actionModel("commit-review", ""), "gpt-5.6-terra");
-    assert.equal(actionModel("sweep-review", ""), "claude-opus-4-8");
+    assert.equal(actionModel("sweep-review", ""), "clawrouter/claude-opus-5-200k");
     // Registry override wins over the fallback.
     process.env.CLAWSWEEPER_MODELS = JSON.stringify({
       "commit-review": { model: "gpt-5.5" },
@@ -713,7 +713,7 @@ test("actionProvider resolves registry override, then validated fallback, then d
     assert.throws(() => actionProvider("repair-worker", "pi"), /does not support provider "pi"/);
     // Registry override wins over the fallback.
     process.env.CLAWSWEEPER_MODELS = JSON.stringify({
-      "commit-review": { provider: "pi", model: "claude-opus-4-8" },
+      "commit-review": { provider: "pi", model: "clawrouter/claude-opus-5-200k" },
     });
     assert.equal(actionProvider("commit-review", "codex"), "pi");
   } finally {
