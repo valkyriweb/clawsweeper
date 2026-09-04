@@ -41,7 +41,14 @@ const REASONING_EFFORT_SET = new Set<ReasoningEffort>(REASONING_EFFORTS);
  * are flagged by the catalog. */
 export const PROVIDER_MODELS: Readonly<Record<ReviewProvider, readonly string[]>> = {
   codex: ["gpt-5.6-terra", "gpt-5.5"],
-  pi: ["clawrouter/claude-opus-5", "clawrouter/claude-opus-5"],
+  // Keep historic unqualified aliases parseable while steering new configuration
+  // to catalog-qualified ClawRouter ids.
+  pi: [
+    "claude-opus-4-8",
+    "claude-sonnet-4-6",
+    "clawrouter/claude-opus-5",
+    "clawrouter/gpt-5.6-terra-200k",
+  ],
   "claude-bridge": ["claude-opus-4-8", "claude-sonnet-4-6"],
   "claude-code": ["claude-opus-4-8", "claude-sonnet-4-6"],
 };

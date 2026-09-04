@@ -88,7 +88,21 @@ test("rejects provider an action does not support", () => {
   );
 });
 
-test("rejects model that does not belong to the chosen provider", () => {
+test("accepts both legacy and qualified Pi model overrides", () => {
+  assert.deepEqual(
+    parseModelRegistry(
+      JSON.stringify({ "sweep-review": { provider: "pi", model: "claude-opus-4-8" } }),
+    )["sweep-review"],
+    { provider: "pi", model: "claude-opus-4-8" },
+  );
+  assert.deepEqual(
+    parseModelRegistry(
+      JSON.stringify({
+        "sweep-review": { provider: "pi", model: "clawrouter/gpt-5.6-terra-200k" },
+      }),
+    )["sweep-review"],
+    { provider: "pi", model: "clawrouter/gpt-5.6-terra-200k" },
+  );
   assert.throws(
     () =>
       parseModelRegistry(
@@ -142,14 +156,21 @@ test("serializeRegistry emits canonical action order and field order", () => {
   assert.deepEqual(Object.keys(JSON.parse(json)["sweep-review"]), ["provider", "model", "effort"]);
 });
 
-test("catalog lists codex + anthropic models and flags deprecated/effort", () => {
+test("catalog retains legacy Pi aliases and lists unique qualified routes", () => {
   const rows = modelCatalogRows();
   const terra = rows.find((row) => row.model === "gpt-5.6-terra");
   const legacy = rows.find((row) => row.model === "gpt-5.5");
+  const legacyPi = rows.find((row) => row.provider === "pi" && row.model === "claude-opus-4-8");
   const opus = rows.find((row) => row.provider === "pi" && row.model === "clawrouter/claude-opus-5");
+  const challenger = rows.find(
+    (row) => row.provider === "pi" && row.model === "clawrouter/gpt-5.6-terra-200k",
+  );
   assert.ok(terra && terra.provider === "codex" && terra.supportsEffort && !terra.deprecated);
   assert.ok(legacy && legacy.deprecated);
+  assert.ok(legacyPi && !legacyPi.supportsEffort);
   assert.ok(opus && !opus.supportsEffort);
+  assert.ok(challenger && !challenger.supportsEffort);
+  assert.equal(new Set(rows.map((row) => `${row.provider}/${row.model}`)).size, rows.length);
 });
 
 test("isModelAction guards the action union", () => {
