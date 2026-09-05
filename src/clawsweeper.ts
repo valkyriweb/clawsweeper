@@ -5459,7 +5459,23 @@ export function runClaudeCode(options: RunClaudeCodeOptions): Decision {
   }
 }
 
-export type RunPiOptions = RunCliReviewOptions;
+export type RunPiOptions = Omit<RunCliReviewOptions, "reasoningEffort"> & {
+  reasoningEffort?: string;
+};
+
+function piThinkingLevel(reasoningEffort: string | undefined): string | undefined {
+  switch (reasoningEffort) {
+    case "none":
+      return "off";
+    case "low":
+    case "medium":
+    case "high":
+    case "xhigh":
+      return reasoningEffort;
+    default:
+      return undefined;
+  }
+}
 
 // Pi review provider (pi-mono-fork CLI).
 //
@@ -5515,6 +5531,10 @@ export function runPi(options: RunPiOptions): Decision {
   if (options.model && options.model.length > 0) {
     args.push("--model", options.model);
   }
+  const thinkingLevel = piThinkingLevel(options.reasoningEffort);
+  if (thinkingLevel) {
+    args.push("--thinking", thinkingLevel);
+  }
   if (options.sandboxMode === "read-only") {
     args.push("-t", "read,glob,grep,agent,Agent");
   }
@@ -5536,7 +5556,7 @@ export function runPi(options: RunPiOptions): Decision {
           target_repo: itemRepo,
           item_number: item.number,
           model: options.model,
-          reasoning_effort: options.reasoningEffort,
+          reasoning_effort: options.reasoningEffort ?? "",
           service_tier: options.serviceTier,
           sandbox: options.sandboxMode,
           timeout_ms: options.timeoutMs,
