@@ -7,6 +7,14 @@ import test from "node:test";
 
 const repoRoot = process.cwd();
 
+function hermeticWorkerEnv(overrides: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const env = { ...process.env, ...overrides };
+  delete env.CLAWSWEEPER_MODEL;
+  delete env.CLAWSWEEPER_MODELS;
+  delete env.PI_MODEL;
+  return env;
+}
+
 test("run-worker uses Pi medium model for docs maintenance", () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "clawsweeper-run-worker-pi-"));
   const fakeBin = path.join(tmp, "bin");
@@ -67,13 +75,14 @@ test("run-worker uses Pi medium model for docs maintenance", () => {
   try {
     execFileSync(process.execPath, ["dist/repair/run-worker.js", jobPath, "--mode", "autonomous"], {
       cwd: repoRoot,
-      env: {
-        ...process.env,
+      env: hermeticWorkerEnv({
         CLAWSWEEPER_ALLOW_EXECUTE: "1",
+        CLAWSWEEPER_MODEL: "hostile-cla sweeper-model",
+        PI_MODEL: "hostile-pi-model",
         FAKE_PI_ARGS_FILE: argsFile,
         FAKE_PI_STDIN_FILE: stdinFile,
         PATH: `${fakeBin}${path.delimiter}${process.env.PATH ?? ""}`,
-      },
+      }),
       stdio: "pipe",
       encoding: "utf8",
     });
@@ -185,14 +194,15 @@ test("run-worker starts Pi in the target checkout when one is available", () => 
   try {
     execFileSync(process.execPath, ["dist/repair/run-worker.js", jobPath, "--mode", "plan"], {
       cwd: repoRoot,
-      env: {
-        ...process.env,
+      env: hermeticWorkerEnv({
         CLAWSWEEPER_TARGET_CHECKOUT: targetCheckout,
+        CLAWSWEEPER_MODEL: "hostile-cla sweeper-model",
+        PI_MODEL: "hostile-pi-model",
         FAKE_PI_CWD_FILE: cwdFile,
         FAKE_PI_ARGS_FILE: argsFile,
         FAKE_PI_STDIN_FILE: stdinFile,
         PATH: `${fakeBin}${path.delimiter}${process.env.PATH ?? ""}`,
-      },
+      }),
       stdio: "pipe",
     });
 
