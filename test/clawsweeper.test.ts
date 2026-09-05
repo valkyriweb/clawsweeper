@@ -6269,6 +6269,39 @@ test("runPi spawns pi -p with --mode json --no-session and returns a Decision", 
   assert.equal(usageEvents[0].status, "success");
 });
 
+test("runPi forwards each configured reasoning effort in Pi argv", () => {
+  const expected = closeDecision();
+  const cases: ReadonlyArray<{ effort?: string; expectedThinking?: string }> = [
+    { effort: "none", expectedThinking: "off" },
+    { effort: "low", expectedThinking: "low" },
+    { effort: "medium", expectedThinking: "medium" },
+    { effort: "high", expectedThinking: "high" },
+    { effort: "xhigh", expectedThinking: "xhigh" },
+    {},
+  ];
+
+  for (const { effort, expectedThinking } of cases) {
+    let capturedArgs: readonly string[] = [];
+    const stubSpawn: SpawnFn = (_command, args) => {
+      capturedArgs = args;
+      return { status: 0, stdout: JSON.stringify(expected), stderr: "" };
+    };
+
+    runPi(
+      piOptionsForTest({
+        model: "pi-test",
+        reasoningEffort: effort,
+        sandboxMode: "",
+        spawnFn: stubSpawn,
+      }),
+    );
+
+    const expectedArgs = ["-p", "--mode", "json", "--no-session", "--model", "pi-test"];
+    if (expectedThinking) expectedArgs.push("--thinking", expectedThinking);
+    assert.deepEqual(capturedArgs, expectedArgs);
+  }
+});
+
 test("runPi extracts the last assistant text from a line-stream of JSON events", () => {
   const expected = closeDecision();
   const stream =
