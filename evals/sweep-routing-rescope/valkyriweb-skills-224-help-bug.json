@@ -1,0 +1,46 @@
+{
+  "item": {
+    "repo": "valkyriweb/skills",
+    "number": 224,
+    "kind": "issue",
+    "title": "sweep.sh --help is parsed as an author query",
+    "url": "https://github.com/valkyriweb/skills/issues/224",
+    "createdAt": "2026-09-04T00:00:00Z",
+    "updatedAt": "2026-09-04T00:00:00Z",
+    "author": "external-user",
+    "authorAssociation": "NONE",
+    "labels": ["bug"]
+  },
+  "context": {
+    "issue": {
+      "number": 224,
+      "title": "sweep.sh --help is parsed as an author query",
+      "body": "The help flag must print usage without a GitHub search. Frozen clean-shell evidence: `$ sweep.sh --help` exits 1 with `Invalid search query \"author:--help state:open type:pr\"`. The fix has not landed.",
+      "labels": ["bug"]
+    },
+    "comments": [],
+    "timeline": [],
+    "counts": { "comments": 0, "timeline": 0 },
+    "sourceExcerpts": [
+      {
+        "path": "sweep.sh",
+        "sha": "unknown",
+        "startLine": 1,
+        "endLine": 18,
+        "body": "case \"$1\" in\n  --help) query=\"author:--help state:open type:pr\" ;;\nesac"
+      }
+    ],
+    "historySnippets": [],
+    "relatedItemBodies": []
+  },
+  "git": { "mainSha": "unknown", "latestRelease": null },
+  "provenance": {
+    "sourceArtifact": "old skills-224-help-bug.json",
+    "sourceArtifactSha256": "4ca560995f45ef46cfb6ad732baf0a666144560c5067e262d8cab787614e557",
+    "repositoryCorrection": {
+      "from": "lue-labs/skills",
+      "to": "valkyriweb/skills",
+      "reason": "The old fixture named the wrong owner; this is a new corrected fixture."
+    }
+  }
+}
