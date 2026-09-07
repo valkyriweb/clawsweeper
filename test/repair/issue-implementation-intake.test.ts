@@ -144,7 +144,7 @@ test("strict docs reports are eligible for implementation intake", () => {
   const markdown = report({
     item_category: "docs",
     labels: JSON.stringify(["area:docs"]),
-    work_validation: JSON.stringify(["pnpm --filter @multica/docs typecheck"]),
+    work_validation: JSON.stringify(["pnpm --filter @sale-sight/docs typecheck"]),
     work_likely_files: JSON.stringify(["apps/docs/content/docs/example.zh.mdx"]),
   });
   const decision = reportOnlyDecision({
@@ -218,18 +218,21 @@ test("security-sensitive live text does not flag token-shaped code identifiers",
 test("implementation intake issue reference matching ignores unrelated version numbers", () => {
   assert.equal(
     issueReferenceTextMatches(
-      "bermont-digital/multica",
+      "bermont-digital/sale-sight-plugin",
       11,
       "Bumps mermaid from 11.14.0 to 11.15.0. <summary>Changelog</summary>",
     ),
     false,
   );
-  assert.equal(issueReferenceTextMatches("bermont-digital/multica", 11, "Fixes #11"), true);
+  assert.equal(
+    issueReferenceTextMatches("bermont-digital/sale-sight-plugin", 11, "Fixes #11"),
+    true,
+  );
   assert.equal(
     issueReferenceTextMatches(
-      "bermont-digital/multica",
+      "bermont-digital/sale-sight-plugin",
       11,
-      "Fixes https://github.com/bermont-digital/multica/issues/11",
+      "Fixes https://github.com/bermont-digital/sale-sight-plugin/issues/11",
     ),
     true,
   );
