@@ -161,7 +161,9 @@ test("catalog retains legacy Pi aliases and lists unique qualified routes", () =
   const terra = rows.find((row) => row.model === "gpt-5.6-terra");
   const legacy = rows.find((row) => row.model === "gpt-5.5");
   const legacyPi = rows.find((row) => row.provider === "pi" && row.model === "claude-opus-4-8");
-  const opus = rows.find((row) => row.provider === "pi" && row.model === "clawrouter/claude-opus-5");
+  const opus = rows.find(
+    (row) => row.provider === "pi" && row.model === "clawrouter/claude-opus-5",
+  );
   const challenger = rows.find(
     (row) => row.provider === "pi" && row.model === "clawrouter/gpt-5.6-terra-200k",
   );
