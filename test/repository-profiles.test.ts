@@ -91,32 +91,18 @@ test("repositoryProfileFor matches mixed-case input against private target profi
   assert.match(profile.docsMaintainer.ownedDocs.join("\n"), /NextJS-Frontend\/AGENTS\.md/);
 });
 
-test("repositoryProfileFor carries service-area routing notes", () => {
-  const profile = repositoryProfileFor("bermont-digital/multica");
+test("repositoryProfileFor carries sale-sight-plugin routing notes", () => {
+  const profile = repositoryProfileFor("bermont-digital/sale-sight-plugin");
 
-  assert.equal(profile.targetRepo, "bermont-digital/multica");
-  // Multica keeps its established full policy and credential route in this narrow canary slice.
-  assert.equal(profile.automationPolicy, "full");
-  assert.equal(profile.githubAppCredentialRoute, "valkyriweb");
-  assert.match(profile.promptNote, /area:backend-go/);
-  assert.match(profile.promptNote, /area:frontend-next/);
-  assert.match(profile.promptNote, /area:daemon/);
-  assert.deepEqual(profile.applyCloseRules.issue, [
-    "implemented_on_main",
-    "duplicate_or_superseded",
-    "cannot_reproduce",
-    "incoherent",
-    "not_actionable_in_repo",
-    "stale_insufficient_info",
-  ]);
-  assert.deepEqual(profile.applyCloseRules.pull_request, [
-    "implemented_on_main",
-    "mostly_implemented_on_main",
-    "duplicate_or_superseded",
-    "cannot_reproduce",
-    "incoherent",
-    "not_actionable_in_repo",
-  ]);
+  assert.equal(profile.targetRepo, "bermont-digital/sale-sight-plugin");
+  assert.equal(profile.slug, "bermont-digital-sale-sight-plugin");
+  assert.equal(profile.checkoutDir, "sale-sight-plugin");
+  assert.equal(profile.automationPolicy, "review_only");
+  assert.equal(profile.githubAppCredentialRoute, "bermont-digital");
+  assert.match(profile.promptNote, /SaleSight/);
+  assert.match(profile.promptNote, /composer run verify/);
+  assert.deepEqual(profile.applyCloseRules.issue, []);
+  assert.deepEqual(profile.applyCloseRules.pull_request, []);
 });
 
 test("valkyriweb/paperclip scopes commit-review to its bermont production branch", () => {

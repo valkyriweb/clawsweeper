@@ -837,7 +837,7 @@ test("target-repositories.json opts Luke's personal repos into maintainer-author
   }
   for (const repo of [
     "openclaw/openclaw",
-    "bermont-digital/multica",
+    "bermont-digital/sale-sight-plugin",
     "CLIP-SA/core-ai",
     "CLIP-SA/core-wholesale",
   ]) {
@@ -1245,9 +1245,9 @@ test("review-only targets preserve close proposals but reject automated close de
 test("private target policy allows full auto-close on configured reasons", () => {
   const implementedPr = validateCloseDecision(
     item({
-      repo: "bermont-digital/multica",
+      repo: "CLIP-SA/core-ai",
       kind: "pull_request",
-      url: "https://github.com/bermont-digital/multica/pull/123",
+      url: "https://github.com/CLIP-SA/core-ai/pull/123",
     }),
     closeDecision(),
   );
@@ -3221,8 +3221,8 @@ test("apply-artifacts writes and removes generated work plans", () => {
     writeFileSync(
       join(artifactDir, "321.md"),
       workPlanCandidateReport({
-        repository: "bermont-digital/multica",
-        work_cluster_refs: JSON.stringify(["bermont-digital/multica#26"]),
+        repository: "bermont-digital/sale-sight-plugin",
+        work_cluster_refs: JSON.stringify(["bermont-digital/sale-sight-plugin#26"]),
       }),
       "utf8",
     );
@@ -3230,7 +3230,7 @@ test("apply-artifacts writes and removes generated work plans", () => {
       "dist/clawsweeper.js",
       "apply-artifacts",
       "--target-repo",
-      "bermont-digital/multica",
+      "bermont-digital/sale-sight-plugin",
       "--artifact-dir",
       artifactDir,
       "--items-dir",
@@ -3249,7 +3249,7 @@ test("apply-artifacts writes and removes generated work plans", () => {
     writeFileSync(
       join(artifactDir, "321.md"),
       workPlanCandidateReport({
-        repository: "bermont-digital/multica",
+        repository: "bermont-digital/sale-sight-plugin",
         work_candidate: "none",
         work_status: "none",
       }),
@@ -3259,7 +3259,7 @@ test("apply-artifacts writes and removes generated work plans", () => {
       "dist/clawsweeper.js",
       "apply-artifacts",
       "--target-repo",
-      "bermont-digital/multica",
+      "bermont-digital/sale-sight-plugin",
       "--artifact-dir",
       artifactDir,
       "--items-dir",
@@ -3280,7 +3280,12 @@ test("apply-artifacts writes and removes generated work plans", () => {
 test("apply-decisions removes archived work plans from the scoped plans directory", () => {
   const root = mkdtempSync(tmpPrefix);
   const originalPath = process.env.PATH;
-  const defaultPlanDir = join(process.cwd(), "records", "bermont-digital-multica", "plans");
+  const defaultPlanDir = join(
+    process.cwd(),
+    "records",
+    "bermont-digital-sale-sight-plugin",
+    "plans",
+  );
   const defaultPlanPath = join(defaultPlanDir, "321.md");
   try {
     const binDir = join(root, "bin");
@@ -3320,8 +3325,8 @@ if (args.includes("/comments")) {
     writeFileSync(
       join(itemsDir, "321.md"),
       workPlanCandidateReport({
-        repository: "bermont-digital/multica",
-        work_cluster_refs: JSON.stringify(["bermont-digital/multica#26"]),
+        repository: "bermont-digital/sale-sight-plugin",
+        work_cluster_refs: JSON.stringify(["bermont-digital/sale-sight-plugin#26"]),
         item_snapshot_hash: "reviewed-snapshot",
         item_updated_at: "2026-05-01T00:00:00Z",
       }),
@@ -3335,7 +3340,7 @@ if (args.includes("/comments")) {
       "dist/clawsweeper.js",
       "apply-decisions",
       "--target-repo",
-      "bermont-digital/multica",
+      "bermont-digital/sale-sight-plugin",
       "--items-dir",
       itemsDir,
       "--closed-dir",
