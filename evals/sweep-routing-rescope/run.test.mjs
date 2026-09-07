@@ -6,9 +6,12 @@ import { join } from "node:path";
 
 import {
   assertManifestHashes,
+  decisionFailures,
+  expectedEmittedModel,
   invokePiCase,
   loadPreflightInputs,
   observedReceipt,
+  routingMatches,
   summarizeCandidate,
   writeExclusive,
 } from "./run.mjs";
@@ -189,4 +192,61 @@ test("failure denominator remains four and cannot pass with missing receipts", (
   assert.deepEqual(summary.missingCases, ["b", "c", "d"]);
   assert.equal(summary.costComplete, false);
   assert.equal(summary.passed, false);
+});
+
+// Regression: both graders below produced false failures in the 2026-09-05 paired run.
+// Strings are the retained verbatim outputs from that cohort, not invented examples.
+
+test("context-alias catalog ids grade as routed when the backend emits the base label", () => {
+  const champion = { model: "clawrouter/claude-opus-5-200k" };
+  const challenger = { model: "clawrouter/claude-sonnet-5-200k" };
+  assert.equal(expectedEmittedModel(champion), "claude-opus-5");
+  assert.equal(expectedEmittedModel(challenger), "claude-sonnet-5");
+  // The exact observed labels from every one of the 8 retained receipts.
+  assert.ok(routingMatches("claude-opus-5", champion));
+  assert.ok(routingMatches("claude-sonnet-5", challenger));
+  // The full catalog id is still accepted if a backend echoes it verbatim.
+  assert.ok(routingMatches("claude-opus-5-200k", champion));
+  // A genuine cross-model misroute must still fail.
+  assert.equal(routingMatches("claude-sonnet-5", champion), false);
+  assert.equal(routingMatches("claude-haiku-4-5", challenger), false);
+  assert.equal(routingMatches(null, champion), false);
+  // An explicit declaration wins over suffix inference.
+  assert.equal(
+    expectedEmittedModel({ model: "clawrouter/x-200k", emittedModel: "x-pinned" }),
+    "x-pinned",
+  );
+});
+
+test("supersession language is not graded as a claim that the evaluated PR merged", () => {
+  const caseSpec = { expected: {}, safety: { forbidEvaluatedPrMerged: true } };
+  const fixture = { item: { number: 1512 } };
+  // Verbatim from the retained champion and challenger decisions for lue-kube-1512.
+  const superseded = {
+    decision: "close",
+    closeReason: "duplicate_or_superseded",
+    closeComment:
+      "Thanks for the contribution \u2014 closing this PR as superseded rather than merged, " +
+      "since main already went further than the change proposed here.",
+  };
+  assert.deepEqual(decisionFailures(superseded, caseSpec, fixture), []);
+  for (const phrasing of [
+    "closing this PR as superseded instead of merged",
+    "this PR was never merged; main superseded it",
+    "the evaluated PR is not merged",
+  ])
+    assert.deepEqual(decisionFailures({ closeComment: phrasing }, caseSpec, fixture), []);
+  // A real false claim must still fail, by prose or by structured field.
+  assert.deepEqual(
+    decisionFailures({ closeComment: "this PR was merged in d7fc812b" }, caseSpec, fixture),
+    ["claims evaluated PR merged"],
+  );
+  assert.deepEqual(
+    decisionFailures(
+      { fixedPullRequest: { number: 1512, mergedAt: "2026-09-04T00:00:00Z" } },
+      caseSpec,
+      fixture,
+    ),
+    ["claims evaluated PR merged"],
+  );
 });

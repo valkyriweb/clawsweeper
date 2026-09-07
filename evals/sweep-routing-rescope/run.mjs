@@ -138,6 +138,25 @@ function modelId(requestedModel) {
   return slash < 0 ? requestedModel : requestedModel.slice(slash + 1);
 }
 
+// The catalog id and the label a backend emits are not the same string. Context-window
+// alias ids (`<base>-200k`) are distinct, real catalog entries that report the base model
+// in `message_end.message.model`. Comparing the catalog id to the emitted label by literal
+// equality marked every case a "routing mismatch" even when routing was correct.
+// Candidates may declare `emittedModel` explicitly; otherwise a trailing context alias is
+// the only tolerated difference. Anything else is still a real mismatch.
+const CONTEXT_ALIAS_SUFFIX = /-\d+k$/i;
+
+export function expectedEmittedModel(candidate) {
+  if (candidate.emittedModel) return candidate.emittedModel;
+  return modelId(candidate.model).replace(CONTEXT_ALIAS_SUFFIX, "");
+}
+
+export function routingMatches(observedModel, candidate) {
+  if (typeof observedModel !== "string") return false;
+  if (observedModel === modelId(candidate.model)) return true;
+  return observedModel === expectedEmittedModel(candidate);
+}
+
 function thinkingArg(effort) {
   return effort === "none" ? "off" : effort;
 }
@@ -673,7 +692,7 @@ export function observedReceipt(raw) {
   };
 }
 
-function decisionFailures(decision, caseSpec, fixture) {
+export function decisionFailures(decision, caseSpec, fixture) {
   const failures = [];
   for (const [key, value] of Object.entries(caseSpec.expected))
     if (decision?.[key] !== value) failures.push(`expected ${key}=${value}`);
@@ -699,12 +718,17 @@ function decisionFailures(decision, caseSpec, fixture) {
     const fixedPull = decision?.fixedPullRequest;
     if (fixedPull?.number === fixture.item.number && fixedPull.mergedAt)
       failures.push("claims evaluated PR merged");
+    // The `[^.]{0,80}` window let this match span a contrastive clause: the correct
+    // sentence "closing this PR as superseded rather than merged" was graded as a claim
+    // that the evaluated PR merged. The `not merged` guard did not cover "rather than
+    // merged" / "instead of merged" / "was never merged". Require `merged` to be asserted
+    // of the evaluated PR without an intervening negation or contrast.
     const text = JSON.stringify(decision);
-    if (
-      /(?:this|the evaluated|reviewed)\s+PR\s+[^.]{0,80}\bmerged\b/i.test(text) &&
-      !/\bnot\s+merged\b/i.test(text)
-    )
-      failures.push("claims evaluated PR merged");
+    const assertsMerged =
+      /(?:this|the evaluated|reviewed)\s+PR\s+(?:was\s+|is\s+|has\s+been\s+)?merged\b/i.test(text);
+    const negatedOrContrasted =
+      /\b(?:not|never|rather\s+than|instead\s+of|without\s+being)\s+merged\b/i.test(text);
+    if (assertsMerged && !negatedOrContrasted) failures.push("claims evaluated PR merged");
   }
   return failures;
 }
@@ -785,11 +809,10 @@ export function invokePiCase(plan, candidate, { privateRoot, spawnFn = liveSpawn
       captured[0].args.some((arg, index) => arg !== expectedArgs[index]))
   )
     failures.push("spawn argv contract mismatch");
-  const expectedObserved = { provider: "clawrouter", model: modelId(config.model) };
+  const expectedObserved = { provider: "clawrouter", model: expectedEmittedModel(config) };
   if (
     receipt.observed.some(
-      (entry) =>
-        entry.provider !== expectedObserved.provider || entry.model !== expectedObserved.model,
+      (entry) => entry.provider !== expectedObserved.provider || !routingMatches(entry.model, config),
     )
   )
     failures.push("routing mismatch");
