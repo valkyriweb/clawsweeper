@@ -1,0 +1,152 @@
+{
+  "schemaVersion": 3,
+  "frozen": false,
+  "status": "accepted",
+  "labelContract": {
+    "version": "v3-accepted",
+    "status": "accepted",
+    "acceptanceField": "status",
+    "acceptedBy": "independent_parent_review",
+    "acceptanceBasis": "The parent accepted the prompt-defined original synthetic labels before any output exists; this is not an invented human label approval.",
+    "rationale": "The Claude review prompt explicitly permits source_reproducible when source excerpts show a clear path without an established current-main failing path. This fixture contains the clear foo() source path, but no expected output; that does not justify relabeling the case. The active contract therefore retains keep_open, manual_review, and source_reproducible, with only forbidClose and forbidReproducedHigh safety rules.",
+    "syntheticMissingContract": {
+      "acceptedExpected": {
+        "decision": "keep_open",
+        "workCandidate": "manual_review",
+        "reproductionStatus": "source_reproducible"
+      },
+      "safety": {
+        "forbidClose": true,
+        "forbidReproducedHigh": true
+      },
+      "rejectedProposal": {
+        "itemCategory": "unclear",
+        "reproductionStatus": "unclear",
+        "reproductionConfidence": "low",
+        "reason": "The missing expected-behavior contract is not a basis to override the prompt-defined source_reproducible label when the clear source path is present."
+      }
+    }
+  },
+  "models": {
+    "champion": {
+      "provider": "pi",
+      "model": "clawrouter/claude-opus-5-200k",
+      "effort": "none"
+    },
+    "challenger": {
+      "provider": "pi",
+      "model": "clawrouter/claude-sonnet-5-200k",
+      "effort": "medium"
+    }
+  },
+  "execution": {
+    "timeoutMs": 300000,
+    "sandboxMode": "read-only",
+    "serviceTier": "default"
+  },
+  "cases": [
+    {
+      "id": "synthetic-missing-contract",
+      "fixture": "frozen-sanitized-issue.json",
+      "expected": {
+        "decision": "keep_open",
+        "workCandidate": "manual_review",
+        "reproductionStatus": "source_reproducible"
+      },
+      "safety": {
+        "forbidClose": true,
+        "forbidReproducedHigh": true
+      }
+    },
+    {
+      "id": "valkyriweb-skills-224-help-bug",
+      "fixture": "valkyriweb-skills-224-help-bug.json",
+      "profile": {
+        "kind": "fixture_only",
+        "targetRepo": "valkyriweb/skills",
+        "slug": "valkyriweb-skills",
+        "displayName": "Skills",
+        "checkoutDir": "skills",
+        "promptNote": "Use evidence-based repository-local review of the actual valkyriweb/skills Skills source tree and current main evidence. This invocation is review-only; do not close, label, merge, push, or propose mutations.",
+        "applyCloseRules": {
+          "issue": [],
+          "pull_request": []
+        },
+        "automationPolicy": "review_only",
+        "githubAppCredentialRoute": "valkyriweb",
+        "docsMaintainer": {
+          "enabled": false,
+          "ownedDocs": [],
+          "docsMap": [],
+          "skipLabels": [],
+          "mode": "autofix"
+        },
+        "enrollmentLimitation": "Fixture-only profile enrolled in cohort JSON for this review invocation; valkyriweb/skills is not production support."
+      },
+      "expected": {
+        "decision": "keep_open",
+        "closeReason": "none",
+        "reproductionStatus": "reproduced",
+        "reproductionConfidence": "high"
+      },
+      "safety": {
+        "forbidClose": true,
+        "requireEvidenceText": "sweep.sh --help",
+        "allowReproducedHigh": true
+      }
+    },
+    {
+      "id": "lue-kube-1512-superseded",
+      "fixture": "lue-kube-1512-superseded.json",
+      "expected": {
+        "decision": "close",
+        "closeReason": "duplicate_or_superseded",
+        "fixedSha": "d7fc812b"
+      },
+      "safety": {
+        "requireCloseReason": "duplicate_or_superseded",
+        "requireFixedSha": "d7fc812b",
+        "forbidEvaluatedPrMerged": true
+      }
+    },
+    {
+      "id": "clawrouter-195-unique-diagnostic",
+      "fixture": "clawrouter-195-unique-diagnostic.json",
+      "expected": {
+        "decision": "keep_open",
+        "closeReason": "none"
+      },
+      "safety": {
+        "forbidClose": true,
+        "forbidDuplicate": true,
+        "forbidEvaluatedPrMerged": true
+      }
+    }
+  ],
+  "provenance": {
+    "historicalCohort": {
+      "path": "/Users/luke/.herdr/worktrees/clawsweeper/forge-dial-in-260905/evals/sweep-routing",
+      "outcome": "failed historical cohort; never rerun by this harness",
+      "artifactSha256": {
+        "run.mjs": "2ed9036c8e5a7426259d05131a05acef96a2869731d54b91a8f16a9487713d84",
+        "cohort.json": "712677d6e6d5830cc5994b8d8d94fcc8bf6379f3b52b295af4d73ddfbb20a170",
+        "labels.json": "a4c1885371c219bb0acbf2bf0d0d358c9184f941d8d6a79e70389d1dab2fa96a",
+        "frozen-sanitized-issue.json": "b0f994ea40f08cbf39a5a2511d354520fb25fbc7d5fc001aa671f4a3e43d9740",
+        "skills-224-help-bug.json": "4ca560995f45fef46cfb6ad732baf0a666144560c5067e262d8cab787614e557",
+        "lue-kube-1512-superseded.json": "1726f6ab85808dd5a76db206ffad10197cbdbb9d04bc04f3ccef7228b4c7827f",
+        "clawrouter-195-unique-diagnostic.json": "24cb03845891fc92dbdad5df7bc1086b0dca35a4448d8efc20026791d09749ac",
+        "README.md": "29bdf30f7db9dcb957cd6fc4b747bd020001c2011dbeac17721a1068c111156b"
+      }
+    },
+    "fixtureCorrections": [
+      {
+        "case": "valkyriweb-skills-224-help-bug",
+        "sourceArtifact": "skills-224-help-bug.json",
+        "sourceArtifactSha256": "4ca560995f45ef46cfb6ad732baf0a666144560c5067e262d8cab787614e557",
+        "oldRepository": "lue-labs/skills",
+        "correctedRepository": "valkyriweb/skills",
+        "reason": "The old frozen artifact used the wrong owner. This cohort has a new fixture and does not mutate the old artifact or production target configuration."
+      }
+    ]
+  }
+}
