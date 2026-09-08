@@ -15,6 +15,9 @@ importers:
         specifier: 3.21.3
         version: 3.21.3
     devDependencies:
+      '@oxlint/plugins':
+        specifier: 1.62.0
+        version: 1.62.0
       '@types/node':
         specifier: ^25.6.0
         version: 25.6.0
@@ -547,6 +550,10 @@ packages:
     resolution: {integrity: sha512-h5+1OzzfCC3Ef7VbtKdcv7zsstUQwUDlYpUTvjeUsJAssPgLn7QzbboPtL5ro04Mq0rPOsMzl7q5hIbRs2wD1A==}
     engines: {node: '>=8.0.0'}
 
+  '@oxlint/plugins@1.62.0':
+    resolution: {integrity: sha512-BgKRw631mImmxuGuRoWaRT8AvNSJCfJvR7lDzP1jR3sBAa7q8P/Ii+lcEOEFZsfcfpkXLyUKGEQLYXWqb60wvw==}
+    engines: {node: ^12.22.0 || ^14.17.0 || >=16.0.0}
+
   oxfmt@0.47.0:
     resolution: {integrity: sha512-OFbkbzxKCpooQEnRmpTDnuwTX8KHXzZTQ4Df/hz85fpS67Pl+lxPEFvUtin56HIIS0B1k4X8oIzTXRZPufA2CA==}
     engines: {node: ^20.19.0 || >=22.12.0}
@@ -888,6 +895,8 @@ snapshots:
   fast-check@3.23.2:
     dependencies:
       pure-rand: 6.1.0
+
+  '@oxlint/plugins@1.62.0': {}
 
   oxfmt@0.47.0:
     dependencies:
