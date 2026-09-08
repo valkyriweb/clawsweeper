@@ -83,6 +83,7 @@
     "lint:scripts": "oxlint scripts test --deny-warnings --report-unused-disable-directives -D correctness",
     "lint:dashboard": "oxlint dashboard --ignore-pattern \"app/**\" --tsconfig tsconfig.dashboard.json --deny-warnings --report-unused-disable-directives -D correctness",
     "lint:convex": "oxlint convex/*.ts --tsconfig tsconfig.convex.json --deny-warnings --report-unused-disable-directives -D correctness",
+    "lint:anti-slop": "oxlint -c oxlint.config.ts .",
     "format": "oxfmt --write src scripts test dashboard convex/*.ts package.json tsconfig.json tsconfig.repair.json tsconfig.dashboard.json tsconfig.convex.json tsconfig.scripts.json .oxfmtrc.json config schema .github/actions .github/workflows",
     "format:check": "oxfmt --check src scripts test dashboard convex/*.ts package.json tsconfig.json tsconfig.repair.json tsconfig.dashboard.json tsconfig.convex.json tsconfig.scripts.json .oxfmtrc.json config schema .github/actions .github/workflows",
     "oxformat": "pnpm run format",
@@ -95,6 +96,7 @@
     "effect": "3.21.3"
   },
   "devDependencies": {
+    "@oxlint/plugins": "1.62.0",
     "@types/node": "^25.6.0",
     "@typescript/native-preview": "7.0.0-dev.20260503.1",
     "oxfmt": "^0.47.0",
