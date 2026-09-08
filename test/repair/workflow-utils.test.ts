@@ -57,10 +57,21 @@ test("commit-review-ref CLI resolves the target via --target-repo, as the workfl
 });
 
 test("target auth resolves explicit routes and denies review-only mutation before minting", () => {
-  assert.deepEqual(targetAuthFor({ targetRepo: "bermont-digital/multica", accessMode: "mutate" }), {
-    target_repo: "bermont-digital/multica",
-    target_repo_owner: "bermont-digital",
-    target_repo_name: "multica",
+  assert.deepEqual(
+    targetAuthFor({ targetRepo: "bermont-digital/sale-sight-plugin", accessMode: "comment" }),
+    {
+      target_repo: "bermont-digital/sale-sight-plugin",
+      target_repo_owner: "bermont-digital",
+      target_repo_name: "sale-sight-plugin",
+      credential_route: "bermont-digital",
+      automation_policy: "review_only",
+      access_mode: "comment",
+    },
+  );
+  assert.deepEqual(targetAuthFor({ targetRepo: "CLIP-SA/core-ai", accessMode: "mutate" }), {
+    target_repo: "clip-sa/core-ai",
+    target_repo_owner: "clip-sa",
+    target_repo_name: "core-ai",
     credential_route: "valkyriweb",
     automation_policy: "full",
     access_mode: "mutate",
@@ -73,11 +84,6 @@ test("target auth resolves explicit routes and denies review-only mutation befor
     automation_policy: "full",
     access_mode: "read",
   });
-  assert.equal(
-    targetAuthFor({ targetRepo: "bermont-digital/sale-sight-plugin", accessMode: "comment" })
-      .credential_route,
-    "bermont-digital",
-  );
   assert.throws(
     () => targetAuthFor({ targetRepo: "bermont-digital/smilerite", accessMode: "mutate" }),
     /review_only.*denies target token access-mode=mutate/,
@@ -89,7 +95,7 @@ test("target auth resolves explicit routes and denies review-only mutation befor
 });
 
 test("legacy target auth permits only configured Valkyriweb routes", () => {
-  assert.equal(legacyTargetAuthFor("bermont-digital/multica"), "bermont-digital/multica");
+  assert.equal(legacyTargetAuthFor("CLIP-SA/core-ai"), "clip-sa/core-ai");
   for (const targetRepo of ["bermont-digital/sale-sight-plugin", "bermont-digital/smilerite"]) {
     assert.throws(
       () => legacyTargetAuthFor(targetRepo),
@@ -134,15 +140,10 @@ test("target-auth CLI emits the route and policy consumed by the facade", () => 
   assert.equal(
     execFileSync(
       process.execPath,
-      [
-        "dist/repair/workflow-utils.js",
-        "legacy-target-auth",
-        "--target-repo",
-        "bermont-digital/multica",
-      ],
+      ["dist/repair/workflow-utils.js", "legacy-target-auth", "--target-repo", "CLIP-SA/core-ai"],
       { cwd: process.cwd(), encoding: "utf8" },
     ),
-    "bermont-digital/multica",
+    "clip-sa/core-ai",
   );
   assert.throws(
     () =>

@@ -222,15 +222,15 @@ test("validation preflight accepts pnpm filter package scripts", () => {
     preflightTargetValidationPlan(
       {
         fixArtifact: {
-          validation_commands: ["pnpm --filter @multica/docs typecheck"],
+          validation_commands: ["pnpm --filter @sale-sight/docs typecheck"],
         },
         targetDir: cwd,
       },
-      validationOptions("bermont-digital/multica"),
+      validationOptions("bermont-digital/sale-sight-plugin"),
     ),
     {
       status: "passed",
-      resolved_commands: ["pnpm --filter @multica/docs typecheck"],
+      resolved_commands: ["pnpm --filter @sale-sight/docs typecheck"],
       available_scripts: ["typecheck"],
     },
   );
