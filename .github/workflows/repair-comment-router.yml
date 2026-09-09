@@ -151,23 +151,28 @@ jobs:
           echo "repo=$TARGET_REPO" >> "$GITHUB_OUTPUT"
           echo "owner=${TARGET_REPO%%/*}" >> "$GITHUB_OUTPUT"
 
-      - name: Authorize legacy target token
+      # Route through the static create-target-token facade so bermont-digital
+      # profiles mint with BERMONT_DIGITAL_* credentials instead of the legacy
+      # Valkyriweb-only guard. review_only targets get comment scope; full
+      # targets keep mutate. Home-repo dispatches use GITHUB_TOKEN.
+      - name: Resolve target authorization
+        id: target-auth
         env:
           TARGET_REPO: ${{ steps.target-owner.outputs.repo }}
-        run: pnpm run --silent workflow -- legacy-target-auth --target-repo "$TARGET_REPO"
+        run: |
+          set -euo pipefail
+          pnpm run --silent workflow -- target-auth --target-repo "$TARGET_REPO" --access-mode comment >> "$GITHUB_OUTPUT"
 
-      - name: Create GitHub App token
+      - name: Create target token
         id: app_token
-        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+        uses: ./.github/actions/create-target-token
         with:
-          client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
-          private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
-          owner: ${{ steps.target-owner.outputs.owner }}
-          permission-actions: write
-          permission-checks: read
-          permission-contents: write
-          permission-issues: write
-          permission-pull-requests: write
+          target-repo: ${{ steps.target-owner.outputs.repo }}
+          access-mode: ${{ steps.target-auth.outputs.automation_policy == 'review_only' && 'comment' || 'mutate' }}
+          valkyriweb-client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
+          valkyriweb-private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
+          bermont-digital-client-id: ${{ vars.BERMONT_DIGITAL_CLAWSWEEPER_APP_CLIENT_ID }}
+          bermont-digital-private-key: ${{ secrets.BERMONT_DIGITAL_CLAWSWEEPER_APP_PRIVATE_KEY }}
 
       - name: Create state token
         id: state-token
@@ -185,6 +190,7 @@ jobs:
       - name: Route ClawSweeper comments
         env:
           GH_TOKEN: ${{ steps.app_token.outputs.token }}
+          CLAWSWEEPER_DISPATCH_TOKEN: ${{ github.token }}
           CLAWSWEEPER_MUTATION_TOKEN_SOURCE: clawsweeper-app
           CLAWSWEEPER_ALLOW_MERGE: ${{ vars.CLAWSWEEPER_ALLOW_MERGE || '0' }}
           ROUTER_TARGET_REPO: ${{ github.event_name == 'workflow_dispatch' && inputs.target_repo || vars.CLAWSWEEPER_TARGET_REPO }}
@@ -276,6 +282,7 @@ jobs:
         if: ${{ steps.waiting-repair-dispatches.outputs.count != '' && steps.waiting-repair-dispatches.outputs.count != '0' }}
         env:
           GH_TOKEN: ${{ steps.app_token.outputs.token }}
+          CLAWSWEEPER_DISPATCH_TOKEN: ${{ github.token }}
           CLAWSWEEPER_MUTATION_TOKEN_SOURCE: clawsweeper-app
           CLAWSWEEPER_ALLOW_MERGE: ${{ vars.CLAWSWEEPER_ALLOW_MERGE || '0' }}
           ROUTER_TARGET_REPO: ${{ github.event_name == 'workflow_dispatch' && inputs.target_repo || vars.CLAWSWEEPER_TARGET_REPO }}
