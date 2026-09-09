@@ -208,7 +208,6 @@ test("every active legacy target-token mint has a preceding route guard", () => 
     { workflow: "commit-review.yml", tokenStep: "Create target read token" },
     { workflow: "commit-review.yml", tokenStep: "Create target checks token" },
     { workflow: "repair-cluster-worker.yml", tokenStep: "Create GitHub App token" },
-    { workflow: "repair-comment-router.yml", tokenStep: "Create GitHub App token" },
     { workflow: "repair-commit-finding-intake.yml", tokenStep: "Create GitHub App token" },
     { workflow: "repair-issue-implementation-intake.yml", tokenStep: "Create GitHub App token" },
     { workflow: "verify-reproduction.yml", tokenStep: "Create GitHub App token" },
@@ -235,6 +234,21 @@ test("every active legacy target-token mint has a preceding route guard", () => 
       );
     }
   }
+});
+
+test("comment router mints target tokens through the routed facade", () => {
+  const workflow = fs.readFileSync(".github/workflows/repair-comment-router.yml", "utf8");
+  assert.match(workflow, /uses: \.\/\.github\/actions\/create-target-token/);
+  assert.match(workflow, /BERMONT_DIGITAL_CLAWSWEEPER_APP_PRIVATE_KEY/);
+  assert.match(workflow, /automation_policy == 'review_only' && 'comment' \|\| 'mutate'/);
+  assert.match(workflow, /CLAWSWEEPER_DISPATCH_TOKEN: \$\{\{ github\.token \}\}/);
+  assert.doesNotMatch(workflow, /legacy-target-auth/);
+  assert.doesNotMatch(workflow, /Authorize legacy target token/);
+  // Fan-out still dispatches every configured target, including bermont-digital/*.
+  assert.match(
+    workflow,
+    /jq -r '\.repositories\[\]\.target_repo' config\/target-repositories\.json/,
+  );
 });
 
 test("workflow utilities expose automation limits", () => {
