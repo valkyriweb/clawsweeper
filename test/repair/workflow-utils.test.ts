@@ -240,10 +240,7 @@ test("comment router mints target tokens through the routed facade", () => {
   const workflow = fs.readFileSync(".github/workflows/repair-comment-router.yml", "utf8");
   assert.match(workflow, /uses: \.\/\.github\/actions\/create-target-token/);
   assert.match(workflow, /BERMONT_DIGITAL_CLAWSWEEPER_APP_PRIVATE_KEY/);
-  assert.match(
-    workflow,
-    /automation_policy == 'review_only' && 'comment' \|\| 'mutate'/,
-  );
+  assert.match(workflow, /automation_policy == 'review_only' && 'comment' \|\| 'mutate'/);
   assert.match(workflow, /CLAWSWEEPER_DISPATCH_TOKEN: \$\{\{ github\.token \}\}/);
   assert.doesNotMatch(workflow, /legacy-target-auth/);
   assert.doesNotMatch(workflow, /Authorize legacy target token/);
