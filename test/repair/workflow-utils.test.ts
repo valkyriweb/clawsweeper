@@ -244,8 +244,12 @@ test("comment router mints target tokens through the routed facade", () => {
   assert.match(workflow, /CLAWSWEEPER_DISPATCH_TOKEN: \$\{\{ github\.token \}\}/);
   assert.doesNotMatch(workflow, /legacy-target-auth/);
   assert.doesNotMatch(workflow, /Authorize legacy target token/);
-  // Fan-out still dispatches every configured target, including bermont-digital/*.
-  assert.match(
+  // Fan-out dispatches configured targets, but interim-skips paperclip until App install
+  // (and honors optional skip_comment_router_schedule). Keep paperclip in allowlist.
+  assert.match(workflow, /select\(\.target_repo != "valkyriweb\/paperclip"\)/);
+  assert.match(workflow, /select\(\.skip_comment_router_schedule != true\)/);
+  assert.match(workflow, /config\/target-repositories\.json/);
+  assert.doesNotMatch(
     workflow,
     /jq -r '\.repositories\[\]\.target_repo' config\/target-repositories\.json/,
   );
