@@ -98,6 +98,10 @@ jobs:
         run: |
           set -euo pipefail
           failed=0
+          # Interim: skip valkyriweb/paperclip fan-out — ClawSweeper App install
+          # Not Found on /repos/valkyriweb/paperclip/installation (Luke skipped
+          # App-install widget). Keep paperclip in config/target-repositories.json
+          # for other automation; restore after Luke installs the App.
           while IFS= read -r repo; do
             echo "dispatching router for $repo"
             if ! gh workflow run repair-comment-router.yml \
@@ -108,7 +112,12 @@ jobs:
               echo "::warning::dispatch failed for $repo"
               failed=$((failed+1))
             fi
-          done < <(jq -r '.repositories[].target_repo' config/target-repositories.json)
+          done < <(jq -r '
+            .repositories[]
+            | select(.target_repo != "valkyriweb/paperclip")
+            | select(.skip_comment_router_schedule != true)
+            | .target_repo
+          ' config/target-repositories.json)
           [ "$failed" -eq 0 ] || exit 1
 
   route-comments:
