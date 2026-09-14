@@ -34,6 +34,13 @@ replacement PR; the autofix label is retained whenever the review handoff could
 not be verified. The field is optional; targets without it retain the normal
 ClawSweeper review loop.
 
+A target may set `skip_comment_router_schedule` to `true` to stay on the
+allowlist while scheduled comment-router fan-out skips it. The workflow
+jq already honors that flag. Use it when App token mint for one repo
+poisons the rest of the schedule. Manual `workflow_dispatch` and
+`repository_dispatch` for that repo still run. Restore the flag after
+the App install on that target is healthy.
+
 `openclaw/openclaw` remains a built-in profile because it has broader
 auto-close policy. Other configured targets default to safer repo-local rules:
 issues are review/comment-only, and PRs may auto-close only when the same

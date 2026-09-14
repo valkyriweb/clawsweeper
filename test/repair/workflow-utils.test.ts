@@ -255,6 +255,36 @@ test("comment router mints target tokens through the routed facade", () => {
   );
 });
 
+test("comment-router schedule skip flag isolates openclaw-claude without dropping it from the allowlist", () => {
+  const config = JSON.parse(fs.readFileSync("config/target-repositories.json", "utf8"));
+  const repos = config.repositories.map((entry) => entry.target_repo);
+  assert.ok(repos.includes("valkyriweb/openclaw-claude"));
+  assert.equal(repos.length, 13);
+
+  const scheduled = config.repositories
+    .filter((entry) => entry.target_repo !== "valkyriweb/paperclip")
+    .filter((entry) => entry.skip_comment_router_schedule !== true)
+    .map((entry) => entry.target_repo);
+  assert.equal(scheduled.length, 11);
+  assert.ok(!scheduled.includes("valkyriweb/openclaw-claude"));
+  assert.ok(!scheduled.includes("valkyriweb/paperclip"));
+  for (const keep of [
+    "bermont-digital/sale-sight-plugin",
+    "bermont-digital/smilerite",
+    "CLIP-SA/core-ai",
+    "CLIP-SA/core-wholesale",
+    "lue-labs/pi-mono",
+    "lue-labs/my-pi",
+    "valkyriweb/horizon",
+    "valkyriweb/clawrouter",
+    "valkyriweb/clawsweeper",
+    "valkyriweb/openclaw",
+    "valkyriweb/lue-kube",
+  ]) {
+    assert.ok(scheduled.includes(keep), keep);
+  }
+});
+
 test("workflow utilities expose automation limits", () => {
   assert.equal(
     automationLimit("review_shards.normal_default"),
