@@ -26,10 +26,11 @@ export const REVIEW_CHECK_NAME = "pi-pr-review/verdict";
 
 const PositiveInteger = Schema.Number.pipe(Schema.filter((n) => Number.isSafeInteger(n) && n > 0));
 const DecimalId = Schema.String.pipe(Schema.pattern(/^[1-9]\d*$/));
+const Sha = Schema.String.pipe(Schema.pattern(/^[a-f0-9]{40}$/));
 const identityFields = {
   target_repo: Schema.String.pipe(Schema.pattern(/^[\w.-]+\/[\w.-]+$/)),
   item_number: PositiveInteger,
-  head_sha: Schema.String.pipe(Schema.pattern(/^[a-f0-9]{40}$/)),
+  head_sha: Sha,
   source_run_id: DecimalId,
   source_run_attempt: PositiveInteger,
 };
@@ -56,6 +57,44 @@ const MarkerSchema = Schema.Struct({
   source_run_id: Schema.Union(DecimalId, PositiveInteger),
   verdict: Schema.Literal("pass", "fail", "incomplete"),
 });
+
+const RunPullRefSchema = Schema.Struct({
+  ref: Schema.String.pipe(Schema.minLength(1)),
+  sha: Sha,
+  repo: Schema.Struct({
+    id: PositiveInteger,
+    name: Schema.String.pipe(Schema.minLength(1)),
+    url: Schema.String.pipe(Schema.minLength(1)),
+  }),
+});
+/** Exactly one association: absent, malformed, extra or conflicting entries decode to Left. */
+const RunPullRequestsSchema = Schema.Tuple(
+  Schema.Struct({ number: PositiveInteger, base: RunPullRefSchema, head: RunPullRefSchema }),
+);
+
+/**
+ * Native `pull_request_target` runs report the candidate head SHA rather than the base SHA.
+ * Such a run is trusted only through GitHub's own run→PR association binding this PR, this
+ * repository on both sides, the PR's current `main` base SHA and the reviewed candidate head.
+ */
+function runBindsReviewedCandidateHead(run: LooseRecord, pull: LooseRecord, event: LifecycleEvent) {
+  const decoded = Schema.decodeUnknownEither(RunPullRequestsSchema)(run.pull_requests);
+  if (Either.isLeft(decoded)) return false;
+  const [association] = decoded.right;
+  const repoUrl = `https://api.github.com/repos/${event.target_repo}`;
+  const repoName = event.target_repo.split("/")[1];
+  return (
+    run.head_sha === event.head_sha &&
+    association.number === event.item_number &&
+    association.base.ref === "main" &&
+    association.base.sha === pull.base?.sha &&
+    association.head.sha === event.head_sha &&
+    [association.base.repo, association.head.repo].every(
+      (repo) =>
+        repo.url === repoUrl && repo.name === repoName && repo.id === association.base.repo.id,
+    )
+  );
+}
 
 function sameIdentity(value: LooseRecord, event: LifecycleEvent) {
   return (
@@ -98,11 +137,11 @@ export function validateLifecycleEvidence({
   if (
     pull.base?.ref !== "main" ||
     pull.base?.repo?.full_name !== targetRepo ||
-    !/^[a-f0-9]{40}$/.test(pull.base?.sha ?? "") ||
-    run.head_sha !== pull.base.sha
+    !Schema.is(Sha)(pull.base?.sha) ||
+    (run.head_sha !== pull.base.sha && !runBindsReviewedCandidateHead(run, pull, event))
   ) {
     throw new Error(
-      "Pi lifecycle requires trusted current main base workflow; merge current main into PR branch and push after base drift",
+      "Pi lifecycle requires trusted current main base workflow, by base-SHA run or run-owned PR association; merge current main into PR branch and push after base drift",
     );
   }
   if (

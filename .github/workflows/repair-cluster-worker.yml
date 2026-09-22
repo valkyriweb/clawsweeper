@@ -98,6 +98,17 @@ jobs:
       CLAWSWEEPER_MODELS: ${{ vars.CLAWSWEEPER_MODELS || '' }}
       OPENCLAW_LOCAL_CHECK: "0"
     steps:
+      - name: Select native GitHub CLI
+        if: ${{ runner.environment == 'self-hosted' }}
+        run: |
+          set -euo pipefail
+          native_gh=/usr/local/bin/gh-native
+          test -x "$native_gh"
+          "$native_gh" --version
+          cli_dir=$(mktemp -d "$RUNNER_TEMP/clawsweeper-native-gh.XXXXXX")
+          ln -s "$native_gh" "$cli_dir/gh"
+          echo "$cli_dir" >> "$GITHUB_PATH"
+          echo "GH_BIN=$native_gh" >> "$GITHUB_ENV"
       - uses: actions/checkout@v5
         with:
           filter: blob:none
@@ -273,6 +284,17 @@ jobs:
       CODEX_CLI_VERSION: ${{ vars.CLAWSWEEPER_CODEX_CLI_VERSION || '0.130.0' }}
       OPENCLAW_LOCAL_CHECK: "0"
     steps:
+      - name: Select native GitHub CLI
+        if: ${{ runner.environment == 'self-hosted' }}
+        run: |
+          set -euo pipefail
+          native_gh=/usr/local/bin/gh-native
+          test -x "$native_gh"
+          "$native_gh" --version
+          cli_dir=$(mktemp -d "$RUNNER_TEMP/clawsweeper-native-gh.XXXXXX")
+          ln -s "$native_gh" "$cli_dir/gh"
+          echo "$cli_dir" >> "$GITHUB_PATH"
+          echo "GH_BIN=$native_gh" >> "$GITHUB_ENV"
       - uses: actions/checkout@v5
         with:
           filter: blob:none

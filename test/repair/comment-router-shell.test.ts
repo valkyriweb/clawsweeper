@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -56,6 +56,12 @@ test("classifier preflight is isolated from all router mutations", () => {
   assert.doesNotMatch(router, /classifyReviewText|read-only preflight/);
   assert.match(router, /create-target-token/);
   assert.match(router, /repair:publish-main/);
+  assert.ok(
+    workflow.includes(
+      "CLAWSWEEPER_LIFECYCLE_DISPATCH: ${{ github.event.action == 'clawsweeper_review_lifecycle' && 'true' || 'false' }}",
+    ),
+  );
+  assert.doesNotMatch(workflow, /github\.event_path/);
 });
 
 test("classifier and router use the configured self-hosted pool, not worker runner inputs", () => {
@@ -73,6 +79,70 @@ test("classifier and router use the configured self-hosted pool, not worker runn
   for (const job of ["fan-out-scheduled-sweep", "alert-on-failure"]) {
     const block = workflow.split(`\n  ${job}:\n`)[1]?.split(/\n  [a-z][a-z-]+:\n/)[0];
     assert.ok(block?.includes("    runs-on: ubuntu-latest"));
+  }
+});
+
+test("router and self-hosted repair jobs select native gh and fail closed if absent", () => {
+  const worker = readFileSync(
+    new URL("../../.github/workflows/repair-cluster-worker.yml", import.meta.url),
+    "utf8",
+  );
+  for (const [job, source] of [
+    ["classifier-preflight", workflow],
+    ["route-comments", workflow],
+    ["cluster", worker],
+    ["execute", worker],
+  ]) {
+    const block = source.split(`\n  ${job}:\n`)[1]?.split(/\n  [a-z][a-z-]+:\n/)[0];
+    const step = block
+      ?.split("      - name: Select native GitHub CLI\n")[1]
+      ?.split("\n      - ")[0];
+    assert.ok(step);
+    if (source === worker)
+      assert.ok(step.includes("if: ${{ runner.environment == 'self-hosted' }}"));
+    const script = step.split("        run: |\n")[1].replace(/^          /gm, "");
+    assert.ok(script.includes("native_gh=/usr/local/bin/gh-native"));
+    assert.ok(script.includes('echo "GH_BIN=$native_gh" >> "$GITHUB_ENV"'));
+    const dir = mkdtempSync(join(tmpdir(), "router-native-cli-"));
+    try {
+      const native = join(dir, "native gh");
+      writeFileSync(
+        native,
+        '#!/bin/sh\nif [ "$1" = "--version" ]; then echo native-version; else test "$GH_TOKEN" = synthetic-fixture && echo scoped-auth-preserved; fi\n',
+        { mode: 0o700 },
+      );
+      const env = {
+        ...process.env,
+        TEST_NATIVE_GH: native,
+        RUNNER_TEMP: dir,
+        GITHUB_PATH: join(dir, "path"),
+        GITHUB_ENV: join(dir, "env"),
+        GH_TOKEN: "synthetic-fixture",
+      };
+      const rendered = script.replace(
+        "native_gh=/usr/local/bin/gh-native",
+        'native_gh="$TEST_NATIVE_GH"',
+      );
+      const result = spawnSync(
+        "bash",
+        [
+          "-c",
+          `${rendered}\nIFS= read -r selected_dir < "$GITHUB_PATH"\nexport PATH="$selected_dir:$PATH"\nunset GH_BIN\ngh api metadata`,
+        ],
+        { env, encoding: "utf8" },
+      );
+      assert.equal(result.status, 0, result.stderr);
+      assert.match(result.stdout, /scoped-auth-preserved/);
+      const missingPath = join(dir, "missing-path-output");
+      const missing = spawnSync("bash", ["-c", rendered], {
+        env: { ...env, TEST_NATIVE_GH: join(dir, "absent"), GITHUB_PATH: missingPath },
+        encoding: "utf8",
+      });
+      assert.notEqual(missing.status, 0);
+      assert.equal(existsSync(missingPath), false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   }
 });
 

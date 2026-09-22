@@ -24,6 +24,8 @@ function fixture(t) {
     sha,
     base,
     phase: "completed",
+    runnerEvent: false,
+    missingEventPath: false,
     verdict: "fail",
     run: "42",
     labels: ["clawsweeper:autofix"],
@@ -102,9 +104,10 @@ else if(a[0]==='api'){
         },
       }),
     );
-    const eventArgs = state.lifecycleOnly
-      ? []
-      : ["--lifecycle-event", path.join(dir, "event.json")];
+    const eventArgs =
+      state.lifecycleOnly || state.runnerEvent
+        ? []
+        : ["--lifecycle-event", path.join(dir, "event.json")];
     const child = spawnSync(
       process.execPath,
       [
@@ -128,6 +131,8 @@ else if(a[0]==='api'){
           CLAWSWEEPER_TRUSTED_BOTS: "clawsweeper[bot]",
           CLAWSWEEPER_COMMENT_ROUTER_MAX_LIVE_WORKERS: "100",
           CLAWSWEEPER_LIFECYCLE_EVENT: "",
+          CLAWSWEEPER_LIFECYCLE_DISPATCH: state.runnerEvent ? "true" : "false",
+          GITHUB_EVENT_PATH: state.missingEventPath ? "" : path.join(dir, "event.json"),
           CLAWSWEEPER_LIFECYCLE_ONLY: state.lifecycleOnly ? "true" : "false",
         },
       },
@@ -138,6 +143,14 @@ else if(a[0]==='api'){
   }
   return { dir, state, run };
 }
+test("router resolves native dispatch from runner event path and rejects a missing path", (t) => {
+  const f = fixture(t);
+  assert.equal(f.run({ phase: "started", runnerEvent: true }).lifecycle_state, "agent:reviewing");
+  assert.throws(
+    () => f.run({ missingEventPath: true }),
+    /native Pi lifecycle dispatch requires GITHUB_EVENT_PATH/,
+  );
+});
 test("router executes review -> repair -> new head pass and ignores replay", (t) => {
   const f = fixture(t);
   assert.equal(f.run({ phase: "started" }).lifecycle_state, "agent:reviewing");
