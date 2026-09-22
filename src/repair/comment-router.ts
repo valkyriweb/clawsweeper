@@ -94,6 +94,25 @@ import {
   ghTextWithRetry as ghText,
 } from "./github-cli.js";
 import { compactText, escapeRegExp } from "./text-utils.js";
+import { readLifecycleCommand, readLifecycleCommandForEvent } from "./pr-lifecycle-intake.js";
+import {
+  LIFECYCLE_DISCOVERY_PAGE_SIZE,
+  lifecycleDiscoveryCandidates,
+  lifecycleDiscoveryPage,
+  lifecycleReconciliationCandidates,
+  reconcileLifecycleEntry,
+} from "./pr-lifecycle-reconcile.js";
+import { classifyReviewText } from "./pr-lifecycle-classifier.js";
+import {
+  lifecycleDecision,
+  lifecycleReplayReason,
+  lifecycleSensitiveFiles,
+  repairPathsAllowed,
+  technicalLabelTransition,
+  type TechnicalState,
+} from "./pr-lifecycle.js";
+import { repositoryProfileFor } from "../repository-profiles.js";
+import { hasSecuritySignal } from "./security-signals.js";
 
 const args = parseArgs(process.argv.slice(2));
 const config = readCommentRouterConfig(args);
@@ -160,8 +179,20 @@ const openIssueNumbersByLabel = createCachedLabelNumberLookup((label) =>
     `repos/${targetRepo}/issues?state=open&labels=${encodeURIComponent(label)}&per_page=100`,
   ).map((issue: JsonValue) => issue.number),
 );
-const comments = measure("list_candidate_comments", () => listCandidateComments());
-const rawCommands: LooseRecord[] = [];
+const lifecycleEventPath = args["lifecycle-event"] || process.env.CLAWSWEEPER_LIFECYCLE_EVENT;
+const lifecycleOnly = process.env.CLAWSWEEPER_LIFECYCLE_ONLY === "true";
+const lifecycleEnabled = repositoryProfileFor(targetRepo).piReviewLifecycle === true;
+if (lifecycleOnly && !lifecycleEnabled)
+  throw new Error("Pi lifecycle reconciliation is not enabled for this target");
+const lifecycleRecoveryErrors: LooseRecord[] = [];
+let lifecycleDiscoveryChanged = false;
+const comments =
+  lifecycleEventPath || lifecycleOnly
+    ? []
+    : measure("list_candidate_comments", () => listCandidateComments());
+const rawCommands: LooseRecord[] = lifecycleEventPath
+  ? [readLifecycleCommand(String(lifecycleEventPath), targetRepo, trustedBots)]
+  : [];
 
 for (const comment of comments) {
   const parsed: LooseRecord =
@@ -213,14 +244,72 @@ for (const comment of comments) {
   };
   rawCommands.push(command);
 }
-for (const command of listRepairLoopSweepCommands(rawCommands)) {
+for (const command of lifecycleEventPath || lifecycleEnabled
+  ? []
+  : listRepairLoopSweepCommands(rawCommands)) {
   rawCommands.push(command);
+}
+if (!lifecycleEventPath && lifecycleEnabled) {
+  const repoEntries = (ledger.commands ?? []).filter(
+    (entry: LooseRecord) => entry.repo === targetRepo,
+  );
+  const candidates = lifecycleReconciliationCandidates(repoEntries);
+  try {
+    const page = lifecycleDiscoveryPage(ledger, targetRepo);
+    const pulls = ghJson<LooseRecord[]>([
+      "api",
+      `repos/${targetRepo}/pulls?state=open&sort=created&direction=asc&per_page=${LIFECYCLE_DISCOVERY_PAGE_SIZE}&page=${page}`,
+    ]);
+    candidates.push(...lifecycleDiscoveryCandidates(pulls, repoEntries, targetRepo));
+    const nextPage = pulls.length === LIFECYCLE_DISCOVERY_PAGE_SIZE ? page + 1 : 1;
+    lifecycleDiscoveryChanged = ledger.lifecycle_discovery_pages?.[targetRepo] !== nextPage;
+    ledger.lifecycle_discovery_pages = {
+      ...ledger.lifecycle_discovery_pages,
+      [targetRepo]: nextPage,
+    };
+  } catch (error) {
+    lifecycleRecoveryErrors.push({
+      error:
+        error instanceof Error
+          ? error.message.slice(0, 1000)
+          : "Open PR discovery failed; retry scheduled tick",
+    });
+  }
+  for (const entry of new Map(candidates.map((entry) => [entry.issue_number, entry])).values()) {
+    try {
+      const recovered = reconcileLifecycleEntry(entry, {
+        pull: (number) => ghJson<LooseRecord>(["api", `repos/${targetRepo}/pulls/${number}`]),
+        checks: (sha) =>
+          ghJson<LooseRecord>(["api", `repos/${targetRepo}/commits/${sha}/check-runs?per_page=100`])
+            .check_runs ?? [],
+        run: (id, attempt) =>
+          ghJson<LooseRecord>([
+            "api",
+            `repos/${targetRepo}/actions/runs/${id}/attempts/${attempt}`,
+          ]),
+        comments: (number) => cachedIssueComments(number),
+        intake: (event) => readLifecycleCommandForEvent(event, targetRepo, trustedBots),
+      });
+      if (recovered) rawCommands.push(recovered);
+    } catch (error) {
+      lifecycleRecoveryErrors.push({
+        pull: entry.issue_number,
+        error:
+          error instanceof Error
+            ? error.message.slice(0, 1000)
+            : "Lifecycle reconciliation failed; retry scheduled tick",
+      });
+    }
+  }
 }
 
 await measureAsync("prehydrate_command_lookups", () => prehydrateCommandLookups(rawCommands));
-const commands = measure("classify_commands", () =>
-  rawCommands.map((command) => classifyCommand(command)),
-);
+const commands = await measureAsync("classify_commands", async () => {
+  const classified: LooseRecord[] = [];
+  // Sequential classification reserves repair-head budgets before another command can use them.
+  for (const command of rawCommands) classified.push(await classifyCommand(command));
+  return classified;
+});
 
 const actionable = commands.filter((command: JsonValue) => command.status === "ready");
 const report: LooseRecord = {
@@ -238,6 +327,7 @@ const report: LooseRecord = {
   status_comment_id: statusCommentId,
   max_autoclose_targets: maxAutocloseTargets,
   scanned_comments: comments.length,
+  lifecycle_recovery_errors: lifecycleRecoveryErrors,
   commands_seen: commands.length,
   actionable: actionable.length,
   trusted_bots: [...trustedBots],
@@ -262,8 +352,12 @@ if (execute) {
     }
     for (const command of actionable) executeCommand(command);
   });
-  report.ledger_changed = measure("append_ledger", () => appendLedger(ledger, commands));
-  if (report.ledger_changed) writeLedger(ledgerPath(), ledger);
+  report.ledger_changed =
+    measure("append_ledger", () => appendLedger(ledger, commands)) || lifecycleDiscoveryChanged;
+  if (report.ledger_changed) {
+    ledger.updated_at = new Date().toISOString();
+    writeLedger(ledgerPath(), ledger);
+  }
 }
 
 report.timings = {
@@ -272,6 +366,7 @@ report.timings = {
 };
 if (writeReport) writeReportFile(repoRoot(), report);
 console.log(JSON.stringify(report, null, 2));
+if (lifecycleRecoveryErrors.length > 0) process.exitCode = 1;
 
 function measure<T>(name: string, fn: () => T): T {
   const start = Date.now();
@@ -341,13 +436,30 @@ async function prehydrateCommandLookups(commands: LooseRecord[]) {
   ]);
 }
 
-function classifyCommand(command: LooseRecord): JsonValue {
+async function classifyCommand(command: LooseRecord): Promise<JsonValue> {
+  if (
+    command.lifecycle_review &&
+    (ledger.commands ?? []).some(
+      (entry: LooseRecord) =>
+        entry.idempotency_key === command.idempotency_key &&
+        ["executed", "skipped"].includes(entry.status),
+    )
+  ) {
+    return {
+      ...command,
+      status: "skipped",
+      reason: "Pi lifecycle event already processed in ledger",
+    };
+  }
   if (command.comment_version_key && processedCommentVersions.has(command.comment_version_key)) {
     return { ...command, status: "skipped", reason: "comment version already processed in ledger" };
   }
   let authorization: LooseRecord | null = null;
   if (command.trusted_bot) {
-    if (!trustedBots.has(String(command.author ?? "").toLowerCase())) {
+    if (
+      command.automation_source !== "pi_review_lifecycle" &&
+      !trustedBots.has(String(command.author ?? "").toLowerCase())
+    ) {
       return { ...command, status: "ignored", reason: "trusted automation author is not allowed" };
     }
   } else {
@@ -390,6 +502,8 @@ function classifyCommand(command: LooseRecord): JsonValue {
       reason: authorization.reason,
     };
   }
+
+  if (command.lifecycle_review) return classifyLifecycleCommand(next, issue, pull);
 
   if (
     existingCommandStatusBlocksReplay({
@@ -790,6 +904,124 @@ function classifyCommand(command: LooseRecord): JsonValue {
   };
 }
 
+async function classifyLifecycleCommand(
+  command: LooseRecord,
+  issue: LooseRecord,
+  pull: LooseRecord,
+): Promise<LooseRecord> {
+  if (!repositoryProfileFor(command.repo).piReviewLifecycle)
+    return {
+      ...command,
+      status: "skipped",
+      reason: "repository has not opted into Pi review lifecycle",
+    };
+  const review = command.lifecycle_review;
+  const target = command.target;
+  if (!pull || issue.state !== "open" || target.head_sha !== command.expected_head_sha)
+    return { ...command, status: "skipped", reason: "Pi review targets a closed or stale PR" };
+  const replay = lifecycleReplayReason(command, ledger.commands ?? []);
+  if (replay) return { ...command, status: "skipped", reason: replay };
+  // REST includes previous_filename for renames, which the GraphQL files surface omits.
+  const files = ghPaged<LooseRecord>(
+    `repos/${command.repo}/pulls/${command.issue_number}/files?per_page=100`,
+  );
+  const sensitive = lifecycleSensitiveFiles(files) || hasSecuritySignal({ labels: target.labels });
+  const authorized =
+    hasLabel(target, AUTOFIX_LABEL) &&
+    repairPathsAllowed(files, repositoryProfileFor(command.repo).repairAllowedPaths);
+  const capped =
+    review.phase === "completed" && review.verdict === "fail"
+      ? autoRepairBlockReason({
+          entries: ledger.commands ?? [],
+          plannedHeads: plannedAutoRepairHeads,
+          repo: command.repo,
+          issueNumber: command.issue_number,
+          headSha: target.head_sha,
+          maxRepairsPerPr: Math.min(2, maxAutoRepairsPerPr),
+          maxRepairsPerHead: maxAutoRepairsPerHead,
+          resumeBoundary: latestAutomergeResumeAt(command),
+        })
+      : null;
+  const paused =
+    Boolean(capped || repairLoopStoppedReason(command)) || hasLabel(target, HUMAN_REVIEW_LABEL);
+  let classification;
+  if (
+    review.phase === "completed" &&
+    review.verdict === "fail" &&
+    authorized &&
+    !sensitive &&
+    !paused
+  ) {
+    classification = await classifyReviewText(review.reviewText);
+  }
+  const state = lifecycleDecision({
+    ...review,
+    authorized,
+    sensitive,
+    paused,
+    classification: classification?.classification,
+  });
+  const next = {
+    ...command,
+    lifecycle_review: undefined,
+    lifecycle_state: state,
+    classification,
+    reason:
+      command.reconciliation_reason ||
+      capped ||
+      `Pi ${review.phase}: ${review.verdict ?? "reviewing"}; ${classification?.classification ?? (sensitive ? "sensitive scope" : !authorized ? "no scoped repair authorization" : paused ? "paused" : "no classification needed")}`,
+  };
+  if (state !== "agent:fix-requested") return { ...next, status: "ready", actions: [] };
+  const repair = await classifyCommand({
+    ...next,
+    intent: "clawsweeper_auto_repair",
+    repair_reason: review.reviewText,
+  });
+  if (repair.status !== "ready")
+    return { ...repair, lifecycle_state: HUMAN_REVIEW_LABEL, status: "ready", actions: [] };
+  return repair;
+}
+
+function applyLifecycleState(command: LooseRecord, state: TechnicalState, labels: string[]) {
+  const transition = technicalLabelTransition(labels, state);
+  if (state === "agent:fix-requested")
+    ghText([
+      "label",
+      "create",
+      "agent:review-requested",
+      "--repo",
+      command.repo,
+      "--color",
+      "5319e7",
+      "--description",
+      "Repaired head awaits native review",
+      "--force",
+    ]);
+  ghText([
+    "label",
+    "create",
+    state,
+    "--repo",
+    command.repo,
+    "--color",
+    "5319e7",
+    "--description",
+    "ClawSweeper technical review state; not ship approval",
+    "--force",
+  ]);
+  ghText([
+    "issue",
+    "edit",
+    String(command.issue_number),
+    "--repo",
+    command.repo,
+    "--add-label",
+    transition.add,
+    ...transition.remove.flatMap((label) => ["--remove-label", label]),
+  ]);
+  command.lifecycle_state = state;
+}
+
 function classifyAutoclose(command: LooseRecord, issue: LooseRecord, pull: LooseRecord): JsonValue {
   const reason = autocloseReason(command);
   if (!reason) {
@@ -1164,7 +1396,10 @@ function autoRepairAlreadyPlanned(command: LooseRecord) {
     repo: command.repo,
     issueNumber: command.issue_number,
     headSha: command.target?.head_sha,
-    maxRepairsPerPr: maxAutoRepairsPerPr,
+    maxRepairsPerPr:
+      command.automation_source === "pi_review_lifecycle"
+        ? Math.min(2, maxAutoRepairsPerPr)
+        : maxAutoRepairsPerPr,
     maxRepairsPerHead: maxAutoRepairsPerHead,
     resumeBoundary,
   });
@@ -1287,6 +1522,68 @@ function executeCommand(command: LooseRecord) {
     const shouldDispatchRepair = command.actions?.some(
       (action: JsonValue) => action.action === "dispatch_repair",
     );
+    if (command.lifecycle_state) {
+      const fresh = ghJson<LooseRecord>([
+        "pr",
+        "view",
+        String(command.issue_number),
+        "--repo",
+        command.repo,
+        "--json",
+        "state,headRefOid,labels,files",
+      ]);
+      if (fresh.state !== "OPEN" || fresh.headRefOid !== command.expected_head_sha) {
+        command.status = "skipped";
+        command.reason = "lifecycle target closed or head changed before mutation";
+        return;
+      }
+      const freshFiles = ghPaged<LooseRecord>(
+        `repos/${command.repo}/pulls/${command.issue_number}/files?per_page=100`,
+      );
+      if (
+        lifecycleSensitiveFiles(freshFiles) ||
+        hasSecuritySignal({ labels: fresh.labels }) ||
+        (fresh.labels ?? []).some((label: LooseRecord) => label.name === HUMAN_REVIEW_LABEL) ||
+        (shouldDispatchRepair &&
+          (!(fresh.labels ?? []).some((label: LooseRecord) => label.name === AUTOFIX_LABEL) ||
+            !repairPathsAllowed(freshFiles, repositoryProfileFor(command.repo).repairAllowedPaths)))
+      ) {
+        command.lifecycle_state = HUMAN_REVIEW_LABEL;
+        command.actions = [];
+        command.reason = "repair authorization or security scope changed before dispatch";
+      }
+      applyLifecycleState(
+        command,
+        command.lifecycle_state,
+        (fresh.labels ?? []).map((label: LooseRecord) => label.name),
+      );
+      if (!commandHasAction(command, "dispatch_repair")) {
+        if (command.lifecycle_state === HUMAN_REVIEW_LABEL) {
+          const marker = `<!-- clawsweeper-pi-human:${command.repo}:${command.issue_number}:${command.expected_head_sha}:${command.source_run_id}:${command.source_run_attempt} -->`;
+          if (
+            !cachedIssueComments(command.issue_number).some(
+              (comment: LooseRecord) =>
+                isTrustedStatusComment(comment) && String(comment.body ?? "").includes(marker),
+            )
+          ) {
+            postIssueComment(
+              command.repo,
+              command.issue_number,
+              [
+                marker,
+                "### Pi review needs human attention",
+                "",
+                `Owner: @valkyriweb. Reason: ${command.reason}`,
+                "",
+                "Repair automation is paused; this is not ship approval. Resolve the cause, remove `clawsweeper:human-review`, and explicitly retain or regrant `clawsweeper:autofix` before requesting a new native review. If the base drifted, merge current main into the PR branch and push (no history rewrite); rerunning the old Actions event does not refresh its base. The two-repair pilot cap is not reset by removing a label.",
+              ].join("\n"),
+            );
+          }
+        }
+        command.status = "executed";
+        return;
+      }
+    }
     const shouldDispatchClawSweeper = commandHasAction(command, "dispatch_clawsweeper");
     const shouldDispatchHatch = commandHasAction(command, "dispatch_hatch");
     const shouldMerge = commandHasAction(command, "merge");
@@ -1330,6 +1627,12 @@ function executeCommand(command: LooseRecord) {
         return;
       }
       const repair = dispatchRepair(command);
+      if (command.lifecycle_state && dispatchRepairActionStatus(repair).status === "executed") {
+        applyLifecycleState(command, "agent:fixing", [
+          ...(command.target.labels ?? []),
+          "agent:fix-requested",
+        ]);
+      }
       dispatched = REPAIR_INTENTS.has(command.intent) ? repair : { repair };
       const labelsToRemove = command.actions
         .filter((action: JsonValue) => action.action === "remove_label")
@@ -2063,6 +2366,14 @@ function dispatchRepair(command: LooseRecord) {
       `execution_runner=${executionRunner}`,
       "-f",
       `model=${model}`,
+      ...(command.lifecycle_state
+        ? [
+            "-f",
+            `expected_head_sha=${command.expected_head_sha}`,
+            "-f",
+            `expected_pr_number=${command.issue_number}`,
+          ]
+        : []),
     ],
     { env: dispatchTokenEnv() },
   );

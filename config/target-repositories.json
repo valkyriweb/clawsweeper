@@ -337,6 +337,9 @@
     },
     {
       "target_repo": "valkyriweb/openclaw-claude",
+      "pi_review_lifecycle": true,
+      "repair_allowed_paths": ["docs/**/*.md"],
+      "post_repair_review_label": "agent:review-requested",
       "display_name": "OpenClaw management hub (release/runtime ops)",
       "checkout_dir": "openclaw-claude",
       "github_app_credential_route": "valkyriweb",

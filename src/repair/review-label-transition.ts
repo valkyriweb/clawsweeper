@@ -1,5 +1,6 @@
 import { repositoryProfileFor } from "../repository-profiles.js";
 import { AUTOFIX_LABEL } from "./comment-router-core.js";
+import { TECHNICAL_LABELS } from "./pr-lifecycle.js";
 
 export interface PostRepairReviewLabelTransition {
   addArgs: string[];
@@ -31,13 +32,17 @@ export function postRepairReviewLabelTransition(
   if (!Number.isSafeInteger(pullNumber) || pullNumber <= 0) {
     throw new Error("post-repair review label transition requires a positive integer PR number");
   }
-  const addedLabel = repositoryProfileFor(repo).postRepairReviewLabel;
+  const profile = repositoryProfileFor(repo);
+  const addedLabel = profile.postRepairReviewLabel;
   if (!addedLabel) return null;
   const target = ["issue", "edit", String(pullNumber), "--repo", repo];
+  const removedLabel = profile.repairAllowedPaths
+    ? TECHNICAL_LABELS.filter((label) => label !== addedLabel).join(",")
+    : AUTOFIX_LABEL;
   return {
     addArgs: [...target, "--add-label", addedLabel],
-    removeArgs: [...target, "--remove-label", AUTOFIX_LABEL],
-    removedLabel: AUTOFIX_LABEL,
+    removeArgs: [...target, "--remove-label", removedLabel],
+    removedLabel,
     addedLabel,
   };
 }

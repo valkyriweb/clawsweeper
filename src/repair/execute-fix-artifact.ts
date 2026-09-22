@@ -99,6 +99,9 @@ import {
   postRepairReviewLabelTransition,
 } from "./review-label-transition.js";
 import { sleepMs } from "./timing.js";
+import { assertLifecycleRepairTarget } from "./pr-lifecycle.js";
+import { assertRepairPublishScope } from "./repair-publish-guard.js";
+import { repositoryProfileFor } from "../repository-profiles.js";
 import {
   isRepairBranchPushBlocked,
   isRepairBranchPushRace,
@@ -325,6 +328,19 @@ function currentCheckoutCloneTimeoutMs() {
 }
 
 function runGitNetwork(args: string[], cwd: string = targetDir) {
+  if (args[0] === "push" && process.env.CLAWSWEEPER_EXPECTED_HEAD_SHA) {
+    const number = Number(process.env.CLAWSWEEPER_EXPECTED_PR_NUMBER);
+    assertLifecycleRepairTarget(
+      fetchPullRequest(String(job.frontmatter.repo), number),
+      process.env.CLAWSWEEPER_EXPECTED_HEAD_SHA,
+      number,
+    );
+  }
+  const allowedPaths = repositoryProfileFor(String(job.frontmatter.repo)).repairAllowedPaths;
+  if (args[0] === "push" && !args.includes("--dry-run") && allowedPaths) {
+    const base = String(job.frontmatter.base_branch || DEFAULT_BASE_BRANCH);
+    assertRepairPublishScope(cwd, base, allowedPaths);
+  }
   return run("git", args, {
     cwd,
     timeoutMs: currentNetworkCommandTimeoutMs(),
@@ -880,6 +896,12 @@ function executeRepairBranch({ fixArtifact, targetDir }: LooseRecord) {
   const sourcePr = firstSourcePullRequest(fixArtifact);
   logProgress("repairing contributor branch", { source_pr: sourcePr.url, base_branch: baseBranch });
   const pull = fetchPullRequest(result.repo, sourcePr.number);
+  if (process.env.CLAWSWEEPER_EXPECTED_HEAD_SHA)
+    assertLifecycleRepairTarget(
+      pull,
+      process.env.CLAWSWEEPER_EXPECTED_HEAD_SHA,
+      Number(process.env.CLAWSWEEPER_EXPECTED_PR_NUMBER),
+    );
   if (pull.state !== "open") throw new Error(`source PR #${sourcePr.number} is ${pull.state}`);
   const initialPauseBlock = liveRepairPauseBlock({
     pull,
@@ -1081,13 +1103,14 @@ function pushRepairBranchAndUpdateStatus({
     }
     throw error;
   }
-  const reviewLabelTransition = hasAutofixAuthorization(livePull)
-    ? applyPostRepairReviewLabelTransition({
-        repo: result.repo,
-        pullNumber: sourcePr.number,
-        targetDir,
-      })
-    : null;
+  const reviewLabelTransition =
+    hasAutofixAuthorization(livePull) || repositoryProfileFor(result.repo).repairAllowedPaths
+      ? applyPostRepairReviewLabelTransition({
+          repo: result.repo,
+          pullNumber: sourcePr.number,
+          targetDir,
+        })
+      : null;
   const nativeReviewHandoff = ["completed", "partial"].includes(
     String(reviewLabelTransition?.status ?? ""),
   );
@@ -1193,10 +1216,34 @@ function applyPostRepairReviewLabelTransition({ repo, pullNumber, targetDir }: L
 
   try {
     run("gh", transition.removeArgs, commandOptions);
+    const remaining = JSON.parse(
+      run(
+        "gh",
+        [
+          "pr",
+          "view",
+          String(targetNumber),
+          "--repo",
+          targetRepo,
+          "--json",
+          "labels",
+          "--jq",
+          "[.labels[].name]",
+        ],
+        commandOptions,
+      ) || "[]",
+    );
+    if (
+      !Array.isArray(remaining) ||
+      !remaining.includes(transition.addedLabel) ||
+      transition.removedLabel.split(",").some((label) => remaining.includes(label))
+    ) {
+      throw new Error("post-repair review label transition did not converge");
+    }
   } catch (error) {
     return {
       status: "partial",
-      stage: "remove_autofix_label",
+      stage: "remove_previous_review_labels",
       added_label: transition.addedLabel,
       retained_label: transition.removedLabel,
       reason: compactText(error instanceof Error ? error.message : String(error), 500),

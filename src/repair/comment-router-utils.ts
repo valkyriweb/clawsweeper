@@ -165,6 +165,9 @@ export function readLedger(file: JsonValue) {
     return {
       updated_at: data.updated_at ?? null,
       commands: Array.isArray(data.commands) ? data.commands : [],
+      ...(data.lifecycle_discovery_pages
+        ? { lifecycle_discovery_pages: data.lifecycle_discovery_pages }
+        : {}),
     };
   } catch {
     return { updated_at: null, commands: [] };
@@ -173,7 +176,11 @@ export function readLedger(file: JsonValue) {
 
 export function appendLedger(current: LooseRecord, entries: LooseRecord[]) {
   const compact = entries
-    .filter((entry: JsonValue) => ["executed", "skipped"].includes(entry.status))
+    .filter(
+      (entry: JsonValue) =>
+        ["executed", "skipped"].includes(entry.status) ||
+        (entry.automation_source === "pi_review_lifecycle" && entry.status === "waiting"),
+    )
     .filter((entry: JsonValue) => !isNoopSkip(entry))
     .map((entry: JsonValue) => {
       const actions = compactLedgerActions(entry.actions);
@@ -196,6 +203,16 @@ export function appendLedger(current: LooseRecord, entries: LooseRecord[]) {
         trusted_bot: Boolean(entry.trusted_bot),
         trusted_bot_author: entry.trusted_bot_author ?? null,
         automation_source: entry.automation_source ?? null,
+        ...(entry.automation_source === "pi_review_lifecycle"
+          ? {
+              lifecycle_state: entry.lifecycle_state ?? null,
+              lifecycle_phase: entry.lifecycle_phase ?? null,
+              source_run_id: entry.source_run_id ?? null,
+              source_run_attempt: entry.source_run_attempt ?? null,
+              classification: entry.classification ?? null,
+              reason: entry.reason ?? null,
+            }
+          : {}),
         repair_reason: entry.repair_reason ?? null,
         expected_head_sha: entry.expected_head_sha ?? null,
         finding_id: entry.finding_id ?? null,
@@ -236,6 +253,7 @@ function isNoopSkip(entry: LooseRecord) {
   const reason = String(entry.reason ?? "");
   return (
     reason === "comment version already processed in ledger" ||
+    reason === "Pi lifecycle event already processed in ledger" ||
     reason === "matching ClawSweeper response comment already exists" ||
     /already enabled for this PR/i.test(reason)
   );

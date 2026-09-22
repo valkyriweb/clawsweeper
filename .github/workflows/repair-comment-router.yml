@@ -2,11 +2,16 @@ name: repair comment router
 
 on:
   repository_dispatch:
-    types: [clawsweeper_comment]
+    types: [clawsweeper_comment, clawsweeper_review_lifecycle]
   workflow_dispatch:
     inputs:
       execute:
         description: "Post replies and dispatch repair workers"
+        required: true
+        default: false
+        type: boolean
+      lifecycle_only:
+        description: "Reconcile opted-in Pi lifecycle receipts without scanning generic commands"
         required: true
         default: false
         type: boolean
@@ -66,12 +71,24 @@ permissions:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  DISPATCH_TARGET_REPO: ${{ github.event.client_payload.target_repo }}
+  DISPATCH_LOOKBACK_MINUTES: ${{ github.event.client_payload.lookback_minutes || vars.CLAWSWEEPER_COMMENT_LOOKBACK_MINUTES || '180' }}
+  DISPATCH_MAX_COMMENTS: ${{ github.event.client_payload.max_comments || '1' }}
+  DISPATCH_ITEM_NUMBER: ${{ github.event.client_payload.item_number || '' }}
+  DISPATCH_COMMENT_ID: ${{ github.event.client_payload.comment_id || '' }}
+  DISPATCH_STATUS_COMMENT_ID: ${{ github.event.client_payload.status_comment_id || '' }}
+  DISPATCH_FORCE_REPROCESS: ${{ github.event.client_payload.force_reprocess || 'false' }}
   CLAWSWEEPER_APP_CLIENT_ID: Iv23lirdjmVqYd1gwY26
   # See sweep.yml comment + issue #68 — sticky-comment patchable-author allowlist override.
   CLAWSWEEPER_COMMENT_AUTHOR_LOGIN: ${{ vars.CLAWSWEEPER_COMMENT_AUTHOR_LOGIN || '' }}
+  CLAWSWEEPER_LIFECYCLE_ONLY: ${{ inputs.lifecycle_only && 'true' || 'false' }}
+  CLAWSWEEPER_LIFECYCLE_EVENT: ${{ github.event.action == 'clawsweeper_review_lifecycle' && github.event_path || '' }}
+  CLAWROUTER_BASE_URL: ${{ vars.CLAWROUTER_BASE_URL || 'https://clawrouter.lue-kube.bermont.digital/v1' }}
+  CLAWSWEEPER_LIFECYCLE_FALLBACK_MODEL: ${{ vars.CLAWSWEEPER_LIFECYCLE_FALLBACK_MODEL || 'clawrouter/claude-sonnet-5-200k' }}
 
 concurrency:
-  group: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.comment_id && format('repair-comment-router-{0}-comment-{1}', github.event.client_payload.target_repo || 'valkyriweb/clawsweeper', github.event.client_payload.comment_id) || format('repair-comment-router-{0}', github.event.inputs.target_repo || github.event.client_payload.target_repo || 'valkyriweb/clawsweeper') }}
+  # Preflight must not replace a pending production router run in its concurrency group.
+  group: ${{ github.event_name == 'workflow_dispatch' && inputs.lifecycle_only && !inputs.execute && format('repair-classifier-preflight-{0}', github.ref) || format('repair-comment-router-{0}', github.event.inputs.target_repo || github.event.client_payload.target_repo || 'valkyriweb/clawsweeper') }}
   cancel-in-progress: false
 
 jobs:
@@ -102,12 +119,13 @@ jobs:
           # Not Found on /repos/valkyriweb/paperclip/installation (Luke skipped
           # App-install widget). Keep paperclip in config/target-repositories.json
           # for other automation; restore after Luke installs the App.
-          while IFS= read -r repo; do
-            echo "dispatching router for $repo"
+          while IFS=$'\t' read -r repo lifecycle_only; do
+            echo "dispatching router for $repo (lifecycle_only=$lifecycle_only)"
             if ! gh workflow run repair-comment-router.yml \
               -R "${{ github.repository }}" \
               -r "${{ github.ref_name }}" \
               -f execute=true \
+              -f lifecycle_only="$lifecycle_only" \
               -f target_repo="$repo"; then
               echo "::warning::dispatch failed for $repo"
               failed=$((failed+1))
@@ -115,15 +133,39 @@ jobs:
           done < <(jq -r '
             .repositories[]
             | select(.target_repo != "valkyriweb/paperclip")
-            | select(.skip_comment_router_schedule != true)
-            | .target_repo
+            | select(.skip_comment_router_schedule != true or .pi_review_lifecycle == true)
+            | [.target_repo, (.pi_review_lifecycle == true | tostring)] | @tsv
           ' config/target-repositories.json)
           [ "$failed" -eq 0 ] || exit 1
 
+  classifier-preflight:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.lifecycle_only && !inputs.execute }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-pnpm
+        with:
+          build-script: build:repair
+      - name: Verify lifecycle classifier access (read-only preflight)
+        env:
+          CLAWROUTER_API_KEY: ${{ secrets.CLAWROUTER_API_KEY }}
+        run: |
+          node --input-type=module <<'JS'
+          import { classifyReviewText } from './dist/repair/pr-lifecycle-classifier.js';
+          const result = await classifyReviewText('Documentation review: docs/setup.md links to a nonexistent ../missing.md. Replace it with the existing ../README.md. This is a concrete broken relative link.');
+          console.log(JSON.stringify(result));
+          if (result.source !== 'jev' || result.classification !== 'actionable') process.exitCode = 1;
+          JS
+
   route-comments:
-    # Scheduled ticks are handled by fan-out-scheduled-sweep above; this job
-    # only runs for real events and per-repo dispatches.
-    if: ${{ github.event_name != 'schedule' }}
+    # Scheduled ticks fan out above; read-only classifier probes never enter
+    # the router's token creation or ledger publication steps.
+    if: ${{ github.event_name != 'schedule' && !(github.event_name == 'workflow_dispatch' && inputs.lifecycle_only && !inputs.execute) }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -198,6 +240,7 @@ jobs:
 
       - name: Route ClawSweeper comments
         env:
+          CLAWROUTER_API_KEY: ${{ secrets.CLAWROUTER_API_KEY }}
           GH_TOKEN: ${{ steps.app_token.outputs.token }}
           CLAWSWEEPER_DISPATCH_TOKEN: ${{ github.token }}
           CLAWSWEEPER_MUTATION_TOKEN_SOURCE: clawsweeper-app
@@ -223,14 +266,14 @@ jobs:
           execution_runner="$ROUTER_EXECUTION_RUNNER"
           force_reprocess="$ROUTER_FORCE_REPROCESS"
           if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
-            target_repo="${{ github.event.client_payload.target_repo }}"
-            lookback_minutes="${{ github.event.client_payload.lookback_minutes || vars.CLAWSWEEPER_COMMENT_LOOKBACK_MINUTES || '180' }}"
+            target_repo="$DISPATCH_TARGET_REPO"
+            lookback_minutes="$DISPATCH_LOOKBACK_MINUTES"
             since=""
-            max_comments="${{ github.event.client_payload.max_comments || '1' }}"
-            item_numbers="${{ github.event.client_payload.item_number || '' }}"
-            comment_ids="${{ github.event.client_payload.comment_id || '' }}"
-            status_comment_id="${{ github.event.client_payload.status_comment_id || '' }}"
-            force_reprocess="${{ github.event.client_payload.force_reprocess || 'false' }}"
+            max_comments="$DISPATCH_MAX_COMMENTS"
+            item_numbers="$DISPATCH_ITEM_NUMBER"
+            comment_ids="$DISPATCH_COMMENT_ID"
+            status_comment_id="$DISPATCH_STATUS_COMMENT_ID"
+            force_reprocess="$DISPATCH_FORCE_REPROCESS"
           else
             status_comment_id=""
           fi
@@ -290,6 +333,7 @@ jobs:
       - name: Retry waiting repair dispatches
         if: ${{ steps.waiting-repair-dispatches.outputs.count != '' && steps.waiting-repair-dispatches.outputs.count != '0' }}
         env:
+          CLAWROUTER_API_KEY: ${{ secrets.CLAWROUTER_API_KEY }}
           GH_TOKEN: ${{ steps.app_token.outputs.token }}
           CLAWSWEEPER_DISPATCH_TOKEN: ${{ github.token }}
           CLAWSWEEPER_MUTATION_TOKEN_SOURCE: clawsweeper-app
@@ -315,14 +359,14 @@ jobs:
           execution_runner="$ROUTER_EXECUTION_RUNNER"
           force_reprocess="$ROUTER_FORCE_REPROCESS"
           if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
-            target_repo="${{ github.event.client_payload.target_repo }}"
-            lookback_minutes="${{ github.event.client_payload.lookback_minutes || vars.CLAWSWEEPER_COMMENT_LOOKBACK_MINUTES || '180' }}"
+            target_repo="$DISPATCH_TARGET_REPO"
+            lookback_minutes="$DISPATCH_LOOKBACK_MINUTES"
             since=""
-            max_comments="${{ github.event.client_payload.max_comments || '1' }}"
-            item_numbers="${{ github.event.client_payload.item_number || '' }}"
-            comment_ids="${{ github.event.client_payload.comment_id || '' }}"
-            status_comment_id="${{ github.event.client_payload.status_comment_id || '' }}"
-            force_reprocess="${{ github.event.client_payload.force_reprocess || 'false' }}"
+            max_comments="$DISPATCH_MAX_COMMENTS"
+            item_numbers="$DISPATCH_ITEM_NUMBER"
+            comment_ids="$DISPATCH_COMMENT_ID"
+            status_comment_id="$DISPATCH_STATUS_COMMENT_ID"
+            force_reprocess="$DISPATCH_FORCE_REPROCESS"
           else
             status_comment_id=""
           fi

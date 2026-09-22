@@ -247,7 +247,11 @@ test("comment router mints target tokens through the routed facade", () => {
   // Fan-out dispatches configured targets, but interim-skips paperclip until App install
   // (and honors optional skip_comment_router_schedule). Keep paperclip in allowlist.
   assert.match(workflow, /select\(\.target_repo != "valkyriweb\/paperclip"\)/);
-  assert.match(workflow, /select\(\.skip_comment_router_schedule != true\)/);
+  assert.match(
+    workflow,
+    /select\(\.skip_comment_router_schedule != true or \.pi_review_lifecycle == true\)/,
+  );
+  assert.match(workflow, /-f lifecycle_only="\$lifecycle_only"/);
   assert.match(workflow, /config\/target-repositories\.json/);
   assert.doesNotMatch(
     workflow,
@@ -283,6 +287,22 @@ test("comment-router schedule skip flag isolates openclaw-claude without droppin
   ]) {
     assert.ok(scheduled.includes(keep), keep);
   }
+});
+
+test("native Pi target receives lifecycle-only recovery, not generic schedule scanning", () => {
+  const config = JSON.parse(fs.readFileSync("config/target-repositories.json", "utf8"));
+  const scheduled = config.repositories.filter(
+    (entry) =>
+      entry.target_repo !== "valkyriweb/paperclip" &&
+      (entry.skip_comment_router_schedule !== true || entry.pi_review_lifecycle === true),
+  );
+  assert.equal(scheduled.length, 12);
+  const native = scheduled.filter((entry) => entry.pi_review_lifecycle === true);
+  assert.deepEqual(
+    native.map((entry) => entry.target_repo),
+    ["valkyriweb/openclaw-claude"],
+  );
+  assert.equal(native[0].skip_comment_router_schedule, true);
 });
 
 test("workflow utilities expose automation limits", () => {
