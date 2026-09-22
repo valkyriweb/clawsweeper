@@ -76,6 +76,95 @@ function evidence() {
   };
 }
 
+const nativeRepo = "valkyriweb/openclaw-claude";
+const nativeHead = "4be6681797f76bf90fc6c6c46d775558be03a782";
+const nativeBase = "d86700c784447c1308c4ecab45d27de3c8582216";
+const nativeRepoRef = {
+  id: 1170633596,
+  name: "openclaw-claude",
+  url: "https://api.github.com/repos/valkyriweb/openclaw-claude",
+};
+const nativeEvent = {
+  target_repo: nativeRepo,
+  item_number: 305,
+  head_sha: nativeHead,
+  source_run_id: "35787205991",
+  source_run_attempt: 1,
+  phase: "completed",
+  comment_id: "11",
+};
+const nativeMarker = {
+  version: 1,
+  target_repo: nativeRepo,
+  item_number: 305,
+  head_sha: nativeHead,
+  source_run_id: "35787205991",
+  source_run_attempt: 1,
+  verdict: "pass",
+};
+/** Real `pull_request_target` REST shape: run head SHA is the candidate, bound by GitHub's own PR association. */
+function nativeEvidence() {
+  return structuredClone({
+    event: nativeEvent,
+    targetRepo: nativeRepo,
+    pull: {
+      number: 305,
+      state: "open",
+      labels: [{ name: "clawsweeper:autofix" }],
+      base: { ref: "main", sha: nativeBase, repo: { full_name: nativeRepo } },
+      head: {
+        ref: "test/pr-review-lifecycle-pilot",
+        sha: nativeHead,
+        repo: { full_name: nativeRepo },
+      },
+    },
+    run: {
+      id: 35787205991,
+      run_attempt: 1,
+      repository: { full_name: nativeRepo },
+      path: ".github/workflows/pi-pr-review.yml",
+      event: "pull_request_target",
+      status: "completed",
+      head_sha: nativeHead,
+      head_branch: "test/pr-review-lifecycle-pilot",
+      pull_requests: [
+        {
+          number: 305,
+          base: { ref: "main", sha: nativeBase, repo: nativeRepoRef },
+          head: { ref: "test/pr-review-lifecycle-pilot", sha: nativeHead, repo: nativeRepoRef },
+        },
+      ],
+      run_started_at: "2026-09-22T00:00:00Z",
+    },
+    artifact: { ...nativeMarker, phase: "completed", comment_id: 11 },
+    comment: {
+      id: 11,
+      issue_url: `https://api.github.com/repos/${nativeRepo}/issues/305`,
+      user: { login: "github-actions[bot]" },
+      created_at: "2026-09-22T00:01:00Z",
+      updated_at: "2026-09-22T00:01:00Z",
+      body: `<!-- pi-pr-review-lifecycle:${JSON.stringify(nativeMarker)} -->\nDocumentation reads correctly.`,
+    },
+    checks: [
+      {
+        name: "pi-pr-review/verdict",
+        head_sha: nativeHead,
+        status: "completed",
+        conclusion: "success",
+        details_url: `https://github.com/${nativeRepo}/actions/runs/35787205991/attempts/1`,
+        external_id: "pi-pr-review:35787205991:1",
+        app: { slug: "github-actions" },
+      },
+    ],
+    trustedAuthors: new Set(["github-actions[bot]"]),
+  });
+}
+const foreignRepoRef = {
+  id: 987654321,
+  name: "openclaw-claude",
+  url: "https://api.github.com/repos/attacker/openclaw-claude",
+};
+
 test("schema boundaries reject malformed identities and file paths", () => {
   for (const input of [
     null,
@@ -106,6 +195,95 @@ test("trusted main target run binds empty PR arrays through immutable artifact",
   const bad = evidence();
   bad.artifact.head_sha = "c".repeat(40);
   assert.throws(() => validateLifecycleEvidence(bad), /artifact/);
+});
+test("native candidate-head run passes only through its own GitHub PR association", () => {
+  assert.equal(validateLifecycleEvidence(nativeEvidence()).verdict, "pass");
+  const legacy = nativeEvidence();
+  legacy.run.head_sha = nativeBase;
+  legacy.run.pull_requests = [];
+  assert.equal(validateLifecycleEvidence(legacy).verdict, "pass");
+});
+test("absent, malformed, stale, foreign or conflicting run associations fail closed", () => {
+  const association = () => nativeEvidence().run.pull_requests[0];
+  for (const pull_requests of [
+    [],
+    undefined,
+    null,
+    "305",
+    [{}],
+    [{ ...association(), number: 306 }],
+    [{ ...association(), number: "305" }],
+    [{ ...association(), base: { ...association().base, ref: "release" } }],
+    [{ ...association(), base: { ...association().base, sha: "c".repeat(40) } }],
+    [{ ...association(), base: { ...association().base, sha: nativeBase.slice(0, 7) } }],
+    [{ ...association(), base: { ...association().base, repo: foreignRepoRef } }],
+    [{ ...association(), base: { ...association().base, repo: undefined } }],
+    [{ ...association(), head: { ...association().head, sha: "c".repeat(40) } }],
+    [{ ...association(), head: { ...association().head, repo: foreignRepoRef } }],
+    [
+      {
+        ...association(),
+        head: { ...association().head, repo: { ...nativeRepoRef, id: nativeRepoRef.id + 1 } },
+      },
+    ],
+    [association(), { ...association(), number: 306 }],
+    [association(), association()],
+  ]) {
+    const e = nativeEvidence();
+    e.run.pull_requests = pull_requests;
+    assert.throws(
+      () => validateLifecycleEvidence(e),
+      /trusted current main base/,
+      JSON.stringify(pull_requests ?? null),
+    );
+  }
+});
+test("candidate-head binding keeps every run, head and base guard", () => {
+  for (const mutate of [
+    (e) => {
+      e.run.event = "pull_request";
+    },
+    (e) => {
+      e.run.event = "workflow_dispatch";
+    },
+    (e) => {
+      e.run.path = ".github/workflows/other.yml";
+    },
+    (e) => {
+      e.run.repository.full_name = "attacker/openclaw-claude";
+    },
+    (e) => {
+      e.run.head_sha = "c".repeat(40);
+    },
+    (e) => {
+      e.pull.base.sha = "c".repeat(40);
+    },
+    (e) => {
+      e.pull.base.ref = "release";
+    },
+    (e) => {
+      e.pull.head.sha = "c".repeat(40);
+    },
+    (e) => {
+      e.pull.state = "closed";
+    },
+    (e) => {
+      e.artifact.head_sha = "c".repeat(40);
+    },
+    (e) => {
+      e.comment.user.login = "attacker";
+    },
+    (e) => {
+      e.checks[0].head_sha = nativeBase;
+    },
+    (e) => {
+      e.checks[0].conclusion = "failure";
+    },
+  ]) {
+    const e = nativeEvidence();
+    mutate(e);
+    assert.throws(() => validateLifecycleEvidence(e));
+  }
 });
 test("untrusted, stale, closed, altered marker, wrong workflow/base/check fail closed", () => {
   for (const mutate of [

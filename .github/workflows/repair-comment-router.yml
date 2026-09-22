@@ -82,7 +82,8 @@ env:
   # See sweep.yml comment + issue #68 — sticky-comment patchable-author allowlist override.
   CLAWSWEEPER_COMMENT_AUTHOR_LOGIN: ${{ vars.CLAWSWEEPER_COMMENT_AUTHOR_LOGIN || '' }}
   CLAWSWEEPER_LIFECYCLE_ONLY: ${{ inputs.lifecycle_only && 'true' || 'false' }}
-  CLAWSWEEPER_LIFECYCLE_EVENT: ${{ github.event.action == 'clawsweeper_review_lifecycle' && github.event_path || '' }}
+  # The runner supplies GITHUB_EVENT_PATH at execution time, not in workflow-level context.
+  CLAWSWEEPER_LIFECYCLE_DISPATCH: ${{ github.event.action == 'clawsweeper_review_lifecycle' && 'true' || 'false' }}
   CLAWROUTER_BASE_URL: ${{ vars.CLAWROUTER_BASE_URL || 'https://clawrouter.lue-kube.bermont.digital/v1' }}
   CLAWSWEEPER_LIFECYCLE_FALLBACK_MODEL: ${{ vars.CLAWSWEEPER_LIFECYCLE_FALLBACK_MODEL || 'clawrouter/claude-sonnet-5-200k' }}
 
@@ -149,6 +150,16 @@ jobs:
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
+      - name: Select native GitHub CLI
+        run: |
+          set -euo pipefail
+          native_gh=/usr/local/bin/gh-native
+          test -x "$native_gh"
+          "$native_gh" --version
+          cli_dir=$(mktemp -d "$RUNNER_TEMP/clawsweeper-native-gh.XXXXXX")
+          ln -s "$native_gh" "$cli_dir/gh"
+          echo "$cli_dir" >> "$GITHUB_PATH"
+          echo "GH_BIN=$native_gh" >> "$GITHUB_ENV"
       - uses: ./.github/actions/setup-pnpm
         with:
           build-script: build:repair
@@ -199,6 +210,18 @@ jobs:
             pnpm-lock.yaml
             tsconfig.repair.json
           sparse-checkout-cone-mode: false
+
+      # Repair helpers call gh directly; GH_BIN alone does not bypass PATH wrappers.
+      - name: Select native GitHub CLI
+        run: |
+          set -euo pipefail
+          native_gh=/usr/local/bin/gh-native
+          test -x "$native_gh"
+          "$native_gh" --version
+          cli_dir=$(mktemp -d "$RUNNER_TEMP/clawsweeper-native-gh.XXXXXX")
+          ln -s "$native_gh" "$cli_dir/gh"
+          echo "$cli_dir" >> "$GITHUB_PATH"
+          echo "GH_BIN=$native_gh" >> "$GITHUB_ENV"
 
       - uses: ./.github/actions/setup-pnpm
         with:

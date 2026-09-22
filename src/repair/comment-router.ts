@@ -179,7 +179,13 @@ const openIssueNumbersByLabel = createCachedLabelNumberLookup((label) =>
     `repos/${targetRepo}/issues?state=open&labels=${encodeURIComponent(label)}&per_page=100`,
   ).map((issue: JsonValue) => issue.number),
 );
-const lifecycleEventPath = args["lifecycle-event"] || process.env.CLAWSWEEPER_LIFECYCLE_EVENT;
+const nativeLifecycleDispatch = process.env.CLAWSWEEPER_LIFECYCLE_DISPATCH === "true";
+const lifecycleEventPath =
+  args["lifecycle-event"] ||
+  process.env.CLAWSWEEPER_LIFECYCLE_EVENT ||
+  (nativeLifecycleDispatch ? process.env.GITHUB_EVENT_PATH : undefined);
+if (nativeLifecycleDispatch && !lifecycleEventPath)
+  throw new Error("native Pi lifecycle dispatch requires GITHUB_EVENT_PATH");
 const lifecycleOnly = process.env.CLAWSWEEPER_LIFECYCLE_ONLY === "true";
 const lifecycleEnabled = repositoryProfileFor(targetRepo).piReviewLifecycle === true;
 if (lifecycleOnly && !lifecycleEnabled)
