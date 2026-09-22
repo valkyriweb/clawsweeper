@@ -140,7 +140,8 @@ jobs:
 
   classifier-preflight:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.lifecycle_only && !inputs.execute }}
-    runs-on: ubuntu-latest
+    # Use the existing private-network pool, just like the classifier's router job.
+    runs-on: ${{ fromJSON(vars.CLAWSWEEPER_RUNNER_LABELS || '["self-hosted","lue-clawsweeper"]') }}
     timeout-minutes: 5
     permissions:
       contents: read
@@ -166,7 +167,8 @@ jobs:
     # Scheduled ticks fan out above; read-only classifier probes never enter
     # the router's token creation or ledger publication steps.
     if: ${{ github.event_name != 'schedule' && !(github.event_name == 'workflow_dispatch' && inputs.lifecycle_only && !inputs.execute) }}
-    runs-on: ubuntu-latest
+    # The router calls private ClawRouter endpoints; downstream worker inputs do not select this runner.
+    runs-on: ${{ fromJSON(vars.CLAWSWEEPER_RUNNER_LABELS || '["self-hosted","lue-clawsweeper"]') }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
