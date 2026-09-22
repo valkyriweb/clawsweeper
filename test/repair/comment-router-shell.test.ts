@@ -82,13 +82,24 @@ test("classifier and router use the configured self-hosted pool, not worker runn
   }
 });
 
-test("both private-runner jobs select native gh for direct calls and fail closed if absent", () => {
-  for (const job of ["classifier-preflight", "route-comments"]) {
-    const block = workflow.split(`\n  ${job}:\n`)[1]?.split(/\n  [a-z][a-z-]+:\n/)[0];
+test("router and self-hosted repair jobs select native gh and fail closed if absent", () => {
+  const worker = readFileSync(
+    new URL("../../.github/workflows/repair-cluster-worker.yml", import.meta.url),
+    "utf8",
+  );
+  for (const [job, source] of [
+    ["classifier-preflight", workflow],
+    ["route-comments", workflow],
+    ["cluster", worker],
+    ["execute", worker],
+  ]) {
+    const block = source.split(`\n  ${job}:\n`)[1]?.split(/\n  [a-z][a-z-]+:\n/)[0];
     const step = block
       ?.split("      - name: Select native GitHub CLI\n")[1]
       ?.split("\n      - ")[0];
     assert.ok(step);
+    if (source === worker)
+      assert.ok(step.includes("if: ${{ runner.environment == 'self-hosted' }}"));
     const script = step.split("        run: |\n")[1].replace(/^          /gm, "");
     assert.ok(script.includes("native_gh=/usr/local/bin/gh-native"));
     assert.ok(script.includes('echo "GH_BIN=$native_gh" >> "$GITHUB_ENV"'));
