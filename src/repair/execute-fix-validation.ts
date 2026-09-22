@@ -5,6 +5,7 @@ import type { JsonValue, LooseRecord } from "./json-types.js";
 import { repositoryProfileFor } from "../repository-profiles.js";
 import { repairJobIntentForFrontmatter } from "./job-intent.js";
 import { GITHUB_PR_TITLE_MAX_LENGTH } from "./pr-title.js";
+import { repairPathsAllowed } from "./pr-lifecycle.js";
 
 const REPAIR_STRATEGIES = new Set([
   "repair_contributor_branch",
@@ -69,6 +70,13 @@ export function validateFixSecurityScope({
   fixArtifact,
   plannedFixActions,
 }: LooseRecord): LooseRecord | null {
+  const allowedPaths = repositoryProfileFor(String(job.frontmatter.repo)).repairAllowedPaths;
+  if (allowedPaths && !repairPathsAllowed(fixArtifact.likely_files ?? [], allowedPaths)) {
+    return {
+      reason: "fix artifact exceeds repository repair_allowed_paths; human review required",
+      evidence: [`allowed_paths=${allowedPaths.join(",")}`],
+    };
+  }
   if (job.frontmatter.security_sensitive === true) {
     return {
       reason: "job is marked security_sensitive; route to central security handling",

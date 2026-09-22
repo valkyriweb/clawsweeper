@@ -1,6 +1,19 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { Schema } from "effect";
+
+const RepairAllowedPaths = Schema.NonEmptyArray(
+  Schema.String.pipe(
+    Schema.filter(
+      (value) =>
+        value.length > 0 &&
+        !value.startsWith("/") &&
+        !value.includes("..") &&
+        !value.includes("\\"),
+    ),
+  ),
+);
 
 export type RepositoryItemKind = "issue" | "pull_request";
 export type RepositoryCloseReason =
@@ -90,6 +103,8 @@ export interface RepositoryProfile {
   // Optional label applied after a successful contributor-branch repair push.
   // Targets use this to hand the new head back to their native review lane.
   postRepairReviewLabel?: string;
+  repairAllowedPaths?: readonly string[];
+  piReviewLifecycle?: boolean;
 }
 
 interface TargetRepositoryConfig {
@@ -118,6 +133,8 @@ interface ConfiguredRepositoryProfile {
   includeMaintainerAuthored?: boolean;
   commitReviewRef?: string;
   postRepairReviewLabel?: string;
+  repairAllowedPaths?: readonly string[];
+  piReviewLifecycle?: boolean;
 }
 
 // Branch whose pushes commit-review accepts when a target sets no explicit
@@ -356,6 +373,8 @@ function configuredRepositoryProfile(profile: ConfiguredRepositoryProfile): Repo
   }
   if (profile.commitReviewRef) result.commitReviewRef = profile.commitReviewRef;
   if (profile.postRepairReviewLabel) result.postRepairReviewLabel = profile.postRepairReviewLabel;
+  if (profile.repairAllowedPaths) result.repairAllowedPaths = profile.repairAllowedPaths;
+  if (profile.piReviewLifecycle !== undefined) result.piReviewLifecycle = profile.piReviewLifecycle;
   return result;
 }
 
@@ -519,6 +538,26 @@ function validateConfiguredRepositoryProfile(
       profile.commit_review_ref,
       `${label}.commit_review_ref`,
     );
+  }
+  if (profile.pi_review_lifecycle !== undefined) {
+    try {
+      result.piReviewLifecycle = Schema.decodeUnknownSync(Schema.Boolean)(
+        profile.pi_review_lifecycle,
+      );
+    } catch (cause) {
+      throw new Error(`${label}.pi_review_lifecycle must be a boolean`, { cause });
+    }
+  }
+  if (profile.repair_allowed_paths !== undefined) {
+    try {
+      result.repairAllowedPaths = Schema.decodeUnknownSync(RepairAllowedPaths)(
+        profile.repair_allowed_paths,
+      );
+    } catch (cause) {
+      throw new Error(`${label}.repair_allowed_paths must be nonempty repo-relative globs`, {
+        cause,
+      });
+    }
   }
   if (profile.post_repair_review_label !== undefined) {
     result.postRepairReviewLabel = githubLabelValue(

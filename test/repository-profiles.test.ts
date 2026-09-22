@@ -79,6 +79,38 @@ test("target repository schema rejects missing or unknown automation policies", 
   );
 });
 
+test("native lifecycle opt-in and repair paths are decoded without coercion", () => {
+  const config = JSON.parse(readFileSync("config/target-repositories.json", "utf8"));
+  const native = repositoryProfileFor("valkyriweb/openclaw-claude");
+  assert.equal(native.piReviewLifecycle, true);
+  assert.deepEqual(native.repairAllowedPaths, ["docs/**/*.md"]);
+  for (const invalid of ["true", 1, null]) {
+    const candidate = structuredClone(config);
+    candidate.repositories[0].pi_review_lifecycle = invalid;
+    assert.throws(
+      () => validateTargetRepositoryConfig(candidate),
+      /pi_review_lifecycle must be a boolean/,
+    );
+  }
+  for (const invalid of [
+    [],
+    "docs/**",
+    [17],
+    [null],
+    [""],
+    ["/docs/**"],
+    ["../docs/**"],
+    ["docs\\\\**"],
+  ]) {
+    const candidate = structuredClone(config);
+    candidate.repositories[0].repair_allowed_paths = invalid;
+    assert.throws(
+      () => validateTargetRepositoryConfig(candidate),
+      /repair_allowed_paths must be nonempty repo-relative globs/,
+    );
+  }
+});
+
 test("repositoryProfileFor matches mixed-case input against private target profiles", () => {
   const profile = repositoryProfileFor("CLIP-SA/Core-Wholesale");
 
