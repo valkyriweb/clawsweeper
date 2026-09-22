@@ -44,6 +44,23 @@ test("unknown, malformed and API failure each trigger exactly one native Message
     assert.equal(result.attempts, 2);
     assert.equal(calls[1][0], "https://fixture.test/v1/messages");
     assert.equal(calls[1][1].max_tokens, 256);
+    assert.deepEqual(calls[1][1].thinking, { type: "disabled" });
+    assert.deepEqual(calls[1][1].output_config, {
+      format: {
+        type: "json_schema",
+        schema: {
+          type: "object",
+          properties: {
+            classification: {
+              type: "string",
+              enum: ["actionable", "advisory", "environment", "unknown"],
+            },
+          },
+          required: ["classification"],
+          additionalProperties: false,
+        },
+      },
+    });
     assert.ok(result.diagnostics.length);
   }
 });
@@ -84,6 +101,25 @@ test("schema boundaries reject malformed typed answers and non-exact fallback ro
     assert.equal(result.source, "unresolved");
     assert.equal(calls, 2);
     assert.match(result.diagnostics[1], /route schema|invalid route/);
+  }
+});
+test("fallback still rejects thinking blocks, empty content, fences and truncated JSON", async () => {
+  for (const content of [
+    [{ type: "thinking", thinking: "fixture" }, ...fallback().content],
+    [{ type: "redacted_thinking", data: "fixture" }, ...fallback().content],
+    [],
+    [{ type: "text", text: '```json\n{"classification":"actionable"}\n```' }],
+    [{ type: "text", text: '{"classification":"act' }],
+  ]) {
+    let calls = 0;
+    const result = await classifyReviewText("review", {
+      env,
+      fetch: async () => Response.json(++calls === 1 ? jev("unknown") : { content }),
+    });
+    assert.equal(result.source, "unresolved");
+    assert.equal(result.classification, "unknown");
+    assert.equal(result.attempts, 2);
+    assert.equal(calls, 2);
   }
 });
 test("both classifier failures and oversized evidence fail closed", async () => {

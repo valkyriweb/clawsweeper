@@ -158,9 +158,18 @@ jobs:
         run: |
           node --input-type=module <<'JS'
           import { classifyReviewText } from './dist/repair/pr-lifecycle-classifier.js';
-          const result = await classifyReviewText('Documentation review: docs/setup.md links to a nonexistent ../missing.md. Replace it with the existing ../README.md. This is a concrete broken relative link.');
-          console.log(JSON.stringify(result));
+          const evidence = 'Documentation review: docs/setup.md links to a nonexistent ../missing.md. Replace it with the existing ../README.md. This is a concrete broken relative link.';
+          const result = await classifyReviewText(evidence);
+          console.log(JSON.stringify({ probe: 'jev', ...result }));
           if (result.source !== 'jev' || result.classification !== 'actionable') process.exitCode = 1;
+          // Client-local fixture only: prove the real fallback without changing provider state.
+          const fallback = await classifyReviewText(evidence, {
+            fetch: async (url, options) => String(url).endsWith('/native/typesafe/v1/systemone')
+              ? new Response('', { status: 503 })
+              : fetch(url, options),
+          });
+          console.log(JSON.stringify({ probe: 'forced-fallback', ...fallback }));
+          if (fallback.source !== 'fallback' || fallback.classification !== 'actionable') process.exitCode = 1;
           JS
 
   route-comments:

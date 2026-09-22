@@ -40,6 +40,15 @@ test("classifier preflight is isolated from all router mutations", () => {
   );
   assert.match(preflight, /timeout-minutes: 5/);
   assert.match(preflight, /classifyReviewText/);
+  assert.ok(
+    preflight.includes("result.source !== 'jev' || result.classification !== 'actionable'"),
+  );
+  assert.ok(
+    preflight.includes(
+      "fallback.source !== 'fallback' || fallback.classification !== 'actionable'",
+    ),
+  );
+  assert.ok(preflight.includes("probe: 'forced-fallback'"));
   assert.doesNotMatch(
     preflight,
     /create-target-token|create-state-token|setup-state|repair:comment-router|repair:publish-main|GH_TOKEN/,

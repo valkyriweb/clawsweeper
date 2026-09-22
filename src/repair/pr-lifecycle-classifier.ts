@@ -53,6 +53,18 @@ type ClassifierRequest = {
   state?: { review: string };
   questions?: { route: { type: "choice"; instructions: string; criteria: typeof CRITERIA } };
   max_tokens?: number;
+  thinking?: { type: "disabled" };
+  output_config?: {
+    format: {
+      type: "json_schema";
+      schema: {
+        type: "object";
+        properties: { classification: { type: "string"; enum: typeof CATEGORIES } };
+        required: ["classification"];
+        additionalProperties: false;
+      };
+    };
+  };
   system?: string;
   messages?: { role: "user"; content: string }[];
 };
@@ -160,6 +172,18 @@ export async function classifyReviewText(
       {
         model: env.CLAWSWEEPER_LIFECYCLE_FALLBACK_MODEL || "clawrouter/claude-sonnet-5-200k",
         max_tokens: 256,
+        thinking: { type: "disabled" },
+        output_config: {
+          format: {
+            type: "json_schema",
+            schema: {
+              type: "object",
+              properties: { classification: { type: "string", enum: CATEGORIES } },
+              required: ["classification"],
+              additionalProperties: false,
+            },
+          },
+        },
         system: `${INSTRUCTIONS}\n${JSON.stringify(CRITERIA)}\nReturn only JSON with exactly one key classification, whose value is one of actionable, advisory, environment, unknown.`,
         messages: [{ role: "user", content: evidence }],
       },
