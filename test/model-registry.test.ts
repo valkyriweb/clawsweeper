@@ -61,6 +61,28 @@ test("full override replaces every field", () => {
   });
 });
 
+test("current GPT-6 Luna and Sol routes validate for their actual harness", () => {
+  for (const model of ["gpt-6-luna", "gpt-6-luna-200k", "gpt-6-sol", "gpt-6-sol-200k"]) {
+    const registry = parseModelRegistry(
+      JSON.stringify({
+        "commit-review": { provider: "codex", model, effort: "medium" },
+        "repair-worker": { provider: "codex", model, effort: "xhigh" },
+        "sweep-review": { provider: "pi", model: `clawrouter/${model}`, effort: "none" },
+      }),
+    );
+    assert.equal(resolveActionConfig("repair-worker", registry).model, model);
+    assert.throws(
+      () =>
+        parseModelRegistry(
+          JSON.stringify({
+            "repair-worker": { provider: "codex", model: `clawrouter/${model}` },
+          }),
+        ),
+      /not allowed for provider/,
+    );
+  }
+});
+
 test("deprecated Claude 4.x models remain parseable", () => {
   const registry = parseModelRegistry(
     JSON.stringify({

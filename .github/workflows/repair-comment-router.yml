@@ -190,6 +190,8 @@ jobs:
     # The router calls private ClawRouter endpoints; downstream worker inputs do not select this runner.
     runs-on: ${{ fromJSON(vars.CLAWSWEEPER_RUNNER_LABELS || '["self-hosted","lue-clawsweeper"]') }}
     timeout-minutes: 20
+    env:
+      CLAWSWEEPER_MODELS: ${{ vars.CLAWSWEEPER_MODELS || '' }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -226,6 +228,11 @@ jobs:
       - uses: ./.github/actions/setup-pnpm
         with:
           build-script: build:repair
+
+      # Validate the same registry the executor loads before minting credentials,
+      # adopting jobs, or consuming an automatic repair dispatch receipt.
+      - name: Validate deployed worker model registry
+        run: pnpm run --silent workflow -- models list
 
       - name: Resolve target owner
         id: target-owner

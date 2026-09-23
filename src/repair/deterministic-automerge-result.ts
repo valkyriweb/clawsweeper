@@ -54,7 +54,12 @@ export function deterministicAutomergeResult({
     affected_surfaces: affectedSurfaces(files),
     likely_files: likelyFiles,
     linked_refs: [ref],
-    validation_commands: ["pnpm check:changed"],
+    // Preserve the gate for OpenClaw and its managed fork. Other registered
+    // targets lack this script; the edit pass must discover their own tests.
+    validation_commands:
+      repo === "openclaw/openclaw" || repo === "valkyriweb/openclaw"
+        ? ["pnpm check:changed"]
+        : ["git diff --check"],
     changelog_required: Boolean(changelogReason),
     credit_notes: [`Source PR: ${prUrl}`],
     pr_title: title,

@@ -388,9 +388,11 @@ jobs:
 
       - uses: ./.github/actions/setup-codex
         if: ${{ steps.check_job.outputs.job_exists == '1' }}
+        env:
+          CLAWROUTER_API_KEY: ${{ vars.CLAWSWEEPER_CODEX_AUTH_MODE == 'clawrouter' && secrets.CLAWROUTER_API_KEY || '' }}
         with:
           version: ${{ env.CODEX_CLI_VERSION }}
-          auth-mode: subscription
+          auth-mode: ${{ vars.CLAWSWEEPER_CODEX_AUTH_MODE || 'subscription' }}
           cache-suffix: target-pnpm
 
       - name: Download worker artifacts
@@ -408,6 +410,7 @@ jobs:
         if: ${{ steps.check_job.outputs.job_exists == '1' && env.CLAWSWEEPER_ALLOW_EXECUTE == '1' && env.CLAWSWEEPER_ALLOW_FIX_PR == '1' }}
         timeout-minutes: 40
         env:
+          CLAWROUTER_API_KEY: ${{ vars.CLAWSWEEPER_CODEX_AUTH_MODE == 'clawrouter' && secrets.CLAWROUTER_API_KEY || '' }}
           GH_TOKEN: ${{ steps.app_token.outputs.token }}
           # Target installs may pull @valkyriweb npm packages from GitHub
           # Packages (e.g. my-pi → @valkyriweb/agent-relay + pi-*). npm
