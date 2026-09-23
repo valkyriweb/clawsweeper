@@ -94,6 +94,113 @@ test("target auth resolves explicit routes and denies review-only mutation befor
   );
 });
 
+test("lifecycle evidence reads require caller opt-in and the target profile", () => {
+  for (const accessMode of ["read", "comment", "mutate"] as const) {
+    const base = targetAuthFor({ targetRepo: "valkyriweb/openclaw-claude", accessMode });
+    assert.equal(base.lifecycle_evidence_read, undefined);
+    assert.deepEqual(
+      targetAuthFor({
+        targetRepo: "valkyriweb/openclaw-claude",
+        accessMode,
+        lifecycleEvidenceRead: "false",
+      }),
+      base,
+    );
+    assert.deepEqual(
+      targetAuthFor({
+        targetRepo: "valkyriweb/openclaw-claude",
+        accessMode,
+        lifecycleEvidenceRead: "true",
+      }),
+      { ...base, lifecycle_evidence_read: "true" },
+    );
+  }
+  for (const targetRepo of ["valkyriweb/clawsweeper", "bermont-digital/smilerite"]) {
+    assert.deepEqual(
+      targetAuthFor({ targetRepo, accessMode: "comment", lifecycleEvidenceRead: "true" }),
+      targetAuthFor({ targetRepo, accessMode: "comment" }),
+    );
+  }
+  for (const lifecycleEvidenceRead of ["yes", "TRUE", "read"]) {
+    assert.throws(
+      () =>
+        targetAuthFor({
+          targetRepo: "valkyriweb/openclaw-claude",
+          accessMode: "read",
+          lifecycleEvidenceRead,
+        }),
+      /lifecycle-evidence-read must be true or false/,
+    );
+  }
+  assert.throws(
+    () =>
+      targetAuthFor({
+        targetRepo: "unknown/repo",
+        accessMode: "read",
+        lifecycleEvidenceRead: "true",
+      }),
+    /Unsupported target repo/,
+  );
+  assert.throws(
+    () =>
+      targetAuthFor({
+        targetRepo: "bermont-digital/smilerite",
+        accessMode: "mutate",
+        lifecycleEvidenceRead: "true",
+      }),
+    /denies target token/,
+  );
+});
+
+test("lifecycle opt-in is wired through CLI and all static token branches", () => {
+  const output = execFileSync(
+    process.execPath,
+    [
+      "dist/repair/workflow-utils.js",
+      "target-auth",
+      "--target-repo",
+      "valkyriweb/openclaw-claude",
+      "--access-mode",
+      "comment",
+      "--lifecycle-evidence-read",
+      "true",
+    ],
+    { encoding: "utf8" },
+  );
+  assert.match(output, /^lifecycle_evidence_read=true$/m);
+  assert.throws(
+    () =>
+      execFileSync(
+        process.execPath,
+        [
+          "dist/repair/workflow-utils.js",
+          "target-auth",
+          "--target-repo",
+          "valkyriweb/openclaw-claude",
+          "--access-mode",
+          "comment",
+          "--lifecycle-evidence-read",
+          "invalid",
+        ],
+        { encoding: "utf8", stdio: "pipe" },
+      ),
+    /lifecycle-evidence-read must be true or false/,
+  );
+  const action = fs.readFileSync(".github/actions/create-target-token/action.yml", "utf8");
+  assert.match(action, /lifecycle-evidence-read:[\s\S]*?default: "false"/);
+  assert.match(action, /--lifecycle-evidence-read "\$LIFECYCLE_EVIDENCE_READ"/);
+  for (const permission of ["checks", "actions"]) {
+    assert.equal(
+      action.split(
+        `permission-${permission}: \u0024{{ steps.resolve.outputs.lifecycle_evidence_read == 'true' && 'read' || '' }}`,
+      ).length - 1,
+      6,
+    );
+  }
+  const router = fs.readFileSync(".github/workflows/repair-comment-router.yml", "utf8");
+  assert.match(router, /lifecycle-evidence-read: "true"/);
+});
+
 test("legacy target auth permits only configured Valkyriweb routes", () => {
   assert.equal(legacyTargetAuthFor("CLIP-SA/core-ai"), "clip-sa/core-ai");
   for (const targetRepo of ["bermont-digital/sale-sight-plugin", "bermont-digital/smilerite"]) {
