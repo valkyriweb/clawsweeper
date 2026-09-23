@@ -98,27 +98,24 @@ function runBindsReviewedCandidateHead(run: LooseRecord, pull: LooseRecord, even
 
 const NativeCheckSchema = Schema.Struct({
   id: PositiveInteger,
-  check_suite: Schema.Struct({ id: PositiveInteger }),
   details_url: Schema.String,
   html_url: Schema.String,
 });
-const RunCheckSuiteSchema = Schema.Struct({
-  check_suite_id: PositiveInteger,
-  check_suite_url: Schema.String,
-});
+const ArtifactCheckSchema = Schema.Struct({ check_id: PositiveInteger });
 
-function nativeCheckBindsSourceRun(check: LooseRecord, run: LooseRecord, targetRepo: string) {
+function nativeCheckBindsRunArtifact(
+  check: LooseRecord,
+  artifact: LooseRecord,
+  targetRepo: string,
+) {
   const decodedCheck = Schema.decodeUnknownEither(NativeCheckSchema)(check);
-  const decodedRun = Schema.decodeUnknownEither(RunCheckSuiteSchema)(run);
-  if (Either.isLeft(decodedCheck) || Either.isLeft(decodedRun)) return false;
+  const decodedArtifact = Schema.decodeUnknownEither(ArtifactCheckSchema)(artifact);
+  if (Either.isLeft(decodedCheck) || Either.isLeft(decodedArtifact)) return false;
   const nativeCheck = decodedCheck.right;
-  const sourceRun = decodedRun.right;
   const checkUrl = `https://github.com/${targetRepo}/runs/${nativeCheck.id}`;
-  // GitHub normalizes check URLs; the native suite association supplies the source-run binding.
+  // GitHub normalizes URLs and may assign another suite; the authenticated run artifact owns the ID.
   return (
-    nativeCheck.check_suite.id === sourceRun.check_suite_id &&
-    sourceRun.check_suite_url ===
-      `https://api.github.com/repos/${targetRepo}/check-suites/${sourceRun.check_suite_id}` &&
+    nativeCheck.id === decodedArtifact.right.check_id &&
     nativeCheck.details_url === checkUrl &&
     nativeCheck.html_url === checkUrl
   );
@@ -227,7 +224,7 @@ export function validateLifecycleEvidence({
         check.external_id === `pi-pr-review:${event.source_run_id}:${event.source_run_attempt}` &&
         (check.details_url ===
           `https://github.com/${targetRepo}/actions/runs/${event.source_run_id}/attempts/${event.source_run_attempt}` ||
-          nativeCheckBindsSourceRun(check, run, targetRepo)),
+          nativeCheckBindsRunArtifact(check, artifact, targetRepo)),
     )
   )
     throw new Error("Pi lifecycle verdict has no matching SHA/run-bound technical check");

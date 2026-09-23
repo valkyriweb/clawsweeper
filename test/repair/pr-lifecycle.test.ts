@@ -168,6 +168,7 @@ function canonicalCheckEvidence() {
   e.comment.body = `<!-- pi-pr-review-lifecycle:${JSON.stringify({ ...nativeMarker, source_run_id: sourceRun })} -->\nDocumentation reads correctly.`;
   return {
     ...e,
+    artifact: { ...e.artifact, check_id: 107104231406 },
     run: {
       ...e.run,
       check_suite_id: 97035588087,
@@ -186,9 +187,17 @@ function canonicalCheckEvidence() {
   };
 }
 
-test("native canonical check URLs bind the check suite to the source run", () => {
+test("native canonical check URLs bind the exact check to the authenticated run artifact", () => {
   assert.equal(validateLifecycleEvidence(canonicalCheckEvidence()).verdict, "pass");
   assert.equal(validateLifecycleEvidence(evidence()).verdict, "fail");
+});
+
+test("native check binding does not assume GitHub assigns the source workflow suite", () => {
+  const e = canonicalCheckEvidence();
+  // Actual pilot run/check suite IDs differ; the run-owned artifact binds the check instead.
+  e.run.check_suite_id = 97039621396;
+  e.checks[0].check_suite.id = 97039621346;
+  assert.equal(validateLifecycleEvidence(e).verdict, "pass");
 });
 
 test("native check binding rejects absent, malformed and conflicting numeric IDs", () => {
@@ -203,29 +212,16 @@ test("native check binding rejects absent, malformed and conflicting numeric IDs
     NaN,
     Infinity,
   ]) {
-    for (const field of ["run suite", "check suite", "check ID"]) {
+    for (const field of ["artifact check ID", "check ID"]) {
       const e = canonicalCheckEvidence();
-      if (field === "run suite") e.run.check_suite_id = invalid;
-      if (field === "check suite") e.checks[0].check_suite.id = invalid;
+      if (field === "artifact check ID") e.artifact.check_id = invalid;
       if (field === "check ID") e.checks[0].id = invalid;
       assert.throws(() => validateLifecycleEvidence(e), /technical check/, `${field}: ${invalid}`);
     }
   }
   for (const mutate of [
     (e) => {
-      e.checks[0].check_suite = undefined;
-    },
-    (e) => {
-      e.checks[0].check_suite = null;
-    },
-    (e) => {
-      e.checks[0].check_suite = {};
-    },
-    (e) => {
-      e.checks[0].check_suite.id += 1;
-    },
-    (e) => {
-      e.run.check_suite_id += 1;
+      e.artifact.check_id += 1;
     },
     (e) => {
       e.checks[0].id += 1;
@@ -253,17 +249,6 @@ test("native binding requires exact repository-owned canonical URLs", () => {
       e.checks[0][field] = url;
       assert.throws(() => validateLifecycleEvidence(e), /technical check/);
     }
-  }
-  for (const url of [
-    undefined,
-    null,
-    "",
-    `https://api.github.com/repos/attacker/openclaw-claude/check-suites/97035588087`,
-    `https://api.github.com/repos/${nativeRepo}/check-suites/97035588088`,
-  ]) {
-    const e = canonicalCheckEvidence();
-    e.run.check_suite_url = url;
-    assert.throws(() => validateLifecycleEvidence(e), /technical check/);
   }
 });
 
