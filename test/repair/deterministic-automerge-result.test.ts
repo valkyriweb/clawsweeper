@@ -78,6 +78,27 @@ test("deterministic automerge result emits generic direct-Codex repair artifact"
   assert.match(result?.fix_artifact.pr_body, /Known failing checks/);
 });
 
+test("repair validation does not assume every target is the OpenClaw pnpm repository", () => {
+  const canonical = deterministicAutomergeResult({
+    job: job(),
+    mode: "autonomous",
+    clusterPlan: clusterPlan(),
+  });
+  assert.deepEqual(canonical?.fix_artifact.validation_commands, ["pnpm check:changed"]);
+  const fork = deterministicAutomergeResult({
+    job: job(),
+    mode: "autonomous",
+    clusterPlan: { ...clusterPlan(), repo: "valkyriweb/openclaw" },
+  });
+  assert.deepEqual(fork?.fix_artifact.validation_commands, ["pnpm check:changed"]);
+  const other = deterministicAutomergeResult({
+    job: job(),
+    mode: "autonomous",
+    clusterPlan: { ...clusterPlan(), repo: "valkyriweb/openclaw-claude" },
+  });
+  assert.deepEqual(other?.fix_artifact.validation_commands, ["git diff --check"]);
+});
+
 test("deterministic automerge result does not require a changelog blocker", () => {
   const result = deterministicAutomergeResult({
     job: job(),
