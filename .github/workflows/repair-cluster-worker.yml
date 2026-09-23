@@ -112,6 +112,10 @@ jobs:
       - uses: actions/checkout@v5
         with:
           filter: blob:none
+          # Avoid reviving stale sparse settings when checkout removes worktreeConfig.
+          sparse-checkout: |
+            /*
+          sparse-checkout-cone-mode: false
 
       - name: Create state token
         id: state-token
@@ -298,6 +302,10 @@ jobs:
       - uses: actions/checkout@v5
         with:
           filter: blob:none
+          # Keep the same full-tree contract as the planning job above.
+          sparse-checkout: |
+            /*
+          sparse-checkout-cone-mode: false
 
       - name: Create state token
         id: state-token
