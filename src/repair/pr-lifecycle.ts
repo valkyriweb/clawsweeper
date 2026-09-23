@@ -96,6 +96,34 @@ function runBindsReviewedCandidateHead(run: LooseRecord, pull: LooseRecord, even
   );
 }
 
+const NativeCheckSchema = Schema.Struct({
+  id: PositiveInteger,
+  check_suite: Schema.Struct({ id: PositiveInteger }),
+  details_url: Schema.String,
+  html_url: Schema.String,
+});
+const RunCheckSuiteSchema = Schema.Struct({
+  check_suite_id: PositiveInteger,
+  check_suite_url: Schema.String,
+});
+
+function nativeCheckBindsSourceRun(check: LooseRecord, run: LooseRecord, targetRepo: string) {
+  const decodedCheck = Schema.decodeUnknownEither(NativeCheckSchema)(check);
+  const decodedRun = Schema.decodeUnknownEither(RunCheckSuiteSchema)(run);
+  if (Either.isLeft(decodedCheck) || Either.isLeft(decodedRun)) return false;
+  const nativeCheck = decodedCheck.right;
+  const sourceRun = decodedRun.right;
+  const checkUrl = `https://github.com/${targetRepo}/runs/${nativeCheck.id}`;
+  // GitHub normalizes check URLs; the native suite association supplies the source-run binding.
+  return (
+    nativeCheck.check_suite.id === sourceRun.check_suite_id &&
+    sourceRun.check_suite_url ===
+      `https://api.github.com/repos/${targetRepo}/check-suites/${sourceRun.check_suite_id}` &&
+    nativeCheck.details_url === checkUrl &&
+    nativeCheck.html_url === checkUrl
+  );
+}
+
 function sameIdentity(value: LooseRecord, event: LifecycleEvent) {
   return (
     value.version === 1 &&
@@ -197,8 +225,9 @@ export function validateLifecycleEvidence({
         check.status === "completed" &&
         check.conclusion === conclusion &&
         check.external_id === `pi-pr-review:${event.source_run_id}:${event.source_run_attempt}` &&
-        check.details_url ===
-          `https://github.com/${targetRepo}/actions/runs/${event.source_run_id}/attempts/${event.source_run_attempt}`,
+        (check.details_url ===
+          `https://github.com/${targetRepo}/actions/runs/${event.source_run_id}/attempts/${event.source_run_attempt}` ||
+          nativeCheckBindsSourceRun(check, run, targetRepo)),
     )
   )
     throw new Error("Pi lifecycle verdict has no matching SHA/run-bound technical check");
