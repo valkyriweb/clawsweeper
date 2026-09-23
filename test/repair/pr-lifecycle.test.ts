@@ -159,6 +159,119 @@ function nativeEvidence() {
     trustedAuthors: new Set(["github-actions[bot]"]),
   });
 }
+function canonicalCheckEvidence() {
+  const e = nativeEvidence();
+  const sourceRun = "35837369370";
+  e.event.source_run_id = sourceRun;
+  e.artifact.source_run_id = sourceRun;
+  e.run.id = Number(sourceRun);
+  e.comment.body = `<!-- pi-pr-review-lifecycle:${JSON.stringify({ ...nativeMarker, source_run_id: sourceRun })} -->\nDocumentation reads correctly.`;
+  return {
+    ...e,
+    artifact: { ...e.artifact, check_id: 107104231406 },
+    run: {
+      ...e.run,
+      check_suite_id: 97035588087,
+      check_suite_url: `https://api.github.com/repos/${nativeRepo}/check-suites/97035588087`,
+    },
+    checks: [
+      {
+        ...e.checks[0],
+        id: 107104231406,
+        check_suite: { id: 97035588087 },
+        details_url: `https://github.com/${nativeRepo}/runs/107104231406`,
+        html_url: `https://github.com/${nativeRepo}/runs/107104231406`,
+        external_id: `pi-pr-review:${sourceRun}:1`,
+      },
+    ],
+  };
+}
+
+test("native canonical check URLs bind the exact check to the authenticated run artifact", () => {
+  assert.equal(validateLifecycleEvidence(canonicalCheckEvidence()).verdict, "pass");
+  assert.equal(validateLifecycleEvidence(evidence()).verdict, "fail");
+});
+
+test("native check binding does not assume GitHub assigns the source workflow suite", () => {
+  const e = canonicalCheckEvidence();
+  // Actual pilot run/check suite IDs differ; the run-owned artifact binds the check instead.
+  e.run.check_suite_id = 97039621396;
+  e.checks[0].check_suite.id = 97039621346;
+  assert.equal(validateLifecycleEvidence(e).verdict, "pass");
+});
+
+test("native check binding rejects absent, malformed and conflicting numeric IDs", () => {
+  for (const invalid of [
+    undefined,
+    null,
+    "97035588087",
+    0,
+    -1,
+    1.5,
+    Number.MAX_SAFE_INTEGER + 1,
+    NaN,
+    Infinity,
+  ]) {
+    for (const field of ["artifact check ID", "check ID"]) {
+      const e = canonicalCheckEvidence();
+      if (field === "artifact check ID") e.artifact.check_id = invalid;
+      if (field === "check ID") e.checks[0].id = invalid;
+      assert.throws(() => validateLifecycleEvidence(e), /technical check/, `${field}: ${invalid}`);
+    }
+  }
+  for (const mutate of [
+    (e) => {
+      e.artifact.check_id += 1;
+    },
+    (e) => {
+      e.checks[0].id += 1;
+    },
+  ]) {
+    const e = canonicalCheckEvidence();
+    mutate(e);
+    assert.throws(() => validateLifecycleEvidence(e), /technical check/);
+  }
+});
+
+test("native binding requires exact repository-owned canonical URLs", () => {
+  for (const field of ["details_url", "html_url"]) {
+    for (const url of [
+      undefined,
+      null,
+      "",
+      `https://github.com/attacker/openclaw-claude/runs/107104231406`,
+      `https://github.com/${nativeRepo}/runs/107104231407`,
+      `https://github.com/${nativeRepo}/runs/107104231406/`,
+      `https://github.com/${nativeRepo}/runs/107104231406?x=1`,
+      `https://github.com/${nativeRepo}/actions/runs/35837369370`,
+    ]) {
+      const e = canonicalCheckEvidence();
+      e.checks[0][field] = url;
+      assert.throws(() => validateLifecycleEvidence(e), /technical check/);
+    }
+  }
+});
+
+test("native URL compatibility does not bypass existing check identity guards", () => {
+  for (const changes of [
+    { name: "other" },
+    { head_sha: base },
+    { app: { slug: "other" } },
+    { status: "in_progress" },
+    { conclusion: "failure" },
+    { external_id: undefined },
+    { external_id: "pi-pr-review:35837369371:1" },
+    { external_id: "pi-pr-review:35837369370:2" },
+  ]) {
+    const e = canonicalCheckEvidence();
+    Object.assign(e.checks[0], changes);
+    assert.throws(() => validateLifecycleEvidence(e), /technical check/);
+  }
+  const e = canonicalCheckEvidence();
+  e.run.run_attempt = 2;
+  assert.throws(() => validateLifecycleEvidence(e), /source run/);
+});
+
 const foreignRepoRef = {
   id: 987654321,
   name: "openclaw-claude",

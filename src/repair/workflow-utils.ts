@@ -124,6 +124,7 @@ function runCli(): void {
         targetAuthFor({
           targetRepo: requiredString("target-repo"),
           accessMode: requiredTargetTokenAccessMode(requiredString("access-mode")),
+          lifecycleEvidenceRead: optionalString("lifecycle-evidence-read"),
         }),
       );
       break;
@@ -436,6 +437,7 @@ export function legacyTargetAuthFor(targetRepo: string): string {
 export function targetAuthFor(options: {
   targetRepo: string;
   accessMode: TargetTokenAccessMode;
+  lifecycleEvidenceRead?: string;
 }): Record<
   | "target_repo"
   | "target_repo_owner"
@@ -444,8 +446,12 @@ export function targetAuthFor(options: {
   | "automation_policy"
   | "access_mode",
   string
-> {
+> & { lifecycle_evidence_read?: string } {
   const profile = repositoryProfileFor(options.targetRepo);
+  const lifecycleEvidenceRead = options.lifecycleEvidenceRead || "false";
+  if (lifecycleEvidenceRead !== "true" && lifecycleEvidenceRead !== "false") {
+    throw new Error("--lifecycle-evidence-read must be true or false");
+  }
   if (options.accessMode === "mutate" && profile.automationPolicy !== "full") {
     throw new Error(
       `${profile.targetRepo} automation_policy=${profile.automationPolicy} denies target token access-mode=mutate`,
@@ -454,7 +460,7 @@ export function targetAuthFor(options: {
   const [targetRepoOwner, targetRepoName] = profile.targetRepo.split("/");
   if (!targetRepoOwner || !targetRepoName)
     throw new Error(`invalid configured target repo: ${profile.targetRepo}`);
-  return {
+  const authorization: ReturnType<typeof targetAuthFor> = {
     target_repo: profile.targetRepo,
     target_repo_owner: targetRepoOwner,
     target_repo_name: targetRepoName,
@@ -462,6 +468,11 @@ export function targetAuthFor(options: {
     automation_policy: profile.automationPolicy,
     access_mode: options.accessMode,
   };
+  // Opt-in is an intersection with the profile, not authority to enable a lane.
+  if (lifecycleEvidenceRead === "true" && profile.piReviewLifecycle === true) {
+    authorization.lifecycle_evidence_read = "true";
+  }
+  return authorization;
 }
 
 function requiredTargetTokenAccessMode(value: string): TargetTokenAccessMode {

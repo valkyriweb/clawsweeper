@@ -96,6 +96,31 @@ function runBindsReviewedCandidateHead(run: LooseRecord, pull: LooseRecord, even
   );
 }
 
+const NativeCheckSchema = Schema.Struct({
+  id: PositiveInteger,
+  details_url: Schema.String,
+  html_url: Schema.String,
+});
+const ArtifactCheckSchema = Schema.Struct({ check_id: PositiveInteger });
+
+function nativeCheckBindsRunArtifact(
+  check: LooseRecord,
+  artifact: LooseRecord,
+  targetRepo: string,
+) {
+  const decodedCheck = Schema.decodeUnknownEither(NativeCheckSchema)(check);
+  const decodedArtifact = Schema.decodeUnknownEither(ArtifactCheckSchema)(artifact);
+  if (Either.isLeft(decodedCheck) || Either.isLeft(decodedArtifact)) return false;
+  const nativeCheck = decodedCheck.right;
+  const checkUrl = `https://github.com/${targetRepo}/runs/${nativeCheck.id}`;
+  // GitHub normalizes URLs and may assign another suite; the authenticated run artifact owns the ID.
+  return (
+    nativeCheck.id === decodedArtifact.right.check_id &&
+    nativeCheck.details_url === checkUrl &&
+    nativeCheck.html_url === checkUrl
+  );
+}
+
 function sameIdentity(value: LooseRecord, event: LifecycleEvent) {
   return (
     value.version === 1 &&
@@ -197,8 +222,9 @@ export function validateLifecycleEvidence({
         check.status === "completed" &&
         check.conclusion === conclusion &&
         check.external_id === `pi-pr-review:${event.source_run_id}:${event.source_run_attempt}` &&
-        check.details_url ===
-          `https://github.com/${targetRepo}/actions/runs/${event.source_run_id}/attempts/${event.source_run_attempt}`,
+        (check.details_url ===
+          `https://github.com/${targetRepo}/actions/runs/${event.source_run_id}/attempts/${event.source_run_attempt}` ||
+          nativeCheckBindsRunArtifact(check, artifact, targetRepo)),
     )
   )
     throw new Error("Pi lifecycle verdict has no matching SHA/run-bound technical check");

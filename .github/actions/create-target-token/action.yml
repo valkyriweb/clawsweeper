@@ -7,6 +7,10 @@ inputs:
   access-mode:
     description: "Required target access mode: read, comment, or mutate."
     required: true
+  lifecycle-evidence-read:
+    description: "Opt in to checks/actions reads only for targets with pi_review_lifecycle enabled."
+    required: false
+    default: "false"
   working-directory:
     description: Built ClawSweeper workspace containing dist/repair/workflow-utils.js.
     required: false
@@ -49,11 +53,13 @@ runs:
       env:
         TARGET_REPO: ${{ inputs.target-repo }}
         ACCESS_MODE: ${{ inputs.access-mode }}
+        LIFECYCLE_EVIDENCE_READ: ${{ inputs.lifecycle-evidence-read }}
       run: |
         set -euo pipefail
         node dist/repair/workflow-utils.js target-auth \
           --target-repo "$TARGET_REPO" \
-          --access-mode "$ACCESS_MODE" >> "$GITHUB_OUTPUT"
+          --access-mode "$ACCESS_MODE" \
+          --lifecycle-evidence-read "$LIFECYCLE_EVIDENCE_READ" >> "$GITHUB_OUTPUT"
 
     # These are deliberately static provider branches. Do not turn the App inputs
     # into dynamically composed secret names or add a fallback credential.
@@ -69,6 +75,8 @@ runs:
         permission-contents: read
         permission-issues: read
         permission-pull-requests: read
+        permission-checks: ${{ steps.resolve.outputs.lifecycle_evidence_read == 'true' && 'read' || '' }}
+        permission-actions: ${{ steps.resolve.outputs.lifecycle_evidence_read == 'true' && 'read' || '' }}
 
     - name: Create Valkyriweb comment token
       id: valkyriweb-comment
@@ -82,6 +90,8 @@ runs:
         permission-contents: read
         permission-issues: write
         permission-pull-requests: write
+        permission-checks: ${{ steps.resolve.outputs.lifecycle_evidence_read == 'true' && 'read' || '' }}
+        permission-actions: ${{ steps.resolve.outputs.lifecycle_evidence_read == 'true' && 'read' || '' }}
 
     - name: Create Valkyriweb mutate token
       id: valkyriweb-mutate
@@ -95,6 +105,8 @@ runs:
         permission-contents: write
         permission-issues: write
         permission-pull-requests: write
+        permission-checks: ${{ steps.resolve.outputs.lifecycle_evidence_read == 'true' && 'read' || '' }}
+        permission-actions: ${{ steps.resolve.outputs.lifecycle_evidence_read == 'true' && 'read' || '' }}
 
     - name: Create Bermont Digital read token
       id: bermont-digital-read
@@ -108,6 +120,8 @@ runs:
         permission-contents: read
         permission-issues: read
         permission-pull-requests: read
+        permission-checks: ${{ steps.resolve.outputs.lifecycle_evidence_read == 'true' && 'read' || '' }}
+        permission-actions: ${{ steps.resolve.outputs.lifecycle_evidence_read == 'true' && 'read' || '' }}
 
     - name: Create Bermont Digital comment token
       id: bermont-digital-comment
@@ -121,6 +135,8 @@ runs:
         permission-contents: read
         permission-issues: write
         permission-pull-requests: write
+        permission-checks: ${{ steps.resolve.outputs.lifecycle_evidence_read == 'true' && 'read' || '' }}
+        permission-actions: ${{ steps.resolve.outputs.lifecycle_evidence_read == 'true' && 'read' || '' }}
 
     - name: Create Bermont Digital mutate token
       id: bermont-digital-mutate
@@ -134,3 +150,5 @@ runs:
         permission-contents: write
         permission-issues: write
         permission-pull-requests: write
+        permission-checks: ${{ steps.resolve.outputs.lifecycle_evidence_read == 'true' && 'read' || '' }}
+        permission-actions: ${{ steps.resolve.outputs.lifecycle_evidence_read == 'true' && 'read' || '' }}

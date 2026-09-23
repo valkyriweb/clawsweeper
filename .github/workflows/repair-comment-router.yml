@@ -254,6 +254,7 @@ jobs:
         with:
           target-repo: ${{ steps.target-owner.outputs.repo }}
           access-mode: ${{ steps.target-auth.outputs.automation_policy == 'review_only' && 'comment' || 'mutate' }}
+          lifecycle-evidence-read: "true"
           valkyriweb-client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
           valkyriweb-private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
           bermont-digital-client-id: ${{ vars.BERMONT_DIGITAL_CLAWSWEEPER_APP_CLIENT_ID }}
