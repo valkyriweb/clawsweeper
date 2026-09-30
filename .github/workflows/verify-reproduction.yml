@@ -42,7 +42,7 @@ on:
       runner:
         description: "Runner label for verification work"
         required: false
-        default: '["ubuntu-latest"]'
+        default: '["self-hosted","lue-clawsweeper"]'
         type: string
 
 permissions:

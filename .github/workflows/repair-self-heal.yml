@@ -45,7 +45,7 @@ concurrency:
 
 jobs:
   self-heal:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CLAWSWEEPER_RUNNER_LABELS || '["self-hosted","lue-clawsweeper"]') }}
     timeout-minutes: 20
     steps:
       - name: Create GitHub App token

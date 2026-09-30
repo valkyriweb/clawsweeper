@@ -68,7 +68,7 @@ jobs:
   disabled-target:
     name: Skip disabled target commit review
     if: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.target_repo == 'openclaw/clawhub' && vars.CLAWSWEEPER_ENABLE_CLAWHUB != '1' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CLAWSWEEPER_RUNNER_LABELS || '["self-hosted","lue-clawsweeper"]') }}
     timeout-minutes: 5
     steps:
       - name: Explain skipped commit review
@@ -79,7 +79,7 @@ jobs:
   plan:
     name: Plan commits
     if: ${{ !(github.event_name == 'repository_dispatch' && github.event.client_payload.target_repo == 'openclaw/clawhub' && vars.CLAWSWEEPER_ENABLE_CLAWHUB != '1') }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CLAWSWEEPER_RUNNER_LABELS || '["self-hosted","lue-clawsweeper"]') }}
     timeout-minutes: 40
     outputs:
       create_checks: ${{ steps.mode.outputs.create_checks }}
@@ -618,12 +618,11 @@ jobs:
     name: Commit reports
     needs: [plan, review]
     if: ${{ always() && (needs.plan.outputs.planned_count != '0' || needs.plan.outputs.skipped_count != '0') }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CLAWSWEEPER_RUNNER_LABELS || '["self-hosted","lue-clawsweeper"]') }}
     timeout-minutes: 20
-    # GitHub-hosted runner: force PATH-resolved native gh. The workflow-level
-    # GH_BIN may be pinned to a self-hosted absolute path (e.g. the ghx trial
-    # via CLAWSWEEPER_GH_BIN=/usr/local/bin/ghx), which does not exist here and
-    # makes runText("gh") ENOENT -> Publish commit checks fails. See #197.
+    # Force PATH-resolved native gh. The workflow-level GH_BIN may be pinned
+    # to a self-hosted absolute path (e.g. CLAWSWEEPER_GH_BIN=/usr/local/bin/ghx)
+    # that is wrong for some runners and makes runText("gh") ENOENT. See #197.
     env:
       GH_BIN: gh
     steps:

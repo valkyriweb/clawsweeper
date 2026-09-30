@@ -101,7 +101,7 @@ jobs:
   # no-recursive-triggers rule).
   fan-out-scheduled-sweep:
     if: ${{ github.event_name == 'schedule' && (vars.CLAWSWEEPER_COMMENT_ROUTER_EXECUTE || '0') == '1' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CLAWSWEEPER_RUNNER_LABELS || '["self-hosted","lue-clawsweeper"]') }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
@@ -458,7 +458,7 @@ jobs:
   alert-on-failure:
     needs: [fan-out-scheduled-sweep, route-comments]
     if: ${{ always() && contains(needs.*.result, 'failure') }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CLAWSWEEPER_RUNNER_LABELS || '["self-hosted","lue-clawsweeper"]') }}
     timeout-minutes: 5
     steps:
       - name: Create or update alert issue
