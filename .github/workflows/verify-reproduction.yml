@@ -42,7 +42,7 @@ on:
       runner:
         description: "Runner label for verification work"
         required: false
-        default: '["self-hosted","lue-clawsweeper"]'
+        default: '["lue-clawsweeper-arc"]'
         type: string
 
 permissions:
@@ -64,7 +64,7 @@ concurrency:
 
 jobs:
   verify:
-    runs-on: ${{ fromJson(github.event.inputs.runner || vars.CLAWSWEEPER_VERIFY_REPRODUCTION_RUNNER || '["ubuntu-latest"]') }}
+    runs-on: ${{ fromJson(github.event.inputs.runner || vars.CLAWSWEEPER_VERIFY_REPRODUCTION_RUNNER || '["lue-clawsweeper-arc"]') }}
     timeout-minutes: 45
     steps:
       - name: Checkout clawsweeper
