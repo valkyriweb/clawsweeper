@@ -8,7 +8,15 @@ import {
 
 test("my-pi repair pushes hand the PR back to agentic review", () => {
   assert.deepEqual(postRepairReviewLabelTransition("leo-labs-ai/my-pi", 1477), {
-    addArgs: ["issue", "edit", "1477", "--repo", "leo-labs-ai/my-pi", "--add-label", "agentic-review"],
+    addArgs: [
+      "issue",
+      "edit",
+      "1477",
+      "--repo",
+      "leo-labs-ai/my-pi",
+      "--add-label",
+      "agentic-review",
+    ],
     removeArgs: [
       "issue",
       "edit",

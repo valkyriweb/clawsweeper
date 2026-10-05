@@ -40,7 +40,12 @@ test("commit-review-ref CLI resolves the target via --target-repo, as the workfl
   // failure that broke paperclip's commit-review gate after the per-target ref shipped.
   const output = execFileSync(
     process.execPath,
-    ["dist/repair/workflow-utils.js", "commit-review-ref", "--target-repo", "leo-labs-ai/paperclip"],
+    [
+      "dist/repair/workflow-utils.js",
+      "commit-review-ref",
+      "--target-repo",
+      "leo-labs-ai/paperclip",
+    ],
     { cwd: process.cwd(), encoding: "utf8" },
   );
   assert.equal(output, "refs/heads/bermont");
