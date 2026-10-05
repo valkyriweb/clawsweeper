@@ -358,7 +358,7 @@ test("comment router mints target tokens through the routed facade", () => {
   assert.doesNotMatch(workflow, /Authorize legacy target token/);
   // Fan-out dispatches configured targets, but interim-skips paperclip until App install
   // (and honors optional skip_comment_router_schedule). Keep paperclip in allowlist.
-  assert.match(workflow, /select\(\.target_repo != "valkyriweb\/paperclip"\)/);
+  assert.match(workflow, /select\(\.target_repo != "leo-labs-ai\/paperclip"\)/);
   assert.match(
     workflow,
     /select\(\.skip_comment_router_schedule != true or \.pi_review_lifecycle == true\)/,
