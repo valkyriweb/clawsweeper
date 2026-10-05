@@ -137,26 +137,26 @@ test("repositoryProfileFor carries sale-sight-plugin routing notes", () => {
   assert.deepEqual(profile.applyCloseRules.pull_request, []);
 });
 
-test("valkyriweb/paperclip scopes commit-review to its bermont production branch", () => {
-  const paperclip = repositoryProfileFor("valkyriweb/paperclip");
+test("leo-labs-ai/paperclip scopes commit-review to its bermont production branch", () => {
+  const paperclip = repositoryProfileFor("leo-labs-ai/paperclip");
   assert.equal(paperclip.commitReviewRef, "refs/heads/bermont");
 
   // Targets that ship from main leave the field unset; the default applies downstream.
-  const piMono = repositoryProfileFor("lue-labs/pi-mono");
+  const piMono = repositoryProfileFor("leo-labs-ai/pi-mono");
   assert.equal(piMono.commitReviewRef, undefined);
 });
 
-test("lue-labs/my-pi profile configures the post-repair review handoff", () => {
-  const profile = repositoryProfileFor("lue-labs/my-pi");
+test("leo-labs-ai/my-pi profile configures the post-repair review handoff", () => {
+  const profile = repositoryProfileFor("leo-labs-ai/my-pi");
 
   assert.equal(profile.postRepairReviewLabel, "agentic-review");
 });
 
-test("lue-labs/pi-mono profile carries pi service-area routing notes", () => {
-  const profile = repositoryProfileFor("lue-labs/pi-mono");
+test("leo-labs-ai/pi-mono profile carries pi service-area routing notes", () => {
+  const profile = repositoryProfileFor("leo-labs-ai/pi-mono");
 
-  assert.equal(profile.targetRepo, "lue-labs/pi-mono");
-  assert.equal(profile.slug, "lue-labs-pi-mono");
+  assert.equal(profile.targetRepo, "leo-labs-ai/pi-mono");
+  assert.equal(profile.slug, "leo-labs-ai-pi-mono");
   assert.equal(profile.checkoutDir, "pi-mono-fork");
   assert.match(profile.promptNote, /area:coding-agent/);
   assert.match(profile.promptNote, /area:extensions/);

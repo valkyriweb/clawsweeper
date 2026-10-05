@@ -66,7 +66,7 @@ test("classifier preflight is isolated from all router mutations", () => {
 
 test("classifier and router use the configured self-hosted pool, not worker runner inputs", () => {
   const selection =
-    '    runs-on: ${{ fromJSON(vars.CLAWSWEEPER_RUNNER_LABELS || \'["self-hosted","lue-clawsweeper"]\') }}';
+    "    runs-on: ${{ fromJSON(vars.CLAWSWEEPER_RUNNER_LABELS || '[\"lue-clawsweeper-arc\"]') }}";
   for (const job of ["classifier-preflight", "route-comments"]) {
     const block = workflow.split(`\n  ${job}:\n`)[1]?.split(/\n  [a-z][a-z-]+:\n/)[0];
     assert.ok(block);
@@ -78,7 +78,12 @@ test("classifier and router use the configured self-hosted pool, not worker runn
   }
   for (const job of ["fan-out-scheduled-sweep", "alert-on-failure"]) {
     const block = workflow.split(`\n  ${job}:\n`)[1]?.split(/\n  [a-z][a-z-]+:\n/)[0];
-    assert.ok(block?.includes("    runs-on: ubuntu-latest"));
+    assert.ok(block);
+    assert.ok(block.includes(selection));
+    assert.doesNotMatch(
+      block,
+      /runs-on: ubuntu-latest|runs-on:.*inputs\.(?:runner|execution_runner)/,
+    );
   }
 });
 
