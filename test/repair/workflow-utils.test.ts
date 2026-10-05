@@ -29,9 +29,9 @@ import { AUTOMATION_LIMITS, WORKER_CONFIG, workerLimit } from "../../dist/repair
 
 test("commitReviewRefForTarget returns the per-target override or the main default", () => {
   // paperclip ships from its bermont production overlay, not main.
-  assert.equal(commitReviewRefForTarget("valkyriweb/paperclip"), "refs/heads/bermont");
+  assert.equal(commitReviewRefForTarget("leo-labs-ai/paperclip"), "refs/heads/bermont");
   // A target with no override falls back to the shared main default.
-  assert.equal(commitReviewRefForTarget("lue-labs/pi-mono"), "refs/heads/main");
+  assert.equal(commitReviewRefForTarget("leo-labs-ai/pi-mono"), "refs/heads/main");
 });
 
 test("commit-review-ref CLI resolves the target via --target-repo, as the workflow invokes it", () => {
@@ -40,7 +40,7 @@ test("commit-review-ref CLI resolves the target via --target-repo, as the workfl
   // failure that broke paperclip's commit-review gate after the per-target ref shipped.
   const output = execFileSync(
     process.execPath,
-    ["dist/repair/workflow-utils.js", "commit-review-ref", "--target-repo", "valkyriweb/paperclip"],
+    ["dist/repair/workflow-utils.js", "commit-review-ref", "--target-repo", "leo-labs-ai/paperclip"],
     { cwd: process.cwd(), encoding: "utf8" },
   );
   assert.equal(output, "refs/heads/bermont");
@@ -49,7 +49,7 @@ test("commit-review-ref CLI resolves the target via --target-repo, as the workfl
     () =>
       execFileSync(
         process.execPath,
-        ["dist/repair/workflow-utils.js", "commit-review-ref", "valkyriweb/paperclip"],
+        ["dist/repair/workflow-utils.js", "commit-review-ref", "leo-labs-ai/paperclip"],
         { cwd: process.cwd(), encoding: "utf8", stdio: "pipe" },
       ),
     /--target-repo is required/,
@@ -373,19 +373,19 @@ test("comment-router schedule skip flag isolates openclaw-claude without droppin
   assert.equal(repos.length, 13);
 
   const scheduled = config.repositories
-    .filter((entry) => entry.target_repo !== "valkyriweb/paperclip")
+    .filter((entry) => entry.target_repo !== "leo-labs-ai/paperclip")
     .filter((entry) => entry.skip_comment_router_schedule !== true)
     .map((entry) => entry.target_repo);
   assert.equal(scheduled.length, 11);
   assert.ok(!scheduled.includes("valkyriweb/openclaw-claude"));
-  assert.ok(!scheduled.includes("valkyriweb/paperclip"));
+  assert.ok(!scheduled.includes("leo-labs-ai/paperclip"));
   for (const keep of [
     "bermont-digital/sale-sight-plugin",
     "bermont-digital/smilerite",
     "CLIP-SA/core-ai",
     "CLIP-SA/core-wholesale",
-    "lue-labs/pi-mono",
-    "lue-labs/my-pi",
+    "leo-labs-ai/pi-mono",
+    "leo-labs-ai/my-pi",
     "valkyriweb/horizon",
     "valkyriweb/clawrouter",
     "valkyriweb/clawsweeper",
@@ -400,7 +400,7 @@ test("native Pi target receives lifecycle-only recovery, not generic schedule sc
   const config = JSON.parse(fs.readFileSync("config/target-repositories.json", "utf8"));
   const scheduled = config.repositories.filter(
     (entry) =>
-      entry.target_repo !== "valkyriweb/paperclip" &&
+      entry.target_repo !== "leo-labs-ai/paperclip" &&
       (entry.skip_comment_router_schedule !== true || entry.pi_review_lifecycle === true),
   );
   assert.equal(scheduled.length, 12);
@@ -820,11 +820,11 @@ test("reviewModelForTarget honours a sweep-review registry override", () => {
     process.env.CLAWSWEEPER_MODELS = JSON.stringify({
       "sweep-review": { model: "clawrouter/claude-sonnet-5-200k" },
     });
-    assert.equal(reviewModelForTarget("lue-labs/pi-mono"), "clawrouter/claude-sonnet-5-200k");
+    assert.equal(reviewModelForTarget("leo-labs-ai/pi-mono"), "clawrouter/claude-sonnet-5-200k");
     delete process.env.CLAWSWEEPER_MODELS;
     // Unset registry falls back to the provider's default review model.
-    assert.equal(typeof reviewModelForTarget("lue-labs/pi-mono"), "string");
-    assert.ok(reviewModelForTarget("lue-labs/pi-mono").length > 0);
+    assert.equal(typeof reviewModelForTarget("leo-labs-ai/pi-mono"), "string");
+    assert.ok(reviewModelForTarget("leo-labs-ai/pi-mono").length > 0);
   } finally {
     if (prior === undefined) delete process.env.CLAWSWEEPER_MODELS;
     else process.env.CLAWSWEEPER_MODELS = prior;
