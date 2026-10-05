@@ -116,8 +116,8 @@ jobs:
         run: |
           set -euo pipefail
           failed=0
-          # Interim: skip valkyriweb/paperclip fan-out — ClawSweeper App install
-          # Not Found on /repos/valkyriweb/paperclip/installation (Luke skipped
+          # Interim: skip leo-labs-ai/paperclip fan-out — ClawSweeper App install
+          # Not Found on /repos/leo-labs-ai/paperclip/installation (Luke skipped
           # App-install widget). Keep paperclip in config/target-repositories.json
           # for other automation; restore after Luke installs the App.
           while IFS=$'\t' read -r repo lifecycle_only; do
@@ -133,7 +133,7 @@ jobs:
             fi
           done < <(jq -r '
             .repositories[]
-            | select(.target_repo != "valkyriweb/paperclip")
+            | select(.target_repo != "leo-labs-ai/paperclip")
             | select(.skip_comment_router_schedule != true or .pi_review_lifecycle == true)
             | [.target_repo, (.pi_review_lifecycle == true | tostring)] | @tsv
           ' config/target-repositories.json)
