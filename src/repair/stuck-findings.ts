@@ -9,7 +9,7 @@
 // rendered by `buildFixPrompt` as a hard constraint addendum, parallel to
 // the existing `previousNoDiff` recovery message.
 
-import type { JsonValue, LooseRecord } from "./json-types.js";
+import type { JsonValue } from "./json-types.js";
 
 const REVIEW_FINDING_LINE = /^\s*[-*]\s*\[P(\d+)\]\s+(.+?)\s+(?:—|--)\s+`([^:`]+):(\d+)`/gm;
 const CLAWSWEEPER_VERDICT_MARKER = "<!-- clawsweeper-verdict:";
@@ -167,15 +167,3 @@ export function stuckFindingsToTelemetry(stuck: readonly StuckFinding[]): JsonVa
     summary: finding.summary,
   })) as unknown as JsonValue;
 }
-
-// Used by tests that need to invoke the parser with a synthetic body.
-export function parseReviewFindingsForTest(body: string): ReviewFinding[] {
-  return parseReviewFindings(body);
-}
-
-// Internal type re-export so the worker can pass strongly typed values to
-// buildFixPrompt without importing from this file's implementation.
-export type StuckFindingRecord = StuckFinding;
-
-// Silence unused-import lint when consumers only need types.
-export type _Loose = LooseRecord;
