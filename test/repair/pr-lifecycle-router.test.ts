@@ -62,7 +62,7 @@ else if(a[0]==='api'){
  else if(p.includes('/check-runs'))out({check_runs:[{name:'pi-pr-review/verdict',head_sha:s.sha,app:{slug:'github-actions'},status:'completed',conclusion:s.verdict==='pass'?'success':'failure',external_id:'pi-pr-review:'+s.run+':1',details_url:'https://github.com/'+s.repo+'/actions/runs/'+s.run+'/attempts/1'}]});
  else if(p.endsWith('/issues/2'))out({number:2,state:'open',pull_request:{url:'fixture'},labels:s.labels.map(name=>({name}))});
  else if(p.includes('/comments')&&a.includes('--method'))out({id:10});
- else if(p.includes('/issues/2/comments'))paged([{id:9,user:{login:'github-actions[bot]'},body:'<!-- pi-pr-review-lifecycle:'+JSON.stringify({...identity,verdict:s.verdict})+' -->\\nFix broken docs link.'}]);
+ else if(p.includes('/issues/2/comments'))paged([...(s.priorComments||[]),{id:9,user:{login:'github-actions[bot]'},body:'<!-- pi-pr-review-lifecycle:'+JSON.stringify({...identity,verdict:s.verdict})+' -->\\nFix broken docs link.'}]);
  else if(p.includes('/comments'))paged([]);
  else if(p.includes('/actions/'))out(a.includes('--jq')?[]:{workflow_runs:[],runners:[]});
  else {console.error('UNHANDLED '+JSON.stringify(a));process.exit(1);}
@@ -196,6 +196,23 @@ test("router guards revoke/moved heads and unsafe or unauthorized scopes before 
     );
     if (scenario.labels || scenario.files) assert.equal(f.state.fetches.length, 0);
   }
+});
+test("router does not repeat the owner notice while human-review stays applied", (t) => {
+  const prior = {
+    id: 8,
+    user: { login: "clawsweeper[bot]" },
+    body: `<!-- clawsweeper-pi-human:${repo}:2:${"d".repeat(40)}:41:1 -->\n### Pi review needs human attention`,
+  };
+  const posts = (f) =>
+    f.state.calls.filter(
+      (a) => a[0] === "api" && a.includes("POST") && a.some((x) => x.endsWith("/comments")),
+    );
+  const repeat = fixture(t);
+  repeat.run({ labels: ["clawsweeper:human-review"], priorComments: [prior] });
+  assert.equal(posts(repeat).length, 0);
+  const cleared = fixture(t);
+  cleared.run({ labels: [], priorComments: [prior] });
+  assert.equal(posts(cleared).length, 1);
 });
 test("router applies existing repair cap and records native fallback audit", (t) => {
   const capped = fixture(t);

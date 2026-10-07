@@ -1565,12 +1565,21 @@ function executeCommand(command: LooseRecord) {
       );
       if (!commandHasAction(command, "dispatch_repair")) {
         if (command.lifecycle_state === HUMAN_REVIEW_LABEL) {
-          const marker = `<!-- clawsweeper-pi-human:${command.repo}:${command.issue_number}:${command.expected_head_sha}:${command.source_run_id}:${command.source_run_attempt} -->`;
+          const markerPrefix = `<!-- clawsweeper-pi-human:${command.repo}:${command.issue_number}:`;
+          const marker = `${markerPrefix}${command.expected_head_sha}:${command.source_run_id}:${command.source_run_attempt} -->`;
+          // While the human-review label stays on, one owner notice per PR is enough;
+          // new heads or reruns must not re-mention (and re-email) the owner.
+          const alreadyPaused = (fresh.labels ?? []).some(
+            (label: LooseRecord) => label.name === HUMAN_REVIEW_LABEL,
+          );
           if (
-            !cachedIssueComments(command.issue_number).some(
-              (comment: LooseRecord) =>
-                isTrustedStatusComment(comment) && String(comment.body ?? "").includes(marker),
-            )
+            !cachedIssueComments(command.issue_number).some((comment: LooseRecord) => {
+              const body = String(comment.body ?? "");
+              return (
+                isTrustedStatusComment(comment) &&
+                (body.includes(marker) || (alreadyPaused && body.includes(markerPrefix)))
+              );
+            })
           ) {
             postIssueComment(
               command.repo,
