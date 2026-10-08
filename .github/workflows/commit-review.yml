@@ -595,7 +595,8 @@ jobs:
             --commit-sha "${{ matrix.sha }}" \
             --report-path "$report_path" \
             --report-relative-path "$relative_path" \
-            --report-repo "${{ github.repository }}"
+            --report-repo valkyriweb/clawsweeper-state \
+            --report-base-url https://github.com/valkyriweb/clawsweeper-state/blob/state
 
       - uses: actions/upload-artifact@v7
         if: always()
@@ -732,7 +733,8 @@ jobs:
               --commit-sha "$sha" \
               --report-path "$report_path" \
               --report-relative-path "$relative_path" \
-              --report-repo "${{ github.repository }}"
+              --report-repo valkyriweb/clawsweeper-state \
+              --report-base-url https://github.com/valkyriweb/clawsweeper-state/blob/state
           done
 
       - name: Continue commit review range

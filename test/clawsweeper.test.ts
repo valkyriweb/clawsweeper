@@ -110,7 +110,7 @@ import {
   telegramVisibleProofLabelsForTest,
   validateCloseDecision,
 } from "../dist/clawsweeper.js";
-import { checkConclusionForFrontMatter } from "../dist/commit-checks.js";
+import { checkConclusionForFrontMatter, commitReportUrl } from "../dist/commit-checks.js";
 import { skippedNonCodeReport } from "../dist/commit-classifier.js";
 import {
   commitReportRelativePath,
@@ -950,6 +950,22 @@ test("commit review check conclusions stay conservative", () => {
     "neutral",
   );
   assert.equal(checkConclusionForFrontMatter({ result: "inconclusive" }), "neutral");
+});
+
+test("commit check report links follow the configured report base URL", () => {
+  const reportRelativePath = "records/valkyriweb-clawrouter/commits/abc.md";
+  assert.equal(
+    commitReportUrl({
+      reportRepo: "valkyriweb/clawsweeper-state",
+      reportBaseUrl: "https://github.com/valkyriweb/clawsweeper-state/blob/state/",
+      reportRelativePath,
+    }),
+    "https://github.com/valkyriweb/clawsweeper-state/blob/state/records/valkyriweb-clawrouter/commits/abc.md",
+  );
+  assert.equal(
+    commitReportUrl({ reportRepo: "openclaw/clawsweeper", reportRelativePath }),
+    "https://github.com/openclaw/clawsweeper/blob/main/records/valkyriweb-clawrouter/commits/abc.md",
+  );
 });
 
 test("protected labels block close proposals even for otherwise valid decisions", () => {
@@ -4579,6 +4595,19 @@ test("commit finding intake reads reports from the state repo checkout", () => {
     /--report-base-url https:\/\/github\.com\/valkyriweb\/clawsweeper-state\/blob\/state \\/,
   );
   assert.doesNotMatch(dispatchBlock, /github\.repository/);
+
+  // Commit check links point at the same state branch the reports live on.
+  const publishCalls = commitWorkflow.split("node dist/commit-sweeper.js publish-check").slice(1);
+  assert.equal(publishCalls.length, 2);
+  for (const call of publishCalls) {
+    const args = call.slice(0, call.indexOf("\n\n"));
+    assert.match(args, /--report-repo valkyriweb\/clawsweeper-state \\/);
+    assert.match(
+      args,
+      /--report-base-url https:\/\/github\.com\/valkyriweb\/clawsweeper-state\/blob\/state/,
+    );
+    assert.doesNotMatch(args, /github\.repository/);
+  }
 
   const intakeWorkflow = readWorkflowFixture("repair-commit-finding-intake.yml");
   const prepareStart = intakeWorkflow.indexOf("- name: Prepare commit finding intake");
