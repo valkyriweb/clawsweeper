@@ -696,7 +696,8 @@ jobs:
             --repair-repo valkyriweb/clawsweeper \
             --repair-workflow repair-commit-finding-intake.yml \
             --dispatch-mode workflow_dispatch \
-            --report-repo "${{ github.repository }}" \
+            --report-repo valkyriweb/clawsweeper-state \
+            --report-base-url https://github.com/valkyriweb/clawsweeper-state/blob/state \
             --enabled "$ENABLED"
 
       - name: Authorize legacy target token

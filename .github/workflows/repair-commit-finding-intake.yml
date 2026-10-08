@@ -174,6 +174,13 @@ jobs:
           if [ -n "${REPORT_URL:-}" ]; then
             args+=(--report-url "$REPORT_URL")
           fi
+          # Commit reports live on the private state repo's `state` branch, which
+          # setup-state already checked out. Read the report from that checkout
+          # (same pattern as verify-reproduction.yml) instead of the contents API,
+          # which needs a state-scoped token and the right ref.
+          if [ -n "${REPORT_PATH:-}" ] && [ -f "${CLAWSWEEPER_STATE_DIR:-}/${REPORT_PATH}" ]; then
+            args+=(--report-file "${CLAWSWEEPER_STATE_DIR}/${REPORT_PATH}")
+          fi
           pnpm run repair:commit-finding-intake -- "${args[@]}"
 
       - uses: ./.github/actions/setup-codex
