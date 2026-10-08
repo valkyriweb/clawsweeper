@@ -26,6 +26,25 @@ test("repair executor honors the configured Codex transport", () => {
   assert.equal(executor.match(/CLAWROUTER_API_KEY:/g)?.length, 2);
 });
 
+test("sweep review jobs honor the configured Codex transport", () => {
+  const sweep = readFileSync(".github/workflows/sweep.yml", "utf8");
+  const setupSites = sweep
+    .split(/\n      - uses: \.\/(?:clawsweeper\/)?\.github\/actions\/setup-codex\n/)
+    .slice(1)
+    .map((block) => block.split("\n      - ")[0] ?? "");
+  // Event review and review shards both run on the ARC runners, which have no
+  // ChatGPT ~/.codex/auth.json, so subscription auth must not be hardcoded (#250).
+  assert.equal(setupSites.length, 2);
+  for (const site of setupSites) {
+    assert.match(
+      site,
+      /auth-mode: \$\{\{ vars.CLAWSWEEPER_CODEX_AUTH_MODE \|\| 'subscription' \}\}/,
+    );
+    assert.match(site, /CLAWROUTER_API_KEY:.*vars.CLAWSWEEPER_CODEX_AUTH_MODE == 'clawrouter'/);
+  }
+  assert.doesNotMatch(sweep, /auth-mode: subscription/);
+});
+
 test("registry preflight rejects drift without an authenticated GitHub client", () => {
   const result = spawnSync(process.execPath, ["dist/repair/workflow-utils.js", "models", "list"], {
     encoding: "utf8",
