@@ -21,6 +21,7 @@ export interface CommitReviewFrontMatter {
 interface PublishCheckOptions {
   targetRepo: string;
   reportRepo: string;
+  reportBaseUrl?: string;
   reportPath: string;
   reportRelativePath: string;
   sha: string;
@@ -115,11 +116,20 @@ function checkRunsForCommit(targetRepo: string, sha: string, name: string): { id
   }
 }
 
+export function commitReportUrl(options: {
+  reportRepo: string;
+  reportBaseUrl?: string;
+  reportRelativePath: string;
+}): string {
+  const base = options.reportBaseUrl || `https://github.com/${options.reportRepo}/blob/main`;
+  return `${base.replace(/\/$/, "")}/${options.reportRelativePath}`;
+}
+
 export function publishCheckFromReport(options: PublishCheckOptions): void {
   const markdown = readFileSync(options.reportPath, "utf8");
   const { frontMatter } = splitFrontMatter(markdown);
   const conclusion = checkConclusionForFrontMatter(frontMatter);
-  const reportUrl = `https://github.com/${options.reportRepo}/blob/main/${options.reportRelativePath}`;
+  const reportUrl = commitReportUrl(options);
   const payload = {
     name: options.checkName,
     head_sha: options.sha,
