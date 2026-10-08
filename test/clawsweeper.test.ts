@@ -4563,6 +4563,37 @@ test("commit review workflow settles and reviews from the target's configured br
   assert.doesNotMatch(workflow, /checkout --detach "\$COMMIT_SHA"/);
 });
 
+test("commit finding intake reads reports from the state repo checkout", () => {
+  const commitWorkflow = readWorkflowFixture("commit-review.yml");
+  const dispatchStart = commitWorkflow.indexOf("- name: Dispatch commit findings to repair lane");
+  const dispatchBlock = commitWorkflow.slice(
+    dispatchStart,
+    commitWorkflow.indexOf("\n      - ", dispatchStart + 1),
+  );
+  assert.ok(dispatchStart > 0);
+  // Commit reports are published to the private state repo's `state` branch,
+  // not to this repo (#249).
+  assert.match(dispatchBlock, /--report-repo valkyriweb\/clawsweeper-state \\/);
+  assert.match(
+    dispatchBlock,
+    /--report-base-url https:\/\/github\.com\/valkyriweb\/clawsweeper-state\/blob\/state \\/,
+  );
+  assert.doesNotMatch(dispatchBlock, /github\.repository/);
+
+  const intakeWorkflow = readWorkflowFixture("repair-commit-finding-intake.yml");
+  const prepareStart = intakeWorkflow.indexOf("- name: Prepare commit finding intake");
+  const prepareBlock = intakeWorkflow.slice(
+    prepareStart,
+    intakeWorkflow.indexOf("pnpm run repair:commit-finding-intake --", prepareStart),
+  );
+  assert.ok(prepareStart > 0);
+  assert.match(prepareBlock, /\$\{CLAWSWEEPER_STATE_DIR:-\}\/\$\{REPORT_PATH\}/);
+  assert.match(
+    prepareBlock,
+    /args\+=\(--report-file "\$\{CLAWSWEEPER_STATE_DIR\}\/\$\{REPORT_PATH\}"\)/,
+  );
+});
+
 test("sweep target mutation requests use the routed facade", () => {
   const workflow = readWorkflowFixture("sweep.yml");
   const targetWriteTokenBlocks = workflow
