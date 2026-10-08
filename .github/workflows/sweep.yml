@@ -305,8 +305,10 @@ jobs:
             --wait-ms 120000
 
       - uses: ./.github/actions/setup-codex
+        env:
+          CLAWROUTER_API_KEY: ${{ vars.CLAWSWEEPER_CODEX_AUTH_MODE == 'clawrouter' && secrets.CLAWROUTER_API_KEY || '' }}
         with:
-          auth-mode: subscription
+          auth-mode: ${{ vars.CLAWSWEEPER_CODEX_AUTH_MODE || 'subscription' }}
           login-status: "true"
 
       # Conditional providers: setup-claude-code / setup-pi only run when the
@@ -943,8 +945,10 @@ jobs:
           bermont-digital-private-key: ${{ secrets.BERMONT_DIGITAL_CLAWSWEEPER_APP_PRIVATE_KEY }}
 
       - uses: ./clawsweeper/.github/actions/setup-codex
+        env:
+          CLAWROUTER_API_KEY: ${{ vars.CLAWSWEEPER_CODEX_AUTH_MODE == 'clawrouter' && secrets.CLAWROUTER_API_KEY || '' }}
         with:
-          auth-mode: subscription
+          auth-mode: ${{ vars.CLAWSWEEPER_CODEX_AUTH_MODE || 'subscription' }}
           login-status: "true"
 
       # Conditional providers — see event-review-apply for rationale.
