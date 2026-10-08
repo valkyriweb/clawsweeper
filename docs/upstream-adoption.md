@@ -52,6 +52,7 @@ The dashboard is disabled in CI and deployed anyway. Confirm liveness before usi
 |---|---|---|
 | #205 | `src/repair/target-validation.ts` | external-base validation classifier |
 | #207 | `src/repair/validation-command-utils.ts` | package-manager built-in command classification |
+| TBD | `src/repair/collect-codex-debug.ts`, `src/codex-env.ts` | debug artifact credential redaction from the reverted upstream #521 branch (internal-model redaction left out) |
 
 ## Assessed and rejected as unbounded
 

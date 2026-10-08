@@ -112,6 +112,7 @@ checkpoint, and status-only commits are intentionally omitted.
 
 ### Fixed
 
+- Hardened Codex debug artifact redaction (ported from upstream openclaw/clawsweeper #521 branch): credential-bearing headers, bearer tokens, JWTs, PEM private keys, YAML multiline secrets, and sensitive JSON fields at any escape depth are now masked, values of sensitive environment variables (including `CLAWROUTER_API_KEY`) are scrubbed, and any file that still looks sensitive after redaction is skipped instead of uploaded.
 - Updated review timeouts in-place on the mutable review status comment, then let recovery or the next eligible sweep retry with the escalated timeout cap instead of posting a separate inbox-noise timeout comment.
 - Replaced the fixed small-prompt Codex cap with streaming Codex diagnostics plus a startup-only watchdog, so local startup stalls fail quickly while valid long model turns run to the normal cap.
 - Added a required final merge polish pass to repair/automerge prompts using code-craft natural-code rules, `engineering/improve-codebase-architecture/SKILL.md` when available, and the local Matt Pocock architecture reference as fallback.
