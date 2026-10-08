@@ -1263,6 +1263,8 @@ jobs:
           candidate_output="$(pnpm run --silent repair:issue-implementation-intake -- candidates \
             --enabled "$ENABLED" \
             --target-repo "$TARGET_REPO" \
+            --report-repo valkyriweb/clawsweeper-state \
+            --report-base-url https://github.com/valkyriweb/clawsweeper-state/blob/state \
             --artifact-dir artifacts)"
           echo "$candidate_output"
           candidates_json="$(CANDIDATE_OUTPUT="$candidate_output" node <<'NODE'
@@ -1320,6 +1322,8 @@ jobs:
           candidate_output="$(pnpm run --silent repair:issue-implementation-intake -- candidates \
             --enabled "$ENABLED" \
             --target-repo "$TARGET_REPO" \
+            --report-repo valkyriweb/clawsweeper-state \
+            --report-base-url https://github.com/valkyriweb/clawsweeper-state/blob/state \
             --lane verifiable \
             --artifact-dir artifacts)"
           echo "$candidate_output"
