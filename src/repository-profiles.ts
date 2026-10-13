@@ -105,6 +105,12 @@ export interface RepositoryProfile {
   postRepairReviewLabel?: string;
   repairAllowedPaths?: readonly string[];
   piReviewLifecycle?: boolean;
+  /**
+   * Stage-specific opt-in: new/reopened external issues may start the existing
+   * exact-item review (triage). Off unless the configured profile sets it; it is
+   * deliberately separate from `automationPolicy`, which gates mutations.
+   */
+  issueTriageIntake?: boolean;
 }
 
 interface TargetRepositoryConfig {
@@ -135,6 +141,7 @@ interface ConfiguredRepositoryProfile {
   postRepairReviewLabel?: string;
   repairAllowedPaths?: readonly string[];
   piReviewLifecycle?: boolean;
+  issueTriageIntake?: boolean;
 }
 
 // Branch whose pushes commit-review accepts when a target sets no explicit
@@ -341,6 +348,27 @@ export function automationPolicyBlockReason(
   return `${profile.targetRepo} automation_policy=${profile.automationPolicy} denies ${capability}`;
 }
 
+/**
+ * Return a denial unless the explicitly configured profile opted in to issue
+ * triage intake. Unknown repositories and the generic fallback profile never
+ * qualify, and issue text can never grant this capability.
+ */
+export function issueTriageIntakeBlockReason(targetRepo: string): string | null {
+  const requested = targetRepo.trim();
+  if (!TARGET_REPO_PATTERN.test(requested)) {
+    return "issue triage intake denied: target repository is missing or invalid";
+  }
+  const normalized = normalizeRepo(requested);
+  const profile = REPOSITORY_PROFILES.find(
+    (candidate) => normalizeRepo(candidate.targetRepo) === normalized,
+  );
+  if (!profile) return `issue triage intake denied: no configured profile for ${requested}`;
+  if (profile.issueTriageIntake !== true) {
+    return `${profile.targetRepo} issue_triage_intake is not enabled`;
+  }
+  return null;
+}
+
 export function isAutoCloseAllowed(
   profile: RepositoryProfile,
   kind: RepositoryItemKind,
@@ -375,6 +403,7 @@ function configuredRepositoryProfile(profile: ConfiguredRepositoryProfile): Repo
   if (profile.postRepairReviewLabel) result.postRepairReviewLabel = profile.postRepairReviewLabel;
   if (profile.repairAllowedPaths) result.repairAllowedPaths = profile.repairAllowedPaths;
   if (profile.piReviewLifecycle !== undefined) result.piReviewLifecycle = profile.piReviewLifecycle;
+  if (profile.issueTriageIntake !== undefined) result.issueTriageIntake = profile.issueTriageIntake;
   return result;
 }
 
@@ -546,6 +575,15 @@ function validateConfiguredRepositoryProfile(
       );
     } catch (cause) {
       throw new Error(`${label}.pi_review_lifecycle must be a boolean`, { cause });
+    }
+  }
+  if (profile.issue_triage_intake !== undefined) {
+    try {
+      result.issueTriageIntake = Schema.decodeUnknownSync(Schema.Boolean)(
+        profile.issue_triage_intake,
+      );
+    } catch (cause) {
+      throw new Error(`${label}.issue_triage_intake must be a boolean`, { cause });
     }
   }
   if (profile.repair_allowed_paths !== undefined) {

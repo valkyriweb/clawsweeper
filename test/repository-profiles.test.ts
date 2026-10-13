@@ -5,6 +5,7 @@ import test from "node:test";
 import {
   REPOSITORY_PROFILES,
   automationPolicyBlockReason,
+  issueTriageIntakeBlockReason,
   repositoryProfileFor,
   resolveAutomationCapabilities,
   validateTargetRepositoryConfig,
@@ -109,6 +110,27 @@ test("native lifecycle opt-in and repair paths are decoded without coercion", ()
       /repair_allowed_paths must be nonempty repo-relative globs/,
     );
   }
+});
+
+test("issue triage intake is an explicit boolean opt-in that no profile enables yet", () => {
+  const config = JSON.parse(readFileSync("config/target-repositories.json", "utf8"));
+  for (const entry of config.repositories) {
+    assert.notEqual(entry.issue_triage_intake, true, entry.target_repo);
+  }
+  const enabled = structuredClone(config);
+  enabled.repositories[0].issue_triage_intake = true;
+  assert.equal(validateTargetRepositoryConfig(enabled).repositories[0].issueTriageIntake, true);
+  for (const invalid of ["true", 1, null]) {
+    const candidate = structuredClone(config);
+    candidate.repositories[0].issue_triage_intake = invalid;
+    assert.throws(
+      () => validateTargetRepositoryConfig(candidate),
+      /issue_triage_intake must be a boolean/,
+    );
+  }
+  assert.match(issueTriageIntakeBlockReason("leo-labs-ai/my-pi") ?? "", /not enabled/);
+  assert.match(issueTriageIntakeBlockReason("unknown/repo") ?? "", /no configured profile/);
+  assert.match(issueTriageIntakeBlockReason("") ?? "", /missing or invalid/);
 });
 
 test("repositoryProfileFor matches mixed-case input against private target profiles", () => {

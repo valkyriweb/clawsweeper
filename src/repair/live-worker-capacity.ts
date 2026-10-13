@@ -13,7 +13,13 @@ export const DEFAULT_REPAIR_RUN_NAME_PREFIX = "repair cluster ";
 const DEFAULT_CAPACITY_POLL_MS = 30_000;
 const DEFAULT_CAPACITY_TIMEOUT_MS = 30 * 60 * 1000;
 const DEFAULT_STALE_QUEUED_WORKFLOW_MS = 6 * 60 * 60 * 1000;
-const ACTIVE_WORKFLOW_STATUSES = ["queued", "in_progress", "waiting", "requested", "pending"];
+export const ACTIVE_WORKFLOW_STATUSES = [
+  "queued",
+  "in_progress",
+  "waiting",
+  "requested",
+  "pending",
+];
 const ACTIVE_WORKFLOW_STATUS_SET = new Set(ACTIVE_WORKFLOW_STATUSES);
 const QUEUED_WORKFLOW_STATUS_SET = new Set(["queued", "waiting", "requested", "pending"]);
 

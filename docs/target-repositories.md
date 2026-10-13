@@ -34,6 +34,23 @@ replacement PR; the autofix label is retained whenever the review handoff could
 not be verified. The field is optional; targets without it retain the normal
 ClawSweeper review loop.
 
+A target may set `issue_triage_intake` to `true` (boolean, default off) so new or
+reopened issues start the existing exact-item review. The `issue triage intake`
+workflow receives the target's `github_activity` dispatch, admits only
+`issues.opened` and `issues.reopened` for an open issue, and then dispatches
+`clawsweeper_repair_item`. Review, labels, jobs, capacity, and issue-implementation
+intake stay with `sweep.yml` and the repair dispatcher. The flag is separate
+from `automation_policy`: it grants triage only, and issue text cannot set it.
+Before dispatch the workflow reads the live issue and skips it when it is closed,
+locked, a pull request, or holds `clawsweeper:human-review`; it also skips when
+an event review for that item is visible as active in recent workflow history.
+Unrelated event types do not dispatch triage. A held item resumes only
+through the existing explicit command path in the comment router. Replay and
+duplicate protection is best effort: it reads only the most recent 100 runs per
+active status and 100 completed runs, and ignores the activity `idempotencyKey`, so it
+is not durable recovery for old replays or reopens. Enable one
+target at a time after the safe-ramp checks; no shipped profile enables it.
+
 A target may set `skip_comment_router_schedule` to `true` to stay on the
 allowlist while scheduled comment-router fan-out skips it. The workflow
 jq already honors that flag. Use it when App token mint for one repo
