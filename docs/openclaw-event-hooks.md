@@ -249,6 +249,12 @@ forward general activity:
     TARGET_REPO: ${{ github.repository }}
     SOURCE_EVENT: ${{ github.event_name }}
     SOURCE_ACTION: ${{ github.event.action }}
+    SUBJECT_KIND: ${{ github.event_name == 'issues' && 'issue' || github.event_name == 'pull_request' && 'pull_request' || github.event_name == 'pull_request_target' && 'pull_request' || 'repository' }}
+    SUBJECT_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number || '' }}
+    SUBJECT_TITLE: ${{ github.event.issue.title || github.event.pull_request.title || '' }}
+    SUBJECT_URL: ${{ github.event.issue.html_url || github.event.pull_request.html_url || '' }}
+    SUBJECT_STATE: ${{ github.event.issue.state || github.event.pull_request.state || '' }}
+    EVENT_UPDATED_AT: ${{ github.event.issue.updated_at || github.event.pull_request.updated_at || '' }}
     ACTOR: ${{ github.actor }}
   run: |
     if [ -z "$GH_TOKEN" ]; then
@@ -259,12 +265,20 @@ forward general activity:
       --arg event_name "$SOURCE_EVENT" \
       --arg action "$SOURCE_ACTION" \
       --arg actor "$ACTOR" \
-      '{event_type:"github_activity",client_payload:{activity:{type:$event_name,repo:$repo,action:$action,actor:$actor}}}')"
+      --arg kind "$SUBJECT_KIND" \
+      --arg number "$SUBJECT_NUMBER" \
+      --arg title "$SUBJECT_TITLE" \
+      --arg url "$SUBJECT_URL" \
+      --arg state "$SUBJECT_STATE" \
+      --arg updated_at "$EVENT_UPDATED_AT" \
+      '{event_type:"github_activity",client_payload:{activity:{type:$event_name,repo:$repo,action:$action,actor:$actor,subject:{kind:$kind,number:(if $number == "" then null else ($number|tonumber) end),title:$title,url:$url,state:$state},updated_at:$updated_at}}}')"
     gh api repos/openclaw/clawsweeper/dispatches \
       --method POST \
       --input - <<< "$payload"
 ```
 
-Prefer sending a compact normalized payload rather than the full webhook body.
-Include the item number, URL, title, state, actor, and a short body excerpt when
-available.
+Prefer sending a compact normalized payload rather than the full webhook body. For
+issue-triage intake, include the issue number and `updated_at` (or a stable delivery
+ID); these raw fields serialize duplicate deliveries before the workflow starts. The
+intake fails closed if they are absent. Also include URL, title, state, actor, and a
+short body excerpt when available.
