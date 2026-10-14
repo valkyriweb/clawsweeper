@@ -5,8 +5,12 @@ inputs:
     description: Configured target repository (owner/name).
     required: true
   access-mode:
-    description: "Required target access mode: read, comment, or mutate."
+    description: "Required target access mode: read, comment, mutate, or draft_issue_implementation."
     required: true
+  job-path:
+    description: Trusted state job path; required for draft_issue_implementation authorization.
+    required: false
+    default: ""
   lifecycle-evidence-read:
     description: "Opt in to checks/actions reads only for targets with pi_review_lifecycle enabled."
     required: false
@@ -30,7 +34,7 @@ inputs:
 outputs:
   token:
     description: Scoped token from the explicitly authorized static provider branch.
-    value: ${{ steps.valkyriweb-read.outputs.token || steps.valkyriweb-comment.outputs.token || steps.valkyriweb-mutate.outputs.token || steps.bermont-digital-read.outputs.token || steps.bermont-digital-comment.outputs.token || steps.bermont-digital-mutate.outputs.token }}
+    value: ${{ steps.valkyriweb-draft.outputs.token || steps.valkyriweb-read.outputs.token || steps.valkyriweb-comment.outputs.token || steps.valkyriweb-mutate.outputs.token || steps.bermont-digital-read.outputs.token || steps.bermont-digital-comment.outputs.token || steps.bermont-digital-mutate.outputs.token }}
   target-repo:
     description: Canonically normalized configured target repository.
     value: ${{ steps.resolve.outputs.target_repo }}
@@ -53,12 +57,14 @@ runs:
       env:
         TARGET_REPO: ${{ inputs.target-repo }}
         ACCESS_MODE: ${{ inputs.access-mode }}
+        JOB_PATH: ${{ inputs.job-path }}
         LIFECYCLE_EVIDENCE_READ: ${{ inputs.lifecycle-evidence-read }}
       run: |
         set -euo pipefail
         node dist/repair/workflow-utils.js target-auth \
           --target-repo "$TARGET_REPO" \
           --access-mode "$ACCESS_MODE" \
+          --job-path "$JOB_PATH" \
           --lifecycle-evidence-read "$LIFECYCLE_EVIDENCE_READ" >> "$GITHUB_OUTPUT"
 
     # These are deliberately static provider branches. Do not turn the App inputs
@@ -77,6 +83,19 @@ runs:
         permission-pull-requests: read
         permission-checks: ${{ steps.resolve.outputs.lifecycle_evidence_read == 'true' && 'read' || '' }}
         permission-actions: ${{ steps.resolve.outputs.lifecycle_evidence_read == 'true' && 'read' || '' }}
+
+    - name: Create Valkyriweb draft issue token
+      id: valkyriweb-draft
+      if: ${{ steps.resolve.outputs.credential_route == 'valkyriweb' && steps.resolve.outputs.access_mode == 'draft_issue_implementation' }}
+      uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+      with:
+        client-id: ${{ inputs.valkyriweb-client-id }}
+        private-key: ${{ inputs.valkyriweb-private-key }}
+        owner: ${{ steps.resolve.outputs.target_repo_owner }}
+        repositories: ${{ steps.resolve.outputs.target_repo_name }}
+        permission-contents: write
+        permission-pull-requests: write
+        permission-issues: read
 
     - name: Create Valkyriweb comment token
       id: valkyriweb-comment

@@ -7,6 +7,10 @@ inputs:
   private-key:
     description: GitHub App private key.
     required: true
+  read-only:
+    description: Use contents-read only for workers that never publish state.
+    required: false
+    default: "false"
   owner:
     description: State repository owner.
     required: false
@@ -30,5 +34,5 @@ runs:
         private-key: ${{ inputs.private-key }}
         owner: ${{ inputs.owner }}
         repositories: ${{ inputs.repository }}
-        permission-actions: write
-        permission-contents: write
+        permission-actions: ${{ inputs.read-only != 'true' && 'write' || '' }}
+        permission-contents: ${{ inputs.read-only == 'true' && 'read' || 'write' }}

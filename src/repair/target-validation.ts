@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { runCommand as run } from "./command-runner.js";
+import { codexSubprocessEnv } from "./process-env.js";
 import {
   ensureMergeBaseAvailable,
   gitChangedFiles,
@@ -28,6 +29,7 @@ const DEFAULT_TARGET_INSTALL_TIMEOUT_MS = 12 * 60 * 1000;
 const DEFAULT_TARGET_VALIDATION_TIMEOUT_MS = 12 * 60 * 1000;
 
 export type TargetValidationOptions = {
+  credentialFree?: boolean;
   additionalValidationCommands?: string[];
   allowExpensiveValidation: boolean;
   installTimeoutMs?: number;
@@ -105,7 +107,7 @@ export function prepareTargetToolchain(cwd: string, options: TargetValidationOpt
   if (!fs.existsSync(path.join(cwd, "package.json"))) return;
 
   const pm = detectTargetPackageManager(cwd);
-  const validationEnv = targetValidationEnv();
+  const validationEnv = targetValidationEnv(options);
   const setupTimeoutMs = targetValidationTimeoutMs(
     "CLAWSWEEPER_TARGET_SETUP_TIMEOUT_MS",
     options.setupTimeoutMs ?? DEFAULT_TARGET_SETUP_TIMEOUT_MS,
@@ -193,7 +195,7 @@ export function runAllowedValidationCommands(
   baseBranch: string = DEFAULT_BASE_BRANCH,
 ) {
   ensureMergeBaseAvailable({ targetDir: cwd, baseBranch });
-  const validationEnv = targetValidationEnv();
+  const validationEnv = targetValidationEnv(options);
   const validationTimeoutMs = targetValidationTimeoutMs(
     "CLAWSWEEPER_TARGET_VALIDATION_TIMEOUT_MS",
     options.validationTimeoutMs ?? DEFAULT_TARGET_VALIDATION_TIMEOUT_MS,
@@ -518,9 +520,9 @@ function shouldRetryValidationCommand({ parts, error, attempts, options }: Loose
   return true;
 }
 
-function targetValidationEnv() {
+function targetValidationEnv(options: TargetValidationOptions) {
   return {
-    ...process.env,
+    ...(options.credentialFree ? codexSubprocessEnv() : process.env),
     CI: process.env.CI ?? "true",
     OPENCLAW_LOCAL_CHECK: process.env.OPENCLAW_LOCAL_CHECK ?? "0",
   };
