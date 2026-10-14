@@ -604,10 +604,13 @@ function validateConfiguredRepositoryProfile(
     }
   }
   if (profile.draft_issue_implementation !== undefined) {
-    if (typeof profile.draft_issue_implementation !== "boolean") {
-      throw new Error(`${label}.draft_issue_implementation must be a boolean`);
+    try {
+      result.draftIssueImplementation = Schema.decodeUnknownSync(Schema.Boolean)(
+        profile.draft_issue_implementation,
+      );
+    } catch (cause) {
+      throw new Error(`${label}.draft_issue_implementation must be a boolean`, { cause });
     }
-    result.draftIssueImplementation = profile.draft_issue_implementation;
   }
   if (profile.repair_allowed_paths !== undefined) {
     try {
