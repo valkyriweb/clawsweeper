@@ -21,6 +21,8 @@ checkpoint, and status-only commits are intentionally omitted.
 
 ### Added
 
+- Added an off-by-default `issue_triage_intake` target-profile capability and an `issue triage intake` workflow that connects `github_activity` issue-opened/reopened dispatches to the existing `clawsweeper_repair_item` exact-item review. It skips held, closed, locked, pull-request and already-active items. No shipped profile enables it.
+
 - Added a `clawrouter` auth-mode to the `setup-codex` composite action. It writes
   a Codex `model_provider` that routes the Responses wire to ClawRouter
   (`clawrouter-base-url`, default the lue-kube tailnet endpoint) using the

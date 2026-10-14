@@ -1,0 +1,99 @@
+name: issue triage intake
+
+# Starts the existing exact-item review (sweep.yml `clawsweeper_repair_item`) for
+# new or reopened issues in target repositories whose profile sets
+# `issue_triage_intake: true`. Every profile is off by default. Issue text is
+# data: only the profile grants this capability. Review, jobs, capacity and
+# dedup stay owned by sweep.yml and the repair dispatcher.
+on:
+  repository_dispatch:
+    types:
+      - github_activity
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  CLAWSWEEPER_APP_CLIENT_ID: Iv23lirdjmVqYd1gwY26
+
+# One intake at a time per item; never cancel one that is dispatching. A third
+# duplicate replaces the pending one, which cannot restart anything.
+concurrency:
+  group: issue-triage-intake-${{ github.event.client_payload.activity.repo || github.run_id }}-${{ github.event.client_payload.activity.subject.number || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  # No secrets and no token: decides from the payload and the trusted profile only.
+  admit:
+    if: >-
+      ${{
+        github.event.client_payload.activity.type == 'issues' &&
+        (github.event.client_payload.activity.action == 'opened' || github.event.client_payload.activity.action == 'reopened')
+      }}
+    runs-on: [self-hosted, macOS, ARM64, mac-mini]
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      admit: ${{ steps.admission.outputs.admit }}
+      target_repo: ${{ steps.admission.outputs.target_repo }}
+      item_number: ${{ steps.admission.outputs.item_number }}
+      source_action: ${{ steps.admission.outputs.source_action }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          filter: blob:none
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-pnpm
+        with:
+          build-script: build:repair
+
+      - name: Decide admission from payload and profile
+        id: admission
+        run: pnpm run --silent repair:issue-triage-intake -- admit
+
+  triage:
+    needs: admit
+    if: ${{ needs.admit.outputs.admit == 'true' }}
+    runs-on: [self-hosted, macOS, ARM64, mac-mini]
+    timeout-minutes: 15
+    permissions:
+      # `contents: write` is only the repository_dispatch permission for this repo;
+      # the job checks out without persisting credentials and runs trusted code.
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          filter: blob:none
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-pnpm
+        with:
+          build-script: build:repair
+
+      - name: Create target read token
+        id: target-read-token
+        uses: ./.github/actions/create-target-token
+        with:
+          target-repo: ${{ needs.admit.outputs.target_repo }}
+          access-mode: read
+          valkyriweb-client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
+          valkyriweb-private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
+          bermont-digital-client-id: ${{ vars.BERMONT_DIGITAL_CLAWSWEEPER_APP_CLIENT_ID }}
+          bermont-digital-private-key: ${{ secrets.BERMONT_DIGITAL_CLAWSWEEPER_APP_PRIVATE_KEY }}
+
+      - name: Dispatch exact-item review unless held or already active
+        env:
+          GH_TOKEN: ${{ steps.target-read-token.outputs.token }}
+          CLAWSWEEPER_DISPATCH_TOKEN: ${{ github.token }}
+          TARGET_REPO: ${{ needs.admit.outputs.target_repo }}
+          ITEM_NUMBER: ${{ needs.admit.outputs.item_number }}
+          SOURCE_ACTION: ${{ needs.admit.outputs.source_action }}
+        run: |
+          pnpm run --silent repair:issue-triage-intake -- dispatch \
+            --target-repo "$TARGET_REPO" \
+            --item-number "$ITEM_NUMBER" \
+            --source-action "$SOURCE_ACTION"
