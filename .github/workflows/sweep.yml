@@ -1,14 +1,13 @@
 name: ClawSweeper
 
-# run-name carries the target_repo (and item scope when set) so concurrent dispatches
-# against different repos are distinguishable on the Actions dashboard. Previously every
-# workflow_dispatch fell through to a literal 'Review ClawSweeper items' regardless of
-# target, making same-time runs against different repos look like duplicates.
-run-name: ${{ github.event_name == 'repository_dispatch' && format('Review event item {0}#{1}', github.event.client_payload.target_repo || 'bermont-digital/multica', github.event.client_payload.item_number || '?') || (github.event_name == 'workflow_dispatch' && github.event.inputs.apply_existing == 'true' && github.event.inputs.apply_sync_comments_only == 'true') && format('Sync Codex review comments — {0}', github.event.inputs.target_repo || 'bermont-digital/multica') || (github.event_name == 'workflow_dispatch' && github.event.inputs.apply_existing == 'true') && format('Apply ClawSweeper closures — {0}', github.event.inputs.target_repo || 'bermont-digital/multica') || (github.event_name == 'workflow_dispatch' && github.event.inputs.audit_dashboard == 'true') && format('Audit ClawSweeper state — {0}', github.event.inputs.target_repo || 'bermont-digital/multica') || (github.event_name == 'workflow_dispatch' && github.event.inputs.hot_intake == 'true') && format('Review hot ClawSweeper items — {0}', github.event.inputs.target_repo || 'bermont-digital/multica') || (github.event_name == 'workflow_dispatch' && github.event.inputs.item_number != '') && format('Review ClawSweeper items — {0}#{1}', github.event.inputs.target_repo || 'bermont-digital/multica', github.event.inputs.item_number) || (github.event_name == 'workflow_dispatch' && github.event.inputs.item_numbers != '') && format('Review ClawSweeper items — {0} [{1}]', github.event.inputs.target_repo || 'bermont-digital/multica', github.event.inputs.item_numbers) || github.event_name == 'workflow_dispatch' && format('Review ClawSweeper items — {0}', github.event.inputs.target_repo || 'bermont-digital/multica') || 'Review ClawSweeper items' }}
+# run-name carries the target item and, for issue-triage dispatches, the receipt
+# hash. This lets the existing sweep run history identify exact source-event replays.
+# Other review modes retain their existing dashboard labels.
+run-name: ${{ github.event_name == 'repository_dispatch' && format('Review event item {0}#{1}{2}', github.event.client_payload.target_repo || 'bermont-digital/multica', github.event.client_payload.item_number || '?', github.event.client_payload.idempotency_receipt && format(' [r:{0}]', github.event.client_payload.idempotency_receipt) || '') || (github.event_name == 'workflow_dispatch' && github.event.inputs.apply_existing == 'true' && github.event.inputs.apply_sync_comments_only == 'true') && format('Sync Codex review comments — {0}', github.event.inputs.target_repo || 'bermont-digital/multica') || (github.event_name == 'workflow_dispatch' && github.event.inputs.apply_existing == 'true') && format('Apply ClawSweeper closures — {0}', github.event.inputs.target_repo || 'bermont-digital/multica') || (github.event_name == 'workflow_dispatch' && github.event.inputs.audit_dashboard == 'true') && format('Audit ClawSweeper state — {0}', github.event.inputs.target_repo || 'bermont-digital/multica') || (github.event_name == 'workflow_dispatch' && github.event.inputs.hot_intake == 'true') && format('Review hot ClawSweeper items — {0}', github.event.inputs.target_repo || 'bermont-digital/multica') || (github.event_name == 'workflow_dispatch' && github.event.inputs.item_number != '') && format('Review ClawSweeper items — {0}#{1}', github.event.inputs.target_repo || 'bermont-digital/multica', github.event.inputs.item_number) || (github.event_name == 'workflow_dispatch' && github.event.inputs.item_numbers != '') && format('Review ClawSweeper items — {0} [{1}]', github.event.inputs.target_repo || 'bermont-digital/multica', github.event.inputs.item_numbers) || github.event_name == 'workflow_dispatch' && format('Review ClawSweeper items — {0}', github.event.inputs.target_repo || 'bermont-digital/multica') || 'Review ClawSweeper items' }}
 
 on:
-  # Broad hot-intake and scheduled sweeps stay paused. This exact-item event is
-  # emitted only by an explicit autofix/repair authorization.
+  # Broad hot-intake and scheduled sweeps stay paused. Exact-item events can come
+  # from authorized repair flows or profile-gated issue triage; normal policy gates remain.
   repository_dispatch:
     types: [clawsweeper_repair_item]
   workflow_dispatch:
@@ -156,7 +155,9 @@ env:
 
 concurrency:
   group: ${{ github.event_name == 'repository_dispatch' && format('clawsweeper-event-{0}-{1}', github.event.client_payload.target_repo || 'bermont-digital/multica', github.event.client_payload.item_number || github.run_id) || format('{0}-{1}', (github.event_name == 'workflow_dispatch' && github.event.inputs.apply_existing == 'true' && github.event.inputs.apply_sync_comments_only == 'true') && 'clawsweeper-comment-sync' || (github.event_name == 'workflow_dispatch' && github.event.inputs.apply_existing == 'true') && 'clawsweeper-apply' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.item_number != '' || github.event.inputs.item_numbers != '')) && format('clawsweeper-intake-exact-{0}', github.event.inputs.item_number || github.event.inputs.item_numbers) || (github.event_name == 'workflow_dispatch' && github.event.inputs.hot_intake == 'true') && 'clawsweeper-intake-v2' || (github.event_name == 'workflow_dispatch' && github.event.inputs.audit_dashboard == 'true') && 'clawsweeper-audit' || 'clawsweeper-review', github.event.inputs.target_repo || github.event.client_payload.target_repo || 'bermont-digital/multica') }}
-  cancel-in-progress: ${{ github.event_name == 'repository_dispatch' }}
+  # Do not cancel an in-flight per-item review: it may already have side effects.
+  # GitHub still keeps one pending run per group and replaces it with the newest event.
+  cancel-in-progress: false
 
 jobs:
   event-review-apply:

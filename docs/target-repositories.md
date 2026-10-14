@@ -35,21 +35,40 @@ not be verified. The field is optional; targets without it retain the normal
 ClawSweeper review loop.
 
 A target may set `issue_triage_intake` to `true` (boolean, default off) so new or
-reopened issues start the existing exact-item review. The `issue triage intake`
-workflow receives the target's `github_activity` dispatch, admits only
-`issues.opened` and `issues.reopened` for an open issue, and then dispatches
-`clawsweeper_repair_item`. Review, labels, jobs, capacity, and issue-implementation
-intake stay with `sweep.yml` and the repair dispatcher. The flag is separate
-from `automation_policy`: it grants triage only, and issue text cannot set it.
-Before dispatch the workflow reads the live issue and skips it when it is closed,
-locked, a pull request, or holds `clawsweeper:human-review`; it also skips when
-an event review for that item is visible as active in recent workflow history.
-Unrelated event types do not dispatch triage. A held item resumes only
-through the existing explicit command path in the comment router. Replay and
-duplicate protection is best effort: it reads only the most recent 100 runs per
-active status and 100 completed runs, and ignores the activity `idempotencyKey`, so it
-is not durable recovery for old replays or reopens. Enable one
-target at a time after the safe-ramp checks; no shipped profile enables it.
+reopened issues start the existing exact-item review. The intake workflow admits
+only `issues.opened` and `issues.reopened` for an open issue, then carries the
+normalized `activity.idempotencyKey` to the existing `clawsweeper_repair_item` receiver.
+A bounded `updated_at` or `delivery_id` is required for intake serialization. The
+normalized key also uses a stable source key when supplied; without a stable seed,
+intake fails closed.
+The sweep run name stores a SHA-256 receipt derived from that key. The existing
+`sweep.yml` Actions run history owns replay detection: intake reads all API-visible
+workflow-run pages without status/event filters, verifies each advertised `total_count`,
+and retries one inconsistent scan before failing closed. Active runs and successful or
+neutral completions suppress a duplicate. Failed, cancelled, timed-out, or skipped
+runs can be retried with the same event identity. GitHub documents a 1,000-result cap
+for filtered workflow-run searches (including filters such as `event`, `status`, and
+`created`); this request omits those filters. Run retention, deletion, and API visibility
+can still remove receipts, so this is best-effort replay detection, not cross-process
+fencing or a second store.
+
+Intake serialization uses repository, issue number, action, and the raw stable seed
+that feeds the normalized idempotency key. If the sender omits that key, `updated_at`
+or `delivery_id` provides the bounded seed. The sender must include the issue number
+and one of these fields; intake fails closed without them. Duplicate deliveries share
+a group, while a distinct reopen event gets a new group. The shared per-item
+`sweep.yml` group no longer cancels a running review for any exact-item
+`repository_dispatch`, including authorized repair dispatches. GitHub still keeps one
+pending run per group, so a newer pending downstream event can replace an older one.
+
+The flag is separate from `automation_policy` and does not make downstream work
+read-only. `sweep.yml` publishes event results, routes authorized commands, and may
+apply eligible closes. `review_only` blocks repair, close, merge, and label mutations;
+`full` remains subject to per-target close rules and action gates. Issue text cannot
+set the intake flag or widen those gates. Before dispatch, the workflow reads the live
+issue and skips closed, locked, pull-request, or held items. A held item resumes only
+through the existing explicit command path in the comment router. No shipped profile
+enables intake; use the safe-ramp checks before enabling any target.
 
 A target may set `skip_comment_router_schedule` to `true` to stay on the
 allowlist while scheduled comment-router fan-out skips it. The workflow

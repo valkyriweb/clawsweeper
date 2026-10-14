@@ -2,8 +2,9 @@
 
 The shared `valkyriweb/clawsweeper` engine keeps broad intake manual-only.
 Scheduled target sweeps and the broad `clawsweeper_item` event remain disabled.
-Its one repository-dispatch receiver accepts only `clawsweeper_repair_item`,
-emitted after explicit autofix/repair authorization.
+Its repository-dispatch receiver accepts only `clawsweeper_repair_item`. Explicit
+autofix/repair routes and profile-gated issue triage may emit this exact-item event;
+the intake flag does not bypass the receiver's normal `automation_policy` gates.
 
 Do not add or generate a target-side ClawSweeper dispatcher for
 `bermont-digital/*`. In particular, SaleSight and Smilerite must not contain a
