@@ -187,9 +187,11 @@ jobs:
         if: ${{ steps.prepare.outputs.should_repair == 'true' }}
         with:
           version: ${{ env.CODEX_CLI_VERSION }}
+          auth-mode: ${{ vars.CLAWSWEEPER_CODEX_AUTH_MODE || 'subscription' }}
           cache-suffix: target-pnpm
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          CLAWROUTER_API_KEY: ${{ vars.CLAWSWEEPER_CODEX_AUTH_MODE == 'clawrouter' && secrets.CLAWROUTER_API_KEY || '' }}
 
       - name: Review synthetic result
         if: ${{ steps.prepare.outputs.should_repair == 'true' }}
@@ -202,6 +204,7 @@ jobs:
         timeout-minutes: 40
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          CLAWROUTER_API_KEY: ${{ vars.CLAWSWEEPER_CODEX_AUTH_MODE == 'clawrouter' && secrets.CLAWROUTER_API_KEY || '' }}
           GH_TOKEN: ${{ steps.app_token.outputs.token }}
         run: pnpm run repair:execute-fix -- "${{ steps.prepare.outputs.job_path }}" "${{ steps.prepare.outputs.result_path }}"
 
