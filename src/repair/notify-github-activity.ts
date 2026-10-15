@@ -475,9 +475,11 @@ function normalizeRepositoryDispatch(
     subject,
     payload: compactPayload(activityPayload),
     seed:
+      stringOrNull(activityPayload.idempotencyKey) ??
       stringOrNull(activityPayload.idempotency_key) ??
       stringOrNull(activityPayload.delivery_id) ??
       stringOrNull(activityPayload.updated_at) ??
+      stringOrNull(asJsonObject(activityPayload.issue).updated_at) ??
       env.GITHUB_RUN_ID,
   });
 }

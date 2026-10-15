@@ -4,6 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
+import type { JsonObject } from "../../dist/repair/json-types.js";
+
 import {
   normalizeGithubActivity,
   renderGithubActivityMessage,
@@ -80,6 +82,65 @@ test("normalizeGithubActivity accepts repository_dispatch activity payloads", ()
   assert.equal(activity?.subject.kind, "pull_request");
   assert.equal(activity?.subject.number, 45);
   assert.match(activity?.idempotencyKey ?? "", /delivery-1/);
+});
+
+test("repository_dispatch preserves camel-case idempotencyKey across reruns", () => {
+  const payload = {
+    action: "github_activity",
+    client_payload: {
+      activity: {
+        type: "issues",
+        repo: "openclaw/openclaw",
+        action: "reopened",
+        actor: "contributor",
+        subject: { kind: "issue", number: 14, state: "open" },
+        idempotencyKey: "source-event-key",
+      },
+    },
+  };
+  const first = normalizeGithubActivity({
+    eventName: "repository_dispatch",
+    payload,
+    env: { GITHUB_RUN_ID: "run-1" },
+  });
+  const retry = normalizeGithubActivity({
+    eventName: "repository_dispatch",
+    payload,
+    env: { GITHUB_RUN_ID: "run-2" },
+  });
+
+  assert.equal(
+    first?.idempotencyKey,
+    "github-activity:openclaw/openclaw:issues:reopened:issue-14:source-event-key",
+  );
+  assert.equal(retry?.idempotencyKey, first?.idempotencyKey);
+});
+
+test("direct issue event identity uses updated_at across workflow retries", () => {
+  const payload = {
+    action: "reopened",
+    repository: { full_name: "openclaw/openclaw" },
+    issue: {
+      number: 15,
+      title: "Reopened issue",
+      state: "open",
+      html_url: "https://github.com/openclaw/openclaw/issues/15",
+      updated_at: "2026-10-14T12:00:00Z",
+    },
+  };
+  const first = normalizeGithubActivity({
+    eventName: "issues",
+    payload,
+    env: { GITHUB_RUN_ID: "run-1" },
+  });
+  const retry = normalizeGithubActivity({
+    eventName: "issues",
+    payload,
+    env: { GITHUB_RUN_ID: "run-2" },
+  });
+
+  assert.equal(first?.idempotencyKey, retry?.idempotencyKey);
+  assert.match(first?.idempotencyKey ?? "", /2026-10-14T12:00:00Z/);
 });
 
 test("normalizeGithubActivity handles supported GitHub event variants", () => {
@@ -263,7 +324,7 @@ test("runGithubActivityNotifier posts ingest-only hook payload by default", asyn
     })}\n`,
   );
 
-  const requests: { body: Record<string, unknown>; auth: string | null }[] = [];
+  const requests: { body: JsonObject; auth: string | null }[] = [];
   const mockFetch: typeof fetch = async (_input, init) => {
     requests.push({
       body: JSON.parse(String(init?.body)),

@@ -1,9 +1,10 @@
-import type { JsonValue } from "./json-types.js";
+import { asJsonObject, type JsonValue } from "./json-types.js";
 import { execFile, execFileSync, spawnSync } from "node:child_process";
 import { promisify } from "node:util";
 import { stripAnsi } from "./comment-router-utils.js";
 import { ghCliEnv } from "./process-env.js";
 import { repoRoot } from "./paths.js";
+import { stringOrNull } from "./openclaw-hook.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -70,6 +71,66 @@ export function ghPaged<T = JsonValue>(apiPath: string, options: GhRunOptions = 
   );
   if (!Array.isArray(pages)) return [];
   return pages.flatMap((page: JsonValue) => (Array.isArray(page) ? (page as T[]) : []));
+}
+
+/**
+ * Unpacks the object-shaped workflow-runs response while proving that every
+ * advertised page arrived. Unlike ghPaged, it never drops object-shaped pages.
+ */
+class WorkflowRunHistoryChangedError extends Error {}
+
+export function workflowRunsFromPages(pages: JsonValue[]): JsonValue[] {
+  if (pages.length === 0) {
+    throw new WorkflowRunHistoryChangedError("workflow run pagination returned no pages");
+  }
+  let totalCount: number | null = null;
+  const runs: JsonValue[] = [];
+  for (const page of pages) {
+    const response = asJsonObject(page);
+    if (!Array.isArray(response.workflow_runs)) {
+      throw new Error("workflow run pagination page has no workflow_runs array");
+    }
+    const pageTotal = Number(response.total_count);
+    if (!Number.isSafeInteger(response.total_count) || pageTotal < 0) {
+      throw new Error("workflow run pagination page has an invalid total_count");
+    }
+    if (totalCount !== null && totalCount !== pageTotal) {
+      throw new WorkflowRunHistoryChangedError(
+        "workflow run total_count changed during pagination",
+      );
+    }
+    for (const run of response.workflow_runs) {
+      if (stringOrNull(asJsonObject(run).display_title) === null) {
+        throw new Error("workflow run pagination page has a run without display_title");
+      }
+    }
+    totalCount = pageTotal;
+    runs.push(...response.workflow_runs);
+  }
+  if (totalCount === null || runs.length !== totalCount) {
+    throw new WorkflowRunHistoryChangedError(
+      `workflow run pagination incomplete: received ${runs.length}, expected ${totalCount ?? "unknown"}`,
+    );
+  }
+  return runs;
+}
+
+/** Lists API-visible Actions runs for one workflow, without status/event search filters. */
+export function ghPagedWorkflowRuns(apiPath: string, options: GhRunOptions = {}): JsonValue[] {
+  const args = ["api", githubPaginatedPath(apiPath), "--paginate", "--slurp"];
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const pages = ghJsonWithRetry<JsonValue[]>(args, { ...options, attempts: 2 });
+      if (!Array.isArray(pages)) {
+        throw new Error("workflow run pagination returned a non-array response");
+      }
+      return workflowRunsFromPages(pages);
+    } catch (error) {
+      if (!(error instanceof WorkflowRunHistoryChangedError) || attempt === 1) throw error;
+      sleepMs(250);
+    }
+  }
+  throw new Error("workflow run pagination retry exhausted");
 }
 
 export function ghPagedWithRetry<T = JsonValue>(
