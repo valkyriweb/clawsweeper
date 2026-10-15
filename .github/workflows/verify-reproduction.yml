@@ -89,12 +89,23 @@ jobs:
             echo "repo=${TARGET_REPO}"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Resolve target read authorization
+        id: target_auth
+        env:
+          TARGET_REPO: ${{ steps.target.outputs.repo }}
+        run: |
+          set -euo pipefail
+          node dist/repair/workflow-utils.js target-auth \
+            --target-repo "$TARGET_REPO" --access-mode read >> "$GITHUB_OUTPUT"
+
       - name: Authorize legacy target token
+        if: ${{ steps.target_auth.outputs.automation_policy != 'draft_pr_only' }}
         env:
           TARGET_REPO: ${{ steps.target.outputs.repo }}
         run: pnpm run --silent workflow -- legacy-target-auth --target-repo "$TARGET_REPO"
 
       - name: Create GitHub App token
+        if: ${{ steps.target_auth.outputs.automation_policy != 'draft_pr_only' }}
         id: app_token
         uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
         with:
@@ -106,6 +117,18 @@ jobs:
           permission-issues: write
           permission-pull-requests: read
           permission-actions: read
+
+      - name: Create draft verification read token
+        if: ${{ steps.target_auth.outputs.automation_policy == 'draft_pr_only' }}
+        id: draft_read_token
+        uses: ./.github/actions/create-target-token
+        with:
+          target-repo: ${{ steps.target.outputs.repo }}
+          access-mode: read
+          valkyriweb-client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
+          valkyriweb-private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
+          bermont-digital-client-id: ${{ vars.BERMONT_DIGITAL_CLAWSWEEPER_APP_CLIENT_ID }}
+          bermont-digital-private-key: ${{ secrets.BERMONT_DIGITAL_CLAWSWEEPER_APP_PRIVATE_KEY }}
 
       - name: Create state token
         id: state-token
@@ -127,7 +150,7 @@ jobs:
           repository: ${{ steps.target.outputs.repo }}
           ref: ${{ github.event.inputs.target_ref || github.event.client_payload.target_ref || 'main' }}
           path: target-checkout
-          token: ${{ steps.app_token.outputs.token }}
+          token: ${{ steps.draft_read_token.outputs.token || steps.app_token.outputs.token }}
           filter: blob:none
           fetch-depth: 0
 
@@ -250,7 +273,7 @@ jobs:
             -f report_url="$REPORT_URL"
 
       - name: Comment on source issue
-        if: always()
+        if: ${{ always() && steps.target_auth.outputs.automation_policy != 'draft_pr_only' }}
         env:
           GH_TOKEN: ${{ steps.app_token.outputs.token }}
           TARGET_REPO: ${{ steps.target.outputs.repo }}

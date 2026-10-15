@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
+import vm from "node:vm";
+
+import { repositoryProfileFor } from "../../dist/repository-profiles.js";
+import { legacyTargetAuthFor, targetAuthFor } from "../../dist/repair/workflow-utils.js";
 
 // Seam: checked-in Actions orchestration contract, without minting any real tokens.
 function steps(source: string) {
@@ -56,6 +60,71 @@ test("draft worker cannot mint broad target or engine tokens or run ancillary mu
     stateAction,
     /permission-contents:.*inputs.read-only == 'true' && 'read' \|\| 'write'/,
   );
+});
+
+// Evaluate the checked-in Actions conditions with real profile authorization; no token is minted.
+function verificationSteps(targetRepo: string) {
+  const workflow = fs.readFileSync(".github/workflows/verify-reproduction.yml", "utf8");
+  const authorization = targetAuthFor({ targetRepo, accessMode: "read" });
+  const selected = steps(workflow).filter((step) => {
+    const condition = step.match(/^        if: (.+)$/m)?.[1];
+    if (!condition) return true;
+    return vm.runInNewContext(condition.replace(/^\$\{\{\s*|\s*\}\}$/g, ""), {
+      steps: { target_auth: { outputs: authorization }, verify: { outputs: {} } },
+      always: () => true,
+    });
+  });
+  if (selected.some((step) => step.includes("legacy-target-auth"))) {
+    legacyTargetAuthFor(targetRepo);
+  }
+  return selected.join("\n");
+}
+
+test("draft-only verification authorizes a read token and audit without issue publication", () => {
+  const profile = repositoryProfileFor("valkyriweb/clawrouter");
+  const original = profile.automationPolicy;
+  try {
+    profile.automationPolicy = "draft_pr_only";
+    const selected = verificationSteps(profile.targetRepo);
+    assert.match(selected, /uses: \.\/\.github\/actions\/create-target-token/);
+    assert.match(selected, /access-mode: read/);
+    assert.match(selected, /id: target_auth[\s\S]*target-auth[\s\S]*--access-mode read/);
+    assert.match(
+      selected,
+      /token: \$\{\{ steps\.draft_read_token\.outputs\.token \|\| steps\.app_token\.outputs\.token \}\}/,
+    );
+    assert.doesNotMatch(selected, /permission-issues: write|legacy-target-auth/);
+    assert.match(selected, /repair:verify-reproduction -- run/);
+    assert.match(selected, /repair:publish-main --/);
+    assert.doesNotMatch(selected, /gh issue comment/);
+    assert.throws(() => legacyTargetAuthFor(profile.targetRepo), /exact-job/);
+  } finally {
+    profile.automationPolicy = original;
+  }
+});
+
+test("verification preserves legacy permissions and issue publication for other modes", () => {
+  const profile = repositoryProfileFor("valkyriweb/clawrouter");
+  const original = profile.automationPolicy;
+  try {
+    for (const mode of ["review_only", "full"] as const) {
+      profile.automationPolicy = mode;
+      const selected = verificationSteps(profile.targetRepo);
+      assert.match(selected, /legacy-target-auth/);
+      assert.match(selected, /permission-contents: read/);
+      assert.match(selected, /permission-issues: write/);
+      assert.match(selected, /permission-pull-requests: read/);
+      assert.match(selected, /permission-actions: read/);
+      assert.doesNotMatch(selected, /uses: \.\/\.github\/actions\/create-target-token/);
+      assert.match(selected, /repair:verify-reproduction -- run/);
+      assert.match(selected, /repair:publish-main --/);
+      assert.match(selected, /gh issue comment/);
+    }
+    assert.throws(() => verificationSteps("bermont-digital/smilerite"), /legacy Valkyriweb/);
+    assert.throws(() => verificationSteps("unknown-org/unknown-repo"), /Unsupported target repo/);
+  } finally {
+    profile.automationPolicy = original;
+  }
 });
 
 test("intake only reads the target and requires explicit draft intent; no issue-event bridge", () => {
