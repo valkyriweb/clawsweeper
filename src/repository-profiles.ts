@@ -32,10 +32,11 @@ export type ReviewProvider = "codex" | "claude-bridge" | "claude-code" | "pi";
 export type ReviewProviderModels = Record<ReviewProvider, string>;
 
 /** Per-target authorization for automation that can change a target repository. */
-export type AutomationPolicy = "full" | "review_only";
+export type AutomationPolicy = "full" | "review_only" | "draft_pr_only";
 /** The only credential authorities allowed to mint target-repository tokens. */
 export type GithubAppCredentialRoute = "valkyriweb" | "bermont-digital";
 export type AutomationCapability =
+  | "draft_issue_implementation"
   | "repair"
   | "branch_push"
   | "pull_request"
@@ -46,6 +47,7 @@ export type AutomationCapability =
 export interface AutomationCapabilities {
   review: true;
   proposals: true;
+  draftIssueImplementation: boolean;
   repair: boolean;
   branchPush: boolean;
   pullRequest: boolean;
@@ -111,6 +113,7 @@ export interface RepositoryProfile {
    * deliberately separate from `automationPolicy`, which gates mutations.
    */
   issueTriageIntake?: boolean;
+  draftIssueImplementation?: boolean;
 }
 
 interface TargetRepositoryConfig {
@@ -142,6 +145,7 @@ interface ConfiguredRepositoryProfile {
   repairAllowedPaths?: readonly string[];
   piReviewLifecycle?: boolean;
   issueTriageIntake?: boolean;
+  draftIssueImplementation?: boolean;
 }
 
 // Branch whose pushes commit-review accepts when a target sets no explicit
@@ -190,7 +194,11 @@ const ALL_CLOSE_REASONS: readonly RepositoryCloseReason[] = [...OPENCLAW_CLOSE_R
 const CLOSE_REASON_SET = new Set<RepositoryCloseReason>(ALL_CLOSE_REASONS);
 const ITEM_KIND_SET = new Set<RepositoryItemKind>(["issue", "pull_request"]);
 const DOCS_MAINTAINER_MODE_SET = new Set<DocsMaintainerMode>(["autofix", "precheck"]);
-const AUTOMATION_POLICY_SET: ReadonlySet<AutomationPolicy> = new Set(["full", "review_only"]);
+const AUTOMATION_POLICY_SET: ReadonlySet<AutomationPolicy> = new Set([
+  "full",
+  "review_only",
+  "draft_pr_only",
+]);
 export const GITHUB_APP_CREDENTIAL_ROUTE_SET: ReadonlySet<GithubAppCredentialRoute> = new Set([
   "valkyriweb",
   "bermont-digital",
@@ -199,6 +207,7 @@ export const GITHUB_APP_CREDENTIAL_ROUTE_SET: ReadonlySet<GithubAppCredentialRou
 const FULL_AUTOMATION_CAPABILITIES: AutomationCapabilities = Object.freeze({
   review: true,
   proposals: true,
+  draftIssueImplementation: false,
   repair: true,
   branchPush: true,
   pullRequest: true,
@@ -210,6 +219,7 @@ const FULL_AUTOMATION_CAPABILITIES: AutomationCapabilities = Object.freeze({
 const REVIEW_ONLY_AUTOMATION_CAPABILITIES: AutomationCapabilities = Object.freeze({
   review: true,
   proposals: true,
+  draftIssueImplementation: false,
   repair: false,
   branchPush: false,
   pullRequest: false,
@@ -337,13 +347,18 @@ export function automationPolicyBlockReason(
   }
   const capabilities = resolveAutomationCapabilities(profile.automationPolicy);
   const allowed =
-    capability === "branch_push"
-      ? capabilities.branchPush
-      : capability === "pull_request"
-        ? capabilities.pullRequest
-        : capability === "label"
-          ? capabilities.labels
-          : capabilities[capability];
+    capability === "draft_issue_implementation"
+      ? profile.automationPolicy === "draft_pr_only" &&
+        profile.draftIssueImplementation === true &&
+        profile.targetRepo.split("/")[0]?.toLowerCase() === "valkyriweb" &&
+        profile.githubAppCredentialRoute === "valkyriweb"
+      : capability === "branch_push"
+        ? capabilities.branchPush
+        : capability === "pull_request"
+          ? capabilities.pullRequest
+          : capability === "label"
+            ? capabilities.labels
+            : capabilities[capability];
   if (allowed) return null;
   return `${profile.targetRepo} automation_policy=${profile.automationPolicy} denies ${capability}`;
 }
@@ -404,6 +419,8 @@ function configuredRepositoryProfile(profile: ConfiguredRepositoryProfile): Repo
   if (profile.repairAllowedPaths) result.repairAllowedPaths = profile.repairAllowedPaths;
   if (profile.piReviewLifecycle !== undefined) result.piReviewLifecycle = profile.piReviewLifecycle;
   if (profile.issueTriageIntake !== undefined) result.issueTriageIntake = profile.issueTriageIntake;
+  if (profile.draftIssueImplementation !== undefined)
+    result.draftIssueImplementation = profile.draftIssueImplementation;
   return result;
 }
 
@@ -584,6 +601,15 @@ function validateConfiguredRepositoryProfile(
       );
     } catch (cause) {
       throw new Error(`${label}.issue_triage_intake must be a boolean`, { cause });
+    }
+  }
+  if (profile.draft_issue_implementation !== undefined) {
+    try {
+      result.draftIssueImplementation = Schema.decodeUnknownSync(Schema.Boolean)(
+        profile.draft_issue_implementation,
+      );
+    } catch (cause) {
+      throw new Error(`${label}.draft_issue_implementation must be a boolean`, { cause });
     }
   }
   if (profile.repair_allowed_paths !== undefined) {

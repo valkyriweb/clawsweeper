@@ -33,6 +33,7 @@ import {
 } from "./repair-merge-message.js";
 import { compactText as compactPlainText } from "./text-utils.js";
 import { automationPolicyBlockReason } from "../repository-profiles.js";
+import { isDraftIssueJob } from "./draft-issue-implementation.js";
 
 const PASSING_CHECK_CONCLUSIONS = new Set(["SUCCESS", "SKIPPED", "NEUTRAL"]);
 const FIX_PR_MERGE_STATES = new Set(["CLEAN", "HAS_HOOKS", "UNSTABLE"]);
@@ -64,6 +65,8 @@ if (!resultPathArg && !latest) {
 }
 
 const job = parseJob(jobPath);
+if (isDraftIssueJob(job.frontmatter))
+  throw new Error("draft-only jobs prohibit apply and post-flight mutations");
 const errors = validateJob(job);
 if (errors.length > 0) {
   console.error(errors.join("\n"));

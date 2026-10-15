@@ -15,6 +15,7 @@ import {
   reportOnlyDecision,
   securitySensitiveText,
 } from "../../dist/repair/issue-implementation-intake.js";
+import { repositoryProfileFor } from "../../dist/repository-profiles.js";
 import {
   renderIssueImplementationJob,
   REVIEW_REPRODUCIBLE_BUG_TRIGGER_SOURCE,
@@ -62,6 +63,57 @@ test("strict reproducible bug reports are eligible for implementation intake", (
 
   assert.equal(decision.shouldRepair, true);
   assert.equal(decision.status, "queued_for_repair");
+});
+
+test("draft-only intake requires explicit intent and completed strict verification", () => {
+  const profile = repositoryProfileFor("valkyriweb/clawrouter");
+  const original = { ...profile };
+  try {
+    profile.automationPolicy = "draft_pr_only";
+    profile.draftIssueImplementation = true;
+    const markdown = report({ repository: profile.targetRepo });
+    const options = {
+      targetRepo: profile.targetRepo,
+      report: parseReviewReport(markdown),
+      reportMarkdown: markdown,
+    };
+    assert.equal(reportOnlyDecision(options).shouldRepair, false);
+    assert.equal(reportOnlyDecision({ ...options, draftOnly: true }).shouldRepair, false);
+    const strict = {
+      ...options,
+      draftOnly: true,
+      audit: { status: "reproduced", verified: true, reason: "executed reproduction" },
+    };
+    assert.equal(reportOnlyDecision(strict).shouldRepair, true);
+    for (const audit of [
+      null,
+      { status: "blocked", verified: true },
+      { status: "reproduced", verified: false },
+    ]) {
+      assert.equal(reportOnlyDecision({ ...strict, audit }).shouldRepair, false);
+    }
+    assert.equal(reportOnlyDecision({ ...strict, lane: "verifiable" }).shouldRepair, false);
+    for (const fields of [
+      { review_status: "pending" },
+      { confidence: "low" },
+      { requires_product_decision: "true" },
+      { security_review_status: "needs_attention" },
+    ]) {
+      const denied = report({ repository: profile.targetRepo, ...fields });
+      assert.equal(
+        reportOnlyDecision({ ...strict, report: parseReviewReport(denied) }).shouldRepair,
+        false,
+      );
+    }
+    profile.draftIssueImplementation = false;
+    assert.equal(reportOnlyDecision(strict).shouldRepair, false);
+    profile.draftIssueImplementation = true;
+    profile.automationPolicy = "review_only";
+    assert.equal(reportOnlyDecision(strict).shouldRepair, false);
+  } finally {
+    Object.assign(profile, original);
+    delete profile.draftIssueImplementation;
+  }
 });
 
 test("review-only targets retain the report but never queue issue implementation", () => {

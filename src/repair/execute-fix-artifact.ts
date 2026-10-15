@@ -119,6 +119,8 @@ import {
 import { uniqueStrings } from "./validation-command-utils.js";
 import { enforceValidationFixScope } from "./validation-fix-scope.js";
 import { automationPolicyBlockReason } from "../repository-profiles.js";
+import { assertDraftIssueExecution, isDraftIssueJob } from "./draft-issue-implementation.js";
+import { existingDraftIssuePr, publishDraftIssuePr } from "./draft-issue-publish.js";
 import {
   appendUsageEventJsonl,
   buildUsageTelemetryEvent,
@@ -256,8 +258,17 @@ if (!resultPathArg && !latest) {
 }
 
 const job = parseJob(jobPath);
-const policyBlock = automationPolicyBlockReason(job.frontmatter.repo, "repair");
-if (policyBlock) throw new Error(`refusing fix execution: ${policyBlock}`);
+const draftOnly = isDraftIssueJob(job.frontmatter);
+const draftWriteToken = draftOnly ? process.env.CLAWSWEEPER_DRAFT_GH_TOKEN : undefined;
+delete process.env.CLAWSWEEPER_DRAFT_GH_TOKEN;
+if (draftOnly && !dryRun && (!draftWriteToken || !process.env.GH_TOKEN)) {
+  throw new Error("draft execution requires separate target read and draft write tokens");
+}
+if (draftOnly) assertDraftIssueExecution(job.frontmatter);
+else {
+  const policyBlock = automationPolicyBlockReason(job.frontmatter.repo, "repair");
+  if (policyBlock) throw new Error(`refusing fix execution: ${policyBlock}`);
+}
 const jobErrors = validateJob(job);
 if (jobErrors.length > 0) {
   console.error(jobErrors.join("\n"));
@@ -269,7 +280,7 @@ assertAllowedOwner(job.frontmatter.repo, process.env.CLAWSWEEPER_ALLOWED_OWNER);
 if (!["execute", "autonomous"].includes(job.frontmatter.mode)) {
   throw new Error("refusing fix execution: job frontmatter mode is not execute or autonomous");
 }
-if (process.env.CLAWSWEEPER_ALLOW_EXECUTE !== "1") {
+if (!draftOnly && process.env.CLAWSWEEPER_ALLOW_EXECUTE !== "1") {
   throw new Error("refusing fix execution: CLAWSWEEPER_ALLOW_EXECUTE must be 1");
 }
 
@@ -291,6 +302,7 @@ const automergeTargetValidation =
   String(job.frontmatter.source ?? "") === "pr_automerge" ||
   String(job.frontmatter.cluster_id ?? "").startsWith("automerge-");
 const targetValidationOptions: TargetValidationOptions = {
+  credentialFree: draftOnly,
   additionalValidationCommands:
     automergeTargetValidation && result.repo === "openclaw/openclaw"
       ? ["pnpm lint", "pnpm check:test-types"]
@@ -328,6 +340,22 @@ function currentCheckoutCloneTimeoutMs() {
 }
 
 function runGitNetwork(args: string[], cwd: string = targetDir) {
+  if (draftOnly && args[0] === "push") {
+    assertDraftIssueExecution(job.frontmatter);
+    const branch = String(job.frontmatter.target_branch);
+    if (JSON.stringify(args) !== JSON.stringify(["push", "origin", `HEAD:refs/heads/${branch}`])) {
+      throw new Error("draft-only execution refuses a push outside the scoped repair branch");
+    }
+    const remote = run("git", ["remote", "get-url", "--push", "origin"], { cwd }).trim();
+    if (remote !== `https://github.com/${job.frontmatter.repo}.git`)
+      throw new Error("draft-only push remote mismatch");
+    existingDraftIssuePr({
+      repo: job.frontmatter.repo,
+      branch,
+      cwd,
+      timeoutMs: currentNetworkCommandTimeoutMs(),
+    });
+  }
   if (args[0] === "push" && process.env.CLAWSWEEPER_EXPECTED_HEAD_SHA) {
     const number = Number(process.env.CLAWSWEEPER_EXPECTED_PR_NUMBER);
     assertLifecycleRepairTarget(
@@ -343,6 +371,7 @@ function runGitNetwork(args: string[], cwd: string = targetDir) {
   }
   return run("git", args, {
     cwd,
+    env: draftOnly && args[0] === "push" ? ghEnv({ GH_TOKEN: draftWriteToken }) : process.env,
     timeoutMs: currentNetworkCommandTimeoutMs(),
   });
 }
@@ -507,7 +536,7 @@ if (plannedFixActions.length === 0) {
   process.exit(0);
 }
 
-if (process.env.CLAWSWEEPER_ALLOW_FIX_PR !== "1") {
+if (!draftOnly && process.env.CLAWSWEEPER_ALLOW_FIX_PR !== "1") {
   throw new Error("refusing fix execution: CLAWSWEEPER_ALLOW_FIX_PR must be 1");
 }
 if (
@@ -538,6 +567,18 @@ if (NON_EXECUTABLE_REPAIR_STRATEGIES.has(repairStrategy)) {
 }
 
 let fixArtifact = validateFixArtifact(executableFixArtifact);
+if (
+  draftOnly &&
+  (fixArtifact.repair_strategy !== "new_fix_pr" ||
+    (fixArtifact.source_prs ?? []).length !== 0 ||
+    (result.actions ?? []).some((action: LooseRecord) =>
+      /^(comment|label|close|merge|ready|dispatch)/.test(String(action.action)),
+    ))
+) {
+  throw new Error(
+    "draft-only execution requires a new issue fix PR without source PRs or other actions",
+  );
+}
 const securityBlock = validateFixSecurityScope({ job, resultPath, fixArtifact, plannedFixActions });
 if (securityBlock) {
   report.status = "skipped";
@@ -1618,6 +1659,15 @@ function executeReplacementBranch({
   });
   const mergedSource = mergedReplacementSourcePr({ fixArtifact, targetDir });
   const branch = replacementBranchName(result.cluster_id);
+  if (draftOnly) {
+    if (branch !== job.frontmatter.target_branch) throw new Error("draft repair branch mismatch");
+    existingDraftIssuePr({
+      repo: result.repo,
+      branch,
+      cwd: targetDir,
+      timeoutMs: currentNetworkCommandTimeoutMs(),
+    });
+  }
   const areaCapacityBlock = validateActivePrAreaCapacity({
     fixArtifact,
     targetDir,
@@ -1665,6 +1715,45 @@ function executeReplacementBranch({
     pushCheckpoint: dryRun ? null : () => pushRecoverableBranch({ targetDir, branch }),
     rebaseResult,
   });
+  if (draftOnly) {
+    if (dryRun)
+      return { action: "open_fix_pr", status: "planned", draft: true, branch, commit: prep.commit };
+    if (!branchHasBaseDiff({ targetDir, baseBranch }))
+      return { action: "open_fix_pr", status: "skipped", reason: "no changes versus base" };
+    pushRecoverableBranch({ targetDir, branch });
+    const bodyFile = path.join(workRoot, "draft-pr-body.md");
+    fs.writeFileSync(
+      bodyFile,
+      `Draft proposal for https://github.com/${result.repo}/issues/${String(job.frontmatter.candidates?.[0]).slice(1)}\n\n${fixArtifact.summary ?? fixArtifact.pr_title}\n\nHuman review required. This lane cannot mark ready or merge.\n`,
+    );
+    const prUrl = publishDraftIssuePr(
+      {
+        repo: result.repo,
+        branch,
+        base: baseBranch,
+        title: fixArtifact.pr_title,
+        bodyFile,
+        cwd: targetDir,
+        timeoutMs: currentNetworkCommandTimeoutMs(),
+      },
+      (command, commandArgs, options) =>
+        run(command, commandArgs, {
+          ...options,
+          env:
+            command === "gh" && commandArgs[0] === "pr" && commandArgs[1] === "create"
+              ? ghEnv({ GH_TOKEN: draftWriteToken })
+              : ghEnv(),
+        }),
+    );
+    return {
+      action: "open_fix_pr",
+      status: "opened",
+      draft: true,
+      pr_url: prUrl,
+      branch,
+      commit: prep.commit,
+    };
+  }
   const provenance = externalMessageProvenance({
     model,
     reasoning: codexReasoningEffort,
@@ -3560,7 +3649,7 @@ function commitCheckpointIfNeeded({ targetDir, message, trailers = [] }: LooseRe
 }
 
 function pushRecoverableBranch({ targetDir, branch }: LooseRecord) {
-  const remoteSha = remoteBranchSha({ targetDir, branch });
+  const remoteSha = draftOnly ? "" : remoteBranchSha({ targetDir, branch });
   const targetRef = `refs/heads/${branch}`;
   const args = remoteSha
     ? ["push", `--force-with-lease=${targetRef}:${remoteSha}`, "origin", `HEAD:${targetRef}`]
@@ -3637,8 +3726,10 @@ function findLatestResultPath() {
 }
 
 function writeReport(report: LooseRecord, resultPath: string) {
-  appendIssueImplementationPrLinkComment(report);
-  appendAutomergeRepairOutcomeComment(report, resultPath);
+  if (!draftOnly) {
+    appendIssueImplementationPrLinkComment(report);
+    appendAutomergeRepairOutcomeComment(report, resultPath);
+  }
   const reportPath =
     typeof args.report === "string"
       ? path.resolve(args.report)
@@ -4156,6 +4247,7 @@ function markdownCommitLink(repo: JsonValue, sha: JsonValue): string {
 }
 
 function isAutomergeRepairJob() {
+  if (draftOnly) return false;
   return (
     job.frontmatter.source === "pr_automerge" ||
     String(result.cluster_id ?? "").startsWith("automerge-")

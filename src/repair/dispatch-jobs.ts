@@ -6,6 +6,7 @@ import { spawnSync } from "node:child_process";
 import { managedModel } from "../model-registry.js";
 import {
   activeRepairWorkflowRunForJob,
+  assertAllowedOwner,
   assertLiveWorkerCapacity,
   currentProjectRepo,
   parseArgs,
@@ -20,6 +21,7 @@ import { REPAIR_CLUSTER_WORKFLOW } from "./constants.js";
 import { AUTOMATION_LIMITS, workerLimit, type WorkerLane } from "./limits.js";
 import { repairJobIntentForFrontmatter, workerLaneForRepairJobIntent } from "./job-intent.js";
 import { automationPolicyBlockReason } from "../repository-profiles.js";
+import { isDraftIssueJob, assertDraftIssueExecution } from "./draft-issue-implementation.js";
 
 const args = parseArgs(process.argv.slice(2));
 const defaultRunner = process.env.CLAWSWEEPER_WORKER_RUNNER ?? "blacksmith-4vcpu-ubuntu-2404";
@@ -52,7 +54,17 @@ let failed = false;
 const validatedJobs: JsonValue[] = [];
 for (const file of files) {
   const job = parseJob(file);
-  const policyBlock = automationPolicyBlockReason(job.frontmatter.repo, "repair");
+  const draftOnly = isDraftIssueJob(job.frontmatter);
+  if (draftOnly) {
+    assertAllowedOwner(job.frontmatter.repo, process.env.CLAWSWEEPER_ALLOWED_OWNER);
+    assertDraftIssueExecution(job.frontmatter);
+    if (mode !== "autonomous" || workflow !== REPAIR_CLUSTER_WORKFLOW) {
+      throw new Error("draft issue implementation requires the autonomous repair worker");
+    }
+  }
+  const policyBlock = draftOnly
+    ? null
+    : automationPolicyBlockReason(job.frontmatter.repo, "repair");
   const errors = [...(policyBlock ? [policyBlock] : []), ...validateJob(job)];
   if (errors.length > 0) {
     failed = true;

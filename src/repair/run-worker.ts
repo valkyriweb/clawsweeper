@@ -16,6 +16,8 @@ import {
 } from "./lib.js";
 import { repairJobIntentForFrontmatter } from "./job-intent.js";
 import { automationPolicyBlockReason } from "../repository-profiles.js";
+import { assertDraftIssueExecution, isDraftIssueJob } from "./draft-issue-implementation.js";
+import { codexSubprocessEnv } from "./process-env.js";
 import {
   appendUsageEventJsonl,
   buildUsageTelemetryEvent,
@@ -82,12 +84,16 @@ if (errors.length > 0) {
 assertAllowedOwner(job.frontmatter.repo, process.env.CLAWSWEEPER_ALLOWED_OWNER);
 
 if ((mode === "execute" || mode === "autonomous") && !dryRun) {
-  const policyBlock = automationPolicyBlockReason(job.frontmatter.repo, "repair");
-  if (policyBlock) throw new Error(`refusing ${mode}: ${policyBlock}`);
+  const draftOnly = isDraftIssueJob(job.frontmatter);
+  if (draftOnly) assertDraftIssueExecution(job.frontmatter);
+  else {
+    const policyBlock = automationPolicyBlockReason(job.frontmatter.repo, "repair");
+    if (policyBlock) throw new Error(`refusing ${mode}: ${policyBlock}`);
+  }
   if (job.frontmatter.mode !== mode) {
     throw new Error(`refusing ${mode}: job frontmatter mode is not ${mode}`);
   }
-  if (process.env.CLAWSWEEPER_ALLOW_EXECUTE !== "1") {
+  if (!draftOnly && process.env.CLAWSWEEPER_ALLOW_EXECUTE !== "1") {
     throw new Error(`refusing ${mode}: CLAWSWEEPER_ALLOW_EXECUTE must be 1`);
   }
 }
@@ -498,7 +504,7 @@ function reviewResult() {
 }
 
 function workerEnv() {
-  return process.env;
+  return isDraftIssueJob(job.frontmatter) ? codexSubprocessEnv() : process.env;
 }
 
 function workerLabel(): string {
