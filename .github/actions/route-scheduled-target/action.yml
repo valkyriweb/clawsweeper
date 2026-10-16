@@ -178,6 +178,7 @@ runs:
         TOKEN_OUTCOME: ${{ steps.app_token.outcome }}
         ROUTE_OUTCOME: ${{ steps.route.outcome }}
         PUBLISH_OUTCOME: ${{ steps.publish.outcome }}
+        WAITING_OUTCOME: ${{ steps.waiting.outcome }}
         RETRY_OUTCOME: ${{ steps.retry.outcome }}
         RETRY_PUBLISH_OUTCOME: ${{ steps.retry-publish.outcome }}
       run: |
@@ -196,6 +197,9 @@ runs:
         elif [ "$PUBLISH_OUTCOME" = "failure" ]; then
           result="failure"
           detail="publish"
+        elif [ "$WAITING_OUTCOME" != "success" ]; then
+          result="failure"
+          detail="waiting"
         elif [ "$RETRY_OUTCOME" = "failure" ]; then
           result="failure"
           detail="retry"
