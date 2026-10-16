@@ -18,7 +18,7 @@ test("classifier preflight is isolated from all router mutations", () => {
   assert.ok(router);
   const condition =
     "github.event_name == 'workflow_dispatch' && inputs.lifecycle_only && !inputs.execute";
-  assert.ok(preflight.includes("    if: ${{ " + condition + " }}"));
+  assert.ok(preflight.includes("    if: ${{ " + condition + " && inputs.lifecycle_route == '' }}"));
   assert.ok(
     workflow.includes(
       "  group: ${{ " +
@@ -26,7 +26,11 @@ test("classifier preflight is isolated from all router mutations", () => {
         " && format('repair-classifier-preflight-{0}', github.ref) || format('repair-comment-router-{0}',",
     ),
   );
-  assert.ok(router.includes("    if: ${{ github.event_name != 'schedule' }}"));
+  assert.ok(
+    router.includes(
+      "    if: ${{ github.event_name != 'schedule' && inputs.lifecycle_route != 'hosted-dispatch' }}",
+    ),
+  );
   assert.equal(router.includes("!(" + condition + ")"), false);
   assert.match(
     router,
@@ -86,6 +90,19 @@ test("classifier preflight and route-comments use the mac-mini labels", () => {
   assert.equal(fanOut.includes("gh-native"), false);
   assert.equal(fanOut.includes("ghx"), false);
   assert.ok(fanOut.includes("native_gh=$(command -v gh)"));
+  assert.equal(fanOut.includes("uses: ./.github/actions/route-scheduled-target"), true);
+  assert.equal(fanOut.includes("target-repo: valkyriweb/openclaw-claude"), false);
+  assert.ok(fanOut.includes("target_repo=valkyriweb/openclaw-claude"));
+  assert.ok(fanOut.includes("lifecycle_route=mini"));
+  assert.equal(fanOut.includes("CLAWROUTER_API_KEY"), true);
+  const handoff = fanOut.split("Dispatch valkyriweb/openclaw-claude")[1] ?? "";
+  assert.equal(handoff.includes("CLAWROUTER"), false);
+  const proof = workflow.split("\n  dispatch-scheduled-lifecycle:\n")[1] ?? "";
+  assert.match(proof, /\n    runs-on: ubuntu-latest\n/);
+  assert.equal(proof.includes("CLAWROUTER"), false);
+  assert.ok(proof.includes("-f execute=false"));
+  assert.ok(proof.includes("lifecycle_route=mini"));
+  assert.equal(proof.includes("runs-on: [self-hosted"), false);
   const alert = workflow.split("\n  alert-on-failure:\n")[1]?.split(/\n  [a-z][a-z-]+:\n/)[0];
   assert.ok(alert);
   assert.match(alert, /\n    runs-on: ubuntu-latest\n/);
