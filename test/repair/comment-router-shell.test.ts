@@ -64,16 +64,20 @@ test("classifier preflight is isolated from all router mutations", () => {
   assert.doesNotMatch(workflow, /github\.event_path/);
 });
 
-test("classifier jobs use the mac-mini tailnet and the gh-only alert uses ubuntu-latest", () => {
-  const mini = "\n    runs-on: [self-hosted, macOS, ARM64, mac-mini]\n";
-  for (const job of ["classifier-preflight", "route-comments", "fan-out-scheduled-sweep"]) {
+test("classifier probe stays on ARC and the long router jobs use ubuntu-latest", () => {
+  const preflight = workflow.split("\n  classifier-preflight:\n")[1]?.split(/\n  [a-z][a-z-]+:\n/)[0];
+  assert.ok(preflight);
+  assert.match(preflight, /\n    runs-on: lue-clawsweeper-arc\n/);
+  assert.doesNotMatch(preflight, /runs-on:.*(?:ubuntu-latest|mac-mini|inputs\.(?:runner|execution_runner))/);
+  assert.ok(preflight.includes("native_gh=/usr/local/bin/gh-native"));
+  for (const job of ["fan-out-scheduled-sweep", "route-comments"]) {
     const block = workflow.split(`\n  ${job}:\n`)[1]?.split(/\n  [a-z][a-z-]+:\n/)[0];
     assert.ok(block);
-    assert.ok(block.includes(mini));
-    assert.doesNotMatch(
-      block,
-      /runs-on:.*(?:ubuntu-latest|lue-clawsweeper-arc|inputs\.(?:runner|execution_runner))/,
-    );
+    assert.match(block, /\n    runs-on: ubuntu-latest\n/);
+    assert.doesNotMatch(block, /runs-on:.*(?:lue-clawsweeper-arc|mac-mini|inputs\.(?:runner|execution_runner))/);
+    assert.equal(block.includes("gh-native"), false);
+    assert.equal(block.includes("ghx"), false);
+    assert.ok(block.includes("native_gh=$(command -v gh)"));
   }
   const alert = workflow.split("\n  alert-on-failure:\n")[1]?.split(/\n  [a-z][a-z-]+:\n/)[0];
   assert.ok(alert);
@@ -82,15 +86,13 @@ test("classifier jobs use the mac-mini tailnet and the gh-only alert uses ubuntu
   assert.equal(alert.includes("CLAWROUTER"), false);
 });
 
-test("router and self-hosted repair jobs select native gh and fail closed if absent", () => {
+test("ARC probe and self-hosted repair jobs select native gh and fail closed if absent", () => {
   const worker = readFileSync(
     new URL("../../.github/workflows/repair-cluster-worker.yml", import.meta.url),
     "utf8",
   );
   for (const [job, source] of [
     ["classifier-preflight", workflow],
-    ["fan-out-scheduled-sweep", workflow],
-    ["route-comments", workflow],
     ["cluster", worker],
     ["execute", worker],
   ]) {

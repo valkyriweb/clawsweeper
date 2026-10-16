@@ -99,8 +99,10 @@ jobs:
   # Manual and repository_dispatch runs stay on route-comments.
   fan-out-scheduled-sweep:
     if: ${{ github.event_name == 'schedule' && (vars.CLAWSWEEPER_COMMENT_ROUTER_EXECUTE || '0') == '1' }}
-    # ClawRouter is on the tailnet. This label is the online mac-minis, not the ARC replica.
-    runs-on: [self-hosted, macOS, ARM64, mac-mini]
+    # Leaves the ARC pool. Stock gh is on the hosted image. A Pi lifecycle
+    # classification inside the router still calls ClawRouter; this runner
+    # has no tailnet path to it.
+    runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
       CLAWSWEEPER_MODELS: ${{ vars.CLAWSWEEPER_MODELS || '' }}
@@ -128,7 +130,7 @@ jobs:
       - name: Select native GitHub CLI
         run: |
           set -euo pipefail
-          native_gh=/usr/local/bin/gh-native
+          native_gh=$(command -v gh)
           test -x "$native_gh"
           "$native_gh" --version
           cli_dir=$(mktemp -d "$RUNNER_TEMP/clawsweeper-native-gh.XXXXXX")
@@ -373,8 +375,9 @@ jobs:
 
   classifier-preflight:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.lifecycle_only && !inputs.execute }}
-    # ClawRouter is on the tailnet. This label is the online mac-minis, not the ARC replica.
-    runs-on: [self-hosted, macOS, ARM64, mac-mini]
+    # The only job that must reach ClawRouter. The ARC pool is inside the
+    # cluster and can open the tailnet ingress. It does not run on pull_request.
+    runs-on: lue-clawsweeper-arc
     timeout-minutes: 5
     permissions:
       contents: read
@@ -419,8 +422,10 @@ jobs:
     # Scheduled ticks fan out above; read-only classifier probes never enter
     # the router's token creation or ledger publication steps.
     if: ${{ github.event_name != 'schedule' && !(github.event_name == 'workflow_dispatch' && inputs.lifecycle_only && !inputs.execute) }}
-    # ClawRouter is on the tailnet. This label is the online mac-minis, not the ARC replica.
-    runs-on: [self-hosted, macOS, ARM64, mac-mini]
+    # Leaves the ARC pool. Stock gh is on the hosted image. An authorized
+    # failed Pi review still calls ClawRouter from the router process, and
+    # that fetch fails off the tailnet the same way hosted run 35743722373 did.
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
       CLAWSWEEPER_MODELS: ${{ vars.CLAWSWEEPER_MODELS || '' }}
@@ -446,10 +451,11 @@ jobs:
           sparse-checkout-cone-mode: false
 
       # Repair helpers call gh directly; GH_BIN alone does not bypass PATH wrappers.
+      # The hosted image ships stock gh. The self-hosted binary path is not on this runner.
       - name: Select native GitHub CLI
         run: |
           set -euo pipefail
-          native_gh=/usr/local/bin/gh-native
+          native_gh=$(command -v gh)
           test -x "$native_gh"
           "$native_gh" --version
           cli_dir=$(mktemp -d "$RUNNER_TEMP/clawsweeper-native-gh.XXXXXX")
