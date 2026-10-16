@@ -15,6 +15,7 @@
       "checkout_dir": "sale-sight-plugin",
       "github_app_credential_route": "bermont-digital",
       "automation_policy": "review_only",
+      "issue_close_dry_run": true,
       "prompt_note": "SaleSight is a private WordPress/WooCommerce plugin that ships through formal versioned ZIP releases and immutable commit-pinned Smilerite dogfood updates. Review runtime safety, fail-open checkout behavior, HPOS compatibility, idempotency, release fragments, version consistency, package provenance, and rollback evidence. Security, privacy, conversion-measurement, release publication, and production-deploy decisions always require human review. Validation: `composer run verify`; release changes also require the deterministic package reproducibility gate.",
       "apply_close_rules": {
         "issue": [],
@@ -27,6 +28,7 @@
       "checkout_dir": "smilerite",
       "github_app_credential_route": "bermont-digital",
       "automation_policy": "review_only",
+      "issue_close_dry_run": true,
       "prompt_note": "Smilerite is a live private WooCommerce store; every main merge auto-deploys through SpinupWP. Review SaleSight updates for immutable upstream provenance, source-vs-release lane correctness, local-first proof, rollback, schema and Action Scheduler safety, Secondary Google Ads action 7680095433 only, Primary 7137479958 rejection, and SaleSight GA4 remaining disabled. Never recommend synthetic live conversions or automatic production merge/deploy. Validation: use the repository CI plus `scripts/salesight-plugin-verify.sh --ci` for SaleSight changes.",
       "apply_close_rules": {
         "issue": [],
@@ -39,6 +41,7 @@
       "checkout_dir": "core-ai",
       "github_app_credential_route": "valkyriweb",
       "automation_policy": "full",
+      "issue_close_dry_run": true,
       "prompt_note": "Core AI is the backend AI/agent service for CLIP-SA. Service areas: `area:api` (REST/GraphQL endpoints), `area:ai-engine` (model routing, completions, tool dispatch), `area:auth` (authentication, session, permissions), `area:integrations` (OpenClaw, external service connectors), `area:infra` (Docker, CI, env config). Use at most two area tags. When the item spans multiple areas, use `area:cross-cutting`. Validation: use the repo's primary test and lint commands.",
       "apply_close_rules": {
         "issue": [
@@ -65,6 +68,7 @@
       "checkout_dir": "core-wholesale",
       "github_app_credential_route": "valkyriweb",
       "automation_policy": "full",
+      "issue_close_dry_run": true,
       "docs_maintainer": {
         "enabled": true,
         "owned_docs": [
@@ -122,6 +126,7 @@
       "checkout_dir": "pi-mono-fork",
       "github_app_credential_route": "valkyriweb",
       "automation_policy": "full",
+      "issue_close_dry_run": true,
       "include_maintainer_authored": true,
       "prompt_note": "Pi is Luke's fork of the Pi agent toolkit (coding agent CLI, unified LLM API, TUI/web UI libraries, Slack bot, vLLM pods). The local checkout lives at `~/Projects/personal/pi-mono-fork/`; the GitHub repo is `leo-labs-ai/pi-mono`. Service areas: `area:coding-agent` (the agent harness, session, tools, executor, context), `area:extensions` (dream-memory, pi-memory, claude-bridge, and other extension packages), `area:tui` (terminal UI, themes, keybindings, components), `area:sdk` (SDK integrations, custom providers, model additions), `area:docs` (markdown docs, examples, prompt templates), `area:tests` (unit and integration tests). Use at most two area tags. When the item spans multiple areas, use `area:cross-cutting`. Validation: `pnpm --filter coding-agent test` for harness changes; `pnpm -r build` for the monorepo. Default review provider stays Codex; Claude-bridge routing is opt-in per slice 7.",
       "apply_close_rules": {
@@ -184,6 +189,7 @@
       "checkout_dir": "my-pi",
       "github_app_credential_route": "valkyriweb",
       "automation_policy": "full",
+      "issue_close_dry_run": true,
       "include_maintainer_authored": true,
       "review_provider": "pi",
       "post_repair_review_label": "agentic-review",
@@ -240,6 +246,7 @@
       "checkout_dir": "horizon",
       "github_app_credential_route": "valkyriweb",
       "automation_policy": "full",
+      "issue_close_dry_run": true,
       "include_maintainer_authored": true,
       "prompt_note": "Horizon is Luke's product monorepo (Bun workspaces): `packages/*` + `apps/*`. Local checkout `~/Projects/work/horizon/`; GitHub repo `valkyriweb/horizon` (private). Packages: `packages/alerts` (Mailgun transactional email delivery), `packages/design` (design system), plus `shared` utilities. Apps: `apps/billing` (PayFast ITN/postback), `apps/whatsapp` (Meta WhatsApp send + webhook), `apps/mail-dashboard`, `apps/mail-landing`. Service areas: `area:alerts` (Mailgun delivery), `area:billing` (PayFast ITN confirmation, idempotency), `area:whatsapp` (Meta send/webhook/egress), `area:mail` (mail-dashboard + mail-landing), `area:design` (design system), `area:shared`, `area:ci`, `area:docs`. Use at most two area tags; `area:cross-cutting` when it spans many. The repo is mid Effect adoption: vendor boundaries (Mailgun, Meta, PayFast) are wrapped with typed errors, AbortSignal timeout, exp+jittered retry, and Effect Layers, while the Promise-facing public APIs stay behavior-identical — review for that contract and flag any public-API regression. Security-sensitive paths must fail closed: PayFast ITN server confirmation, SSRF egress validation (https-only; block private/link-local/metadata; post-DNS recheck), and per-route API-key scope enforcement (403 insufficient_scope). Validation: Bun workspaces — `bun install --frozen-lockfile`, then `bun run --filter '*' build`, `bun run --filter '*' typecheck`, `bun run --filter '*' test`; per package `bun test` + `tsc --noEmit`. For every PR review, include code-craft and agent-native-hardening passes: flag unnecessary complexity, poor naming/API shape, brittle agent-unfriendly structure, unsafe boundaries, and missing verification. Conservative close policy: this is a live product repo, so do not auto-close on implemented_on_main — Effect slices are intentionally reviewed-not-merged.",
       "apply_close_rules": {
@@ -253,6 +260,7 @@
       "checkout_dir": "clawrouter",
       "github_app_credential_route": "valkyriweb",
       "automation_policy": "review_only",
+      "issue_close_dry_run": true,
       "include_maintainer_authored": true,
       "prompt_note": "ClawRouter is Luke's private LLM routing gateway: a Cloudflare Worker data plane plus an admin frontend, running in production on lue-kube as `deploy/clawrouter` in namespace `clawrouter` (Flux-managed, `claude-bridge` sidecar, admin CLI `clawctl` baked into the pod). GitHub repo `valkyriweb/clawrouter` (private). Service areas: `area:worker` (worker/ request classification, key checks, routing, budget preflight, provider transforms, usage events), `area:providers` (providers/*.provider.yaml manifests and worker/adapters/* TypeScript adapters), `area:admin` (admin/ frontend, Cloudflare Access/GitHub glue, generated clients), `area:scripts` (scripts/ provisioning, clawctl, key/oauth management), `area:deploy` (deploy/, config/deployments, wrangler config, lue-kube/Flux wiring), `area:docs`, `area:tests`. Use at most two area tags; `area:cross-cutting` when it spans many. Keep the data plane provider-neutral and the hot path small; prefer a provider manifest over a bespoke adapter. Security-sensitive contracts must fail closed: no upstream provider secrets in source, tests, fixtures, logs, screenshots, or docs; no raw prompts or completions logged by default; key revocation and hard budget enforcement must stay faster and more authoritative than reporting/billing. Validation: `pnpm worker:check` (tsc + `node --test worker/test/*.test.mjs`), `pnpm --dir admin check && pnpm --dir admin test` for admin changes, `pnpm test:scripts` for scripts, and `pnpm provider:compile` after any provider-manifest change; `pnpm check` is the full gate. Conservative close policy: this is a live production gateway, so do not auto-close — routing, budget, credential, and deployment decisions always require human review.",
       "apply_close_rules": {
@@ -266,6 +274,7 @@
       "checkout_dir": "clawsweeper",
       "github_app_credential_route": "valkyriweb",
       "automation_policy": "full",
+      "issue_close_dry_run": true,
       "include_maintainer_authored": true,
       "prompt_note": "ClawSweeper is the GitHub issue/PR triage and repair automation in this repository. Service areas: `area:workflow` (GitHub Actions, tokens, permissions, dispatch), `area:repair` (issue intake, worker planning/execution, post-flight merge), `area:github-api` (gh/REST/GraphQL calls, search, permissions), `area:validation` (target validation command parsing), `area:tests` (unit and repair tests). Use at most two area tags. When fixing workflow bugs, prefer surgical changes with regression tests and validate with `pnpm run check` or the narrowest repair test/build gate.",
       "apply_close_rules": {
@@ -293,6 +302,7 @@
       "checkout_dir": "openclaw",
       "github_app_credential_route": "valkyriweb",
       "automation_policy": "full",
+      "issue_close_dry_run": true,
       "include_maintainer_authored": true,
       "prompt_note": "Luke's patched fork of OpenClaw (agent gateway). Tracks upstream openclaw/openclaw with carry-forward patches tracked in ~/Projects/infra/openclaw-claude/docs/issues.md (ISSUE-040, ISSUE-042, ISSUE-077, ISSUE-091, ISSUE-094, ISSUE-095, cron-list-fix). Service areas: `area:agent-runtime` (ACP, agent loop, session lifecycle), `area:tools` (bash/exec, image_generate, web, sessions_*), `area:plugins` (advisor, context-intelligence, pi-ai), `area:bridge` (claude-bridge sidecar), `area:tests` (vitest). Use at most two area tags. When the item spans multiple areas, use `area:cross-cutting`. Validation: `pnpm exec vitest run <test-file>`. **CRITICAL: do NOT propose closing carry-forward PRs as 'implemented on main' — these are upstream-bound patches, not yet merged upstream.** Carry-forward PRs are typically named with `carry(<version>):` prefix; treat them as long-lived.",
       "apply_close_rules": {
@@ -317,6 +327,7 @@
       "checkout_dir": "lue-kube",
       "github_app_credential_route": "valkyriweb",
       "automation_policy": "full",
+      "issue_close_dry_run": true,
       "include_maintainer_authored": true,
       "prompt_note": "K3s cluster repo for client workloads (Laravel, WordPress, OpenClaw). Areas: `area:apps` (k3s/apps/<name>/{base,overlays/prod}), `area:flux` (Flux CD reconciliation), `area:cluster` (cluster-level config, system add-ons, sealed-secrets), `area:secrets`, `area:docs`. Use at most two area tags. Validation: `kubectl --context lue-kube` for cluster-side checks; manifests don't ship without `flux reconcile`. Carry-forward PRs do not exist here.",
       "apply_close_rules": {
@@ -344,6 +355,7 @@
       "checkout_dir": "openclaw-claude",
       "github_app_credential_route": "valkyriweb",
       "automation_policy": "full",
+      "issue_close_dry_run": true,
       "review_provider": "pi",
       "include_maintainer_authored": true,
       "skip_comment_router_schedule": true,
@@ -387,6 +399,7 @@
       "checkout_dir": "paperclip",
       "github_app_credential_route": "valkyriweb",
       "automation_policy": "full",
+      "issue_close_dry_run": true,
       "commit_review_ref": "refs/heads/bermont",
       "include_maintainer_authored": true,
       "prompt_note": "Luke's fork of paperclipai/paperclip — a billing/budget-governed AI agent platform deployed to the lue-kube cluster at https://paperclip.bermont.digital. Branch topology: `master` mirrors upstream paperclipai/paperclip (only `upstream-sync.yml` is Luke-custom there); `bermont` is the long-lived production overlay (master + bermont Docker/k8s wiring + the required-skill contract) and is the deployable branch. Review and commit-review are scoped to `bermont` — that is what ships to production; PRs into `master` are upstream syncs and are not reviewed here. Service areas: `area:server` (server/ routes, health, middleware, auth), `area:cli` (cli/ commands, onboarding, project-goal/company context), `area:packages` (packages/* — db, adapters/openclaw-gateway, billing), `area:ui` (ui/ React components), `area:docker` (docker/ agent-runtime images, onboarding smoke), `area:ci` (.github/workflows: release/e2e/smoke/docker), `area:docs`. Use at most two area tags; `area:cross-cutting` when it spans many. Paperclip-specific review focus: cost_events idempotency, budget enforcement fallbacks, approval-flow locking, billing-data exposure, budget bypass, and tenant isolation. **CRITICAL: do NOT propose closing PRs as `implemented_on_main` — the bermont overlay carries patches that are not on upstream master; treat overlay/carry-forward changes as long-lived.** Validation: `pnpm install --frozen-lockfile && pnpm build`; `pnpm test` for unit tests, narrowed to the changed package where possible.",
