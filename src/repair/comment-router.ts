@@ -344,6 +344,27 @@ const report: LooseRecord = {
   commands,
 };
 
+// A lifecycle-only dry run often has no failed, authorized Pi review, so the
+// decision path never calls ClawRouter. Probe once from this process. A real
+// classification is the result that counts; unresolved is the human-review
+// degradation and fails the dry run. execute=true keeps the degrade path.
+if (lifecycleOnly && !execute) {
+  const classified = commands.flatMap((command) =>
+    command.classification ? [command.classification] : [],
+  );
+  const results = classified.length
+    ? classified
+    : [
+        (report.classifier_probe = await classifyReviewText(
+          "Documentation review: docs/setup.md links to a nonexistent ../missing.md. Replace it with the existing ../README.md. This is a concrete broken relative link.",
+        )),
+      ];
+  if (
+    results.some((result) => result.source === "unresolved" || result.classification === "unknown")
+  )
+    process.exitCode = 1;
+}
+
 if (execute) {
   await measureAsync("execute_commands", async () => {
     assertMutationActorIsClawsweeperBot();

@@ -55,7 +55,7 @@ else if(a[0]==='api'){
  if(p==='user')out({login:'clawsweeper[bot]'});
  else if(p.includes('/actions/runs/')&&p.includes('/attempts/'))out({id:Number(s.run),run_attempt:1,repository:{full_name:s.repo},path:'.github/workflows/pi-pr-review.yml',event:s.sourceEvent||'pull_request_target',status:'completed',head_sha:s.base,run_started_at:'2026-09-22T00:00:00Z'});
  else if(p.includes('/artifacts'))out({artifacts:[{name:'pi-pr-review-lifecycle-'+s.phase+'-1',size_in_bytes:100}]});
- else if(p.includes('/pulls?state=open'))out([{number:2,state:'open',head:{sha:s.sha}}]);
+ else if(p.includes('/pulls?state=open'))out(s.openPulls===false?[]:[{number:2,state:'open',head:{sha:s.sha}}]);
  else if(p.endsWith('/pulls/2'))out({number:2,state:s.closed?'closed':'open',head:{sha:s.sha},base:{ref:'main',sha:s.base,repo:{full_name:s.repo}}});
  else if(p.includes('/pulls/2/files'))paged(s.files);
  else if(p.includes('/issues/comments/'))out({id:9,issue_url:'https://api.github.com/repos/'+s.repo+'/issues/2',user:{login:'github-actions[bot]'},created_at:'2026-09-22T00:01:00Z',updated_at:'2026-09-22T00:01:00Z',body:'<!-- pi-pr-review-lifecycle:'+JSON.stringify({...identity,verdict:s.verdict})+' -->\\nFix broken docs link.'});
@@ -117,7 +117,7 @@ else if(a[0]==='api'){
         "--repo",
         repo,
         ...eventArgs,
-        "--execute",
+        ...(state.execute === false ? [] : ["--execute"]),
       ],
       {
         cwd: dir,
@@ -138,8 +138,10 @@ else if(a[0]==='api'){
       },
     );
     Object.assign(state, JSON.parse(fs.readFileSync(path.join(dir, "fixture.json"), "utf8")));
-    assert.equal(child.status, 0, child.stderr || child.error?.message || child.stdout);
-    return JSON.parse(child.stdout).commands[0];
+    if (state.expectFailure) assert.notEqual(child.status, 0, child.stderr || child.stdout);
+    else assert.equal(child.status, 0, child.stderr || child.error?.message || child.stdout);
+    const report = JSON.parse(child.stdout);
+    return state.fullReport ? report : report.commands[0];
   }
   return { dir, state, run };
 }
@@ -255,6 +257,45 @@ test("router applies existing repair cap and records native fallback audit", (t)
   const saved = readLedger(path.join(fallback.dir, "results/comment-router.json")).commands[0];
   assert.equal(saved.classification.attempts, 2);
   assert.equal(saved.source_run_id, "42");
+});
+test("lifecycle-only dry run calls the classifier from the router and fails closed when unresolved", (t) => {
+  const dry = fixture(t);
+  const report = dry.run({
+    lifecycleOnly: true,
+    execute: false,
+    openPulls: false,
+    fullReport: true,
+  });
+  assert.equal(report.commands.length, 0);
+  assert.equal(report.execute, false);
+  assert.equal(report.classifier_probe.source, "jev");
+  assert.equal(report.classifier_probe.classification, "actionable");
+  assert.equal(dry.state.fetches.length, 1);
+  assert.equal(
+    dry.state.calls.some((call) => ["workflow", "label", "issue"].includes(call[0])),
+    false,
+  );
+  const real = fixture(t);
+  const classified = real.run({ lifecycleOnly: true, execute: false, fullReport: true });
+  assert.equal(classified.classifier_probe, undefined);
+  assert.equal(classified.commands[0].classification.source, "jev");
+  assert.equal(classified.commands[0].classification.classification, "actionable");
+  assert.equal(real.state.fetches.length, 1);
+  assert.equal(
+    real.state.calls.some((call) => call[0] === "workflow"),
+    false,
+  );
+  const failed = fixture(t);
+  const unresolved = failed.run({
+    lifecycleOnly: true,
+    execute: false,
+    openPulls: false,
+    fullReport: true,
+    expectFailure: true,
+    classifierFailure: true,
+  });
+  assert.equal(unresolved.classifier_probe.source, "unresolved");
+  assert.equal(unresolved.classifier_probe.classification, "unknown");
 });
 test("router rejects closed and untrusted runs and non-opted-in repositories without mutation", (t) => {
   for (const overrides of [{ closed: true }, { sourceEvent: "pull_request" }]) {

@@ -44,7 +44,7 @@ test("unknown, malformed and API failure each trigger exactly one native Message
     assert.equal(result.attempts, 2);
     assert.equal(calls[1][0], "https://fixture.test/v1/messages");
     assert.equal(calls[1][1].max_tokens, 256);
-    assert.deepEqual(calls[1][1].thinking, { type: "disabled" });
+    assert.equal(Object.hasOwn(calls[1][1], "thinking"), false);
     assert.deepEqual(calls[1][1].output_config, {
       format: {
         type: "json_schema",

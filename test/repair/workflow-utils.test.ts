@@ -368,7 +368,7 @@ test("comment router mints target tokens through the routed facade", () => {
     workflow,
     /jq -r '\.repositories\[\]\.target_repo' config\/target-repositories\.json/,
   );
-  assert.doesNotMatch(workflow, /gh workflow run/);
+  assert.equal(workflow.match(/gh workflow run/g)?.length, 2);
 
   const fanout = workflow
     .split("\n  fan-out-scheduled-sweep:\n")[1]
@@ -377,7 +377,16 @@ test("comment router mints target tokens through the routed facade", () => {
   assert.equal(fanout.match(/uses: actions\/checkout@v5/g)?.length, 1);
   assert.equal(fanout.match(/uses: \.\/\.github\/actions\/setup-pnpm/g)?.length, 1);
   assert.equal(fanout.match(/uses: \.\/\.github\/actions\/setup-state/g)?.length, 1);
-  assert.equal(fanout.match(/uses: \.\/\.github\/actions\/route-scheduled-target/g)?.length, 12);
+  assert.equal(fanout.match(/uses: \.\/\.github\/actions\/route-scheduled-target/g)?.length, 11);
+  assert.equal(fanout.match(/gh workflow run/g)?.length, 1);
+  assert.match(fanout, /target_repo=valkyriweb\/openclaw-claude/);
+  assert.match(fanout, /lifecycle_only=true/);
+  assert.match(fanout, /lifecycle_route=mini/);
+  assert.match(
+    fanout,
+    /gh workflow run "repair comment router" --repo "\$GITHUB_REPOSITORY" --ref "\$GITHUB_REF_NAME"/,
+  );
+  assert.match(fanout, /-f execute=true \\/);
   assert.match(fanout, /CLAWSWEEPER_MODELS: \$\{\{ vars\.CLAWSWEEPER_MODELS \|\| '' \}\}/);
   const scheduled = JSON.parse(
     fs.readFileSync("config/target-repositories.json", "utf8"),
@@ -388,11 +397,15 @@ test("comment router mints target tokens through the routed facade", () => {
   );
   assert.equal(scheduled.length, 12);
   for (const entry of scheduled) {
+    if (entry.pi_review_lifecycle === true) {
+      assert.equal(entry.target_repo, "valkyriweb/openclaw-claude");
+      assert.equal(fanout.includes(`target-repo: ${entry.target_repo}\n`), false);
+      continue;
+    }
     const marker = fanout.indexOf(`target-repo: ${entry.target_repo}\n`);
     assert.ok(marker > 0, entry.target_repo);
     const window = fanout.slice(marker, marker + 240);
-    const lifecycle = entry.pi_review_lifecycle === true ? "true" : "false";
-    assert.match(window, new RegExp(`lifecycle-only: "${lifecycle}"`));
+    assert.match(window, /lifecycle-only: "false"/);
   }
 });
 

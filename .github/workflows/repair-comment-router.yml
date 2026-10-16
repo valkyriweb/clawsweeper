@@ -60,6 +60,11 @@ on:
         required: true
         default: '["self-hosted","macOS","ARM64","mac-mini"]'
         type: string
+      lifecycle_route:
+        description: "Empty runs route-comments here. hosted-dispatch only dispatches the mac-mini lifecycle route. mini is that routed run."
+        required: false
+        default: ""
+        type: string
   schedule:
     - cron: "*/15 * * * *"
 
@@ -99,7 +104,10 @@ jobs:
   # Manual and repository_dispatch runs stay on route-comments.
   fan-out-scheduled-sweep:
     if: ${{ github.event_name == 'schedule' && (vars.CLAWSWEEPER_COMMENT_ROUTER_EXECUTE || '0') == '1' }}
-    runs-on: ${{ fromJSON(vars.CLAWSWEEPER_RUNNER_LABELS || '["lue-clawsweeper-arc"]') }}
+    # Leaves the ARC pool. Stock gh is on the hosted image. The openclaw-claude
+    # lifecycle route is dispatched onto the mac-mini label. This job does not
+    # call ClawRouter.
+    runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
       CLAWSWEEPER_MODELS: ${{ vars.CLAWSWEEPER_MODELS || '' }}
@@ -127,7 +135,7 @@ jobs:
       - name: Select native GitHub CLI
         run: |
           set -euo pipefail
-          native_gh=/usr/local/bin/gh-native
+          native_gh=$(command -v gh)
           test -x "$native_gh"
           "$native_gh" --version
           cli_dir=$(mktemp -d "$RUNNER_TEMP/clawsweeper-native-gh.XXXXXX")
@@ -184,6 +192,19 @@ jobs:
           missing=0
           while IFS=$'\t' read -r repo lifecycle; do
             [ -n "$repo" ] || continue
+            if [ "$lifecycle" = "true" ]; then
+              if ! printf '%s\n' "$job" | grep -q "target_repo=${repo}"; then
+                echo "::error::scheduled target ${repo} has no mac-mini dispatch"
+                missing=1
+              elif ! printf '%s\n' "$job" | grep -q 'lifecycle_only=true'; then
+                echo "::error::scheduled target ${repo} must dispatch lifecycle_only=true"
+                missing=1
+              elif ! printf '%s\n' "$job" | grep -q 'lifecycle_route=mini'; then
+                echo "::error::scheduled target ${repo} must dispatch lifecycle_route=mini"
+                missing=1
+              fi
+              continue
+            fi
             window="$(printf '%s\n' "$job" | awk -v repo="$repo" '
               $0 ~ ("target-repo: " repo "$") { show = 6 }
               show > 0 { print; show-- }
@@ -193,10 +214,8 @@ jobs:
               missing=1
               continue
             fi
-            want="false"
-            [ "$lifecycle" = "true" ] && want="true"
-            if ! printf '%s\n' "$window" | grep -q "lifecycle-only: \"${want}\""; then
-              echo "::error::scheduled target ${repo} must set lifecycle-only ${want}"
+            if ! printf '%s\n' "$window" | grep -q 'lifecycle-only: "false"'; then
+              echo "::error::scheduled target ${repo} must set lifecycle-only false"
               missing=1
             fi
           done <<< "$listed"
@@ -356,24 +375,32 @@ jobs:
           dispatch-token: ${{ github.token }}
           allow-merge: ${{ vars.CLAWSWEEPER_ALLOW_MERGE || '0' }}
 
-      - name: Route valkyriweb/openclaw-claude
+      - name: Dispatch valkyriweb/openclaw-claude to the mac-mini
         if: ${{ !cancelled() && steps.targets.outcome == 'success' && contains(steps.targets.outputs.repos, ',valkyriweb/openclaw-claude,') }}
-        uses: ./.github/actions/route-scheduled-target
-        with:
-          target-repo: valkyriweb/openclaw-claude
-          lifecycle-only: "true"
-          valkyriweb-client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
-          valkyriweb-private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
-          bermont-digital-client-id: ${{ vars.BERMONT_DIGITAL_CLAWSWEEPER_APP_CLIENT_ID }}
-          bermont-digital-private-key: ${{ secrets.BERMONT_DIGITAL_CLAWSWEEPER_APP_PRIVATE_KEY }}
-          clawrouter-api-key: ${{ secrets.CLAWROUTER_API_KEY }}
-          dispatch-token: ${{ github.token }}
-          allow-merge: ${{ vars.CLAWSWEEPER_ALLOW_MERGE || '0' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # The child route-comments job calls the classifier. This step does not.
+          gh workflow run "repair comment router" --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF_NAME" \
+            -f execute=true \
+            -f lifecycle_only=true \
+            -f force_reprocess=false \
+            -f target_repo=valkyriweb/openclaw-claude \
+            -f lookback_minutes=180 \
+            -f max_comments=100 \
+            -f lifecycle_route=mini \
+            -f runner='["self-hosted","macOS","ARM64","mac-mini"]' \
+            -f execution_runner='["self-hosted","macOS","ARM64","mac-mini"]'
 
   classifier-preflight:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.lifecycle_only && !inputs.execute }}
-    # Use the existing private-network pool, just like the classifier's router job.
-    runs-on: ${{ fromJSON(vars.CLAWSWEEPER_RUNNER_LABELS || '["lue-clawsweeper-arc"]') }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.lifecycle_only && !inputs.execute && inputs.lifecycle_route == '' }}
+    # Read-only probe on the mac-mini label that reached ClawRouter on 22–29 Sep.
+    # It does not run on pull_request. Nothing in this workflow uses the ARC pool.
+    # If both minis are offline the job stays queued. timeout-minutes starts
+    # after a runner accepts it and does not bound that wait. There is no
+    # ARC or hosted fallback.
+    runs-on: [self-hosted, macOS, ARM64, mac-mini]
     timeout-minutes: 5
     permissions:
       contents: read
@@ -415,11 +442,18 @@ jobs:
           JS
 
   route-comments:
-    # Scheduled ticks fan out above; read-only classifier probes never enter
-    # the router's token creation or ledger publication steps.
-    if: ${{ github.event_name != 'schedule' && !(github.event_name == 'workflow_dispatch' && inputs.lifecycle_only && !inputs.execute) }}
-    # The router calls private ClawRouter endpoints; downstream worker inputs do not select this runner.
-    runs-on: ${{ fromJSON(vars.CLAWSWEEPER_RUNNER_LABELS || '["lue-clawsweeper-arc"]') }}
+    # Scheduled ticks fan out above and dispatch the lifecycle target here.
+    # A lifecycle-only dry run still enters here so the router process can call
+    # ClawRouter. execute=false adds no --execute flag. The ledger publish
+    # steps below stay skipped. The dry run still mints the target app token.
+    # hosted-dispatch is the Ubuntu handoff and must not take this runner.
+    if: ${{ github.event_name != 'schedule' && inputs.lifecycle_route != 'hosted-dispatch' }}
+    # mac-mini-1/2-valkyriweb. The tailnet path that reached ClawRouter on
+    # 22–29 Sep. Hard-coded: vars.CLAWSWEEPER_RUNNER_LABELS is the ARC pool.
+    # If both minis are offline the job stays queued. timeout-minutes starts
+    # after a runner accepts it and does not bound that wait. There is no
+    # ARC or hosted fallback.
+    runs-on: [self-hosted, macOS, ARM64, mac-mini]
     timeout-minutes: 20
     env:
       CLAWSWEEPER_MODELS: ${{ vars.CLAWSWEEPER_MODELS || '' }}
@@ -445,6 +479,7 @@ jobs:
           sparse-checkout-cone-mode: false
 
       # Repair helpers call gh directly; GH_BIN alone does not bypass PATH wrappers.
+      # mac-mini runners keep the native binary off PATH wrappers.
       - name: Select native GitHub CLI
         run: |
           set -euo pipefail
@@ -583,7 +618,7 @@ jobs:
           pnpm run repair:comment-router -- "${args[@]}"
 
       - name: Commit comment router ledger
-        if: always() && steps.app_token.outcome == 'success'
+        if: always() && steps.app_token.outcome == 'success' && (github.event_name != 'workflow_dispatch' || inputs.execute)
         run: |
           pnpm run repair:publish-main -- \
             --message "chore: record ClawSweeper comment routing" \
@@ -604,7 +639,7 @@ jobs:
           echo "count=$count" >> "$GITHUB_OUTPUT"
 
       - name: Retry waiting repair dispatches
-        if: ${{ steps.waiting-repair-dispatches.outputs.count != '' && steps.waiting-repair-dispatches.outputs.count != '0' }}
+        if: ${{ steps.waiting-repair-dispatches.outputs.count != '' && steps.waiting-repair-dispatches.outputs.count != '0' && (github.event_name != 'workflow_dispatch' || inputs.execute) }}
         env:
           CLAWROUTER_API_KEY: ${{ secrets.CLAWROUTER_API_KEY }}
           GH_TOKEN: ${{ steps.app_token.outputs.token }}
@@ -674,7 +709,7 @@ jobs:
           pnpm run repair:comment-router -- "${args[@]}"
 
       - name: Commit comment router retry ledger
-        if: ${{ always() && steps.app_token.outcome == 'success' && steps.waiting-repair-dispatches.outputs.count != '' && steps.waiting-repair-dispatches.outputs.count != '0' }}
+        if: ${{ always() && steps.app_token.outcome == 'success' && steps.waiting-repair-dispatches.outputs.count != '' && steps.waiting-repair-dispatches.outputs.count != '0' && (github.event_name != 'workflow_dispatch' || inputs.execute) }}
         run: |
           pnpm run repair:publish-main -- \
             --message "chore: record ClawSweeper repair dispatch retry" \
@@ -688,8 +723,9 @@ jobs:
   # up to date instead of opening a new issue per failure.
   alert-on-failure:
     needs: [fan-out-scheduled-sweep, route-comments]
-    if: ${{ always() && contains(needs.*.result, 'failure') }}
-    runs-on: ${{ fromJSON(vars.CLAWSWEEPER_RUNNER_LABELS || '["lue-clawsweeper-arc"]') }}
+    if: ${{ always() && contains(needs.*.result, 'failure') && !(github.event_name == 'workflow_dispatch' && inputs.lifecycle_only && !inputs.execute) }}
+    # Issue comment only. No ClawRouter call, so this does not take the ARC replica.
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Create or update alert issue
@@ -706,3 +742,27 @@ jobs:
           else
             gh issue create -R "${{ github.repository }}" --title "$title" --body "$body"
           fi
+
+  # Proof of the scheduled handoff. The real schedule dispatches from fan-out.
+  # This job is the same dispatch with execute=false, and it does not call
+  # ClawRouter. The child run is the one mac-mini route-comments job.
+  dispatch-scheduled-lifecycle:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.lifecycle_route == 'hosted-dispatch' && inputs.lifecycle_only && !inputs.execute && inputs.target_repo == 'valkyriweb/openclaw-claude' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch scheduled lifecycle route to the mac-mini
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run "repair comment router" --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF_NAME" \
+            -f execute=false \
+            -f lifecycle_only=true \
+            -f force_reprocess=false \
+            -f target_repo=valkyriweb/openclaw-claude \
+            -f lookback_minutes=180 \
+            -f max_comments=100 \
+            -f lifecycle_route=mini \
+            -f runner='["self-hosted","macOS","ARM64","mac-mini"]' \
+            -f execution_runner='["self-hosted","macOS","ARM64","mac-mini"]'
