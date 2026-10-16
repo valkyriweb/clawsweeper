@@ -236,3 +236,65 @@ for (const name of ["Route ClawSweeper comments", "Retry waiting repair dispatch
     }
   });
 }
+
+test("scheduled target summary names a waiting-detection failure", () => {
+  const action = readFileSync(
+    new URL("../../.github/actions/route-scheduled-target/action.yml", import.meta.url),
+    "utf8",
+  );
+  const step = action.split("- name: Record scheduled target result\n")[1];
+  assert.ok(step);
+  assert.match(step, /WAITING_OUTCOME: \$\{\{ steps\.waiting\.outcome \}\}/);
+  const body = step.split("run: |\n")[1];
+  assert.ok(body);
+  const indent = body.match(/^ +/m)?.[0].length ?? 0;
+  const script = body
+    .split("\n")
+    .map((line) => line.slice(indent))
+    .join("\n");
+  const dir = mkdtempSync(join(tmpdir(), "scheduled-target-summary-"));
+  const summary = join(dir, "summary.md");
+  const record = (outcomes: Record<string, string>) => {
+    writeFileSync(summary, "");
+    return spawnSync("bash", ["-c", script], {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        TARGET_REPO: "valkyriweb/clawsweeper",
+        GITHUB_STEP_SUMMARY: summary,
+        RUNNER_TEMP: dir,
+        AUTH_OUTCOME: "success",
+        TOKEN_OUTCOME: "success",
+        ROUTE_OUTCOME: "success",
+        PUBLISH_OUTCOME: "success",
+        WAITING_OUTCOME: "success",
+        RETRY_OUTCOME: "skipped",
+        RETRY_PUBLISH_OUTCOME: "skipped",
+        ...outcomes,
+      },
+    });
+  };
+  try {
+    const waitingFailed = record({ WAITING_OUTCOME: "failure", RETRY_OUTCOME: "skipped" });
+    assert.notEqual(waitingFailed.status, 0, waitingFailed.stdout);
+    assert.match(
+      readFileSync(summary, "utf8"),
+      /\| valkyriweb\/clawsweeper \| failure \(waiting\) \|/,
+    );
+    const routeFailed = record({
+      ROUTE_OUTCOME: "failure",
+      WAITING_OUTCOME: "skipped",
+      PUBLISH_OUTCOME: "success",
+    });
+    assert.notEqual(routeFailed.status, 0);
+    assert.match(
+      readFileSync(summary, "utf8"),
+      /\| valkyriweb\/clawsweeper \| failure \(route\) \|/,
+    );
+    const countedZero = record({});
+    assert.equal(countedZero.status, 0, countedZero.stderr);
+    assert.match(readFileSync(summary, "utf8"), /\| valkyriweb\/clawsweeper \| success \|/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

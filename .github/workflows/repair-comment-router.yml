@@ -93,51 +93,282 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Scheduled ticks fan out one workflow_dispatch per configured target
-  # repository instead of routing a single vars.CLAWSWEEPER_TARGET_REPO.
-  # Each child run resolves its own owner-scoped app token, and per-repo
-  # concurrency groups keep overlapping sweeps serialized. GITHUB_TOKEN is
-  # allowed to create workflow_dispatch runs (documented exception to the
-  # no-recursive-triggers rule).
+  # Scheduled ticks route every configured target in this job. Checkout, pnpm,
+  # and the state repo happen once on the single runner. Each target still
+  # mints its own token and appends success or a named failure to the summary.
+  # Manual and repository_dispatch runs stay on route-comments.
   fan-out-scheduled-sweep:
     if: ${{ github.event_name == 'schedule' && (vars.CLAWSWEEPER_COMMENT_ROUTER_EXECUTE || '0') == '1' }}
     runs-on: ${{ fromJSON(vars.CLAWSWEEPER_RUNNER_LABELS || '["lue-clawsweeper-arc"]') }}
-    timeout-minutes: 10
+    timeout-minutes: 45
+    env:
+      CLAWSWEEPER_MODELS: ${{ vars.CLAWSWEEPER_MODELS || '' }}
     steps:
       - uses: actions/checkout@v5
         with:
+          filter: blob:none
+          fetch-depth: 0
           sparse-checkout: |
-            config/target-repositories.json
+            .github
+            config
+            jobs
+            results
+            scripts/hydrate-state.ts
+            src/repair
+            src/model-registry.ts
+            src/repository-profiles.ts
+            src/review-tier-drift.ts
+            src/usage-telemetry.ts
+            package.json
+            pnpm-lock.yaml
+            tsconfig.repair.json
           sparse-checkout-cone-mode: false
 
-      - name: Dispatch router per target repository
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Select native GitHub CLI
         run: |
           set -euo pipefail
-          failed=0
-          # Interim: skip leo-labs-ai/paperclip fan-out — ClawSweeper App install
-          # Not Found on /repos/leo-labs-ai/paperclip/installation (Luke skipped
-          # App-install widget). Keep paperclip in config/target-repositories.json
-          # for other automation; restore after Luke installs the App.
-          while IFS=$'\t' read -r repo lifecycle_only; do
-            echo "dispatching router for $repo (lifecycle_only=$lifecycle_only)"
-            if ! gh workflow run repair-comment-router.yml \
-              -R "${{ github.repository }}" \
-              -r "${{ github.ref_name }}" \
-              -f execute=true \
-              -f lifecycle_only="$lifecycle_only" \
-              -f target_repo="$repo"; then
-              echo "::warning::dispatch failed for $repo"
-              failed=$((failed+1))
-            fi
-          done < <(jq -r '
+          native_gh=/usr/local/bin/gh-native
+          test -x "$native_gh"
+          "$native_gh" --version
+          cli_dir=$(mktemp -d "$RUNNER_TEMP/clawsweeper-native-gh.XXXXXX")
+          ln -s "$native_gh" "$cli_dir/gh"
+          echo "$cli_dir" >> "$GITHUB_PATH"
+          echo "GH_BIN=$native_gh" >> "$GITHUB_ENV"
+
+      - uses: ./.github/actions/setup-pnpm
+        with:
+          build-script: build:repair
+
+      - name: Validate deployed worker model registry
+        run: pnpm run --silent workflow -- models list
+
+      - name: Create state token
+        id: state-token
+        uses: ./.github/actions/create-state-token
+        with:
+          client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
+          private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
+          owner: valkyriweb
+
+      - uses: ./.github/actions/setup-state
+        with:
+          token: ${{ steps.state-token.outputs.token }}
+          state-repository: valkyriweb/clawsweeper-state
+
+      - name: List scheduled comment targets
+        id: targets
+        run: |
+          set -euo pipefail
+          # Interim: skip leo-labs-ai/paperclip — ClawSweeper App install was
+          # Not Found on /repos/leo-labs-ai/paperclip/installation. Keep it in
+          # config/target-repositories.json for other automation.
+          filter='
             .repositories[]
             | select(.target_repo != "leo-labs-ai/paperclip")
             | select(.skip_comment_router_schedule != true or .pi_review_lifecycle == true)
             | [.target_repo, (.pi_review_lifecycle == true | tostring)] | @tsv
-          ' config/target-repositories.json)
-          [ "$failed" -eq 0 ] || exit 1
+          '
+          listed="$(jq -r "$filter" config/target-repositories.json)"
+          csv="$(printf '%s\n' "$listed" | awk -F '\t' 'NF { printf ",%s", $1 }')"
+          echo "repos=${csv}," >> "$GITHUB_OUTPUT"
+          {
+            echo "## Scheduled comment router"
+            echo "| Target | Result |"
+            echo "| --- | --- |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          job="$(awk '
+            /^  fan-out-scheduled-sweep:/ { keep = 1 }
+            keep && /^  [a-z0-9-]+:$/ && !/^  fan-out-scheduled-sweep:/ { exit }
+            keep { print }
+          ' .github/workflows/repair-comment-router.yml)"
+          missing=0
+          while IFS=$'\t' read -r repo lifecycle; do
+            [ -n "$repo" ] || continue
+            window="$(printf '%s\n' "$job" | awk -v repo="$repo" '
+              $0 ~ ("target-repo: " repo "$") { show = 6 }
+              show > 0 { print; show-- }
+            ')"
+            if [ -z "$window" ]; then
+              echo "::error::scheduled target ${repo} has no route step"
+              missing=1
+              continue
+            fi
+            want="false"
+            [ "$lifecycle" = "true" ] && want="true"
+            if ! printf '%s\n' "$window" | grep -q "lifecycle-only: \"${want}\""; then
+              echo "::error::scheduled target ${repo} must set lifecycle-only ${want}"
+              missing=1
+            fi
+          done <<< "$listed"
+          [ "$missing" -eq 0 ]
+
+      - name: Route bermont-digital/sale-sight-plugin
+        if: ${{ !cancelled() && steps.targets.outcome == 'success' && contains(steps.targets.outputs.repos, ',bermont-digital/sale-sight-plugin,') }}
+        uses: ./.github/actions/route-scheduled-target
+        with:
+          target-repo: bermont-digital/sale-sight-plugin
+          lifecycle-only: "false"
+          valkyriweb-client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
+          valkyriweb-private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
+          bermont-digital-client-id: ${{ vars.BERMONT_DIGITAL_CLAWSWEEPER_APP_CLIENT_ID }}
+          bermont-digital-private-key: ${{ secrets.BERMONT_DIGITAL_CLAWSWEEPER_APP_PRIVATE_KEY }}
+          clawrouter-api-key: ${{ secrets.CLAWROUTER_API_KEY }}
+          dispatch-token: ${{ github.token }}
+          allow-merge: ${{ vars.CLAWSWEEPER_ALLOW_MERGE || '0' }}
+
+      - name: Route bermont-digital/smilerite
+        if: ${{ !cancelled() && steps.targets.outcome == 'success' && contains(steps.targets.outputs.repos, ',bermont-digital/smilerite,') }}
+        uses: ./.github/actions/route-scheduled-target
+        with:
+          target-repo: bermont-digital/smilerite
+          lifecycle-only: "false"
+          valkyriweb-client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
+          valkyriweb-private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
+          bermont-digital-client-id: ${{ vars.BERMONT_DIGITAL_CLAWSWEEPER_APP_CLIENT_ID }}
+          bermont-digital-private-key: ${{ secrets.BERMONT_DIGITAL_CLAWSWEEPER_APP_PRIVATE_KEY }}
+          clawrouter-api-key: ${{ secrets.CLAWROUTER_API_KEY }}
+          dispatch-token: ${{ github.token }}
+          allow-merge: ${{ vars.CLAWSWEEPER_ALLOW_MERGE || '0' }}
+
+      - name: Route CLIP-SA/core-ai
+        if: ${{ !cancelled() && steps.targets.outcome == 'success' && contains(steps.targets.outputs.repos, ',CLIP-SA/core-ai,') }}
+        uses: ./.github/actions/route-scheduled-target
+        with:
+          target-repo: CLIP-SA/core-ai
+          lifecycle-only: "false"
+          valkyriweb-client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
+          valkyriweb-private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
+          bermont-digital-client-id: ${{ vars.BERMONT_DIGITAL_CLAWSWEEPER_APP_CLIENT_ID }}
+          bermont-digital-private-key: ${{ secrets.BERMONT_DIGITAL_CLAWSWEEPER_APP_PRIVATE_KEY }}
+          clawrouter-api-key: ${{ secrets.CLAWROUTER_API_KEY }}
+          dispatch-token: ${{ github.token }}
+          allow-merge: ${{ vars.CLAWSWEEPER_ALLOW_MERGE || '0' }}
+
+      - name: Route CLIP-SA/core-wholesale
+        if: ${{ !cancelled() && steps.targets.outcome == 'success' && contains(steps.targets.outputs.repos, ',CLIP-SA/core-wholesale,') }}
+        uses: ./.github/actions/route-scheduled-target
+        with:
+          target-repo: CLIP-SA/core-wholesale
+          lifecycle-only: "false"
+          valkyriweb-client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
+          valkyriweb-private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
+          bermont-digital-client-id: ${{ vars.BERMONT_DIGITAL_CLAWSWEEPER_APP_CLIENT_ID }}
+          bermont-digital-private-key: ${{ secrets.BERMONT_DIGITAL_CLAWSWEEPER_APP_PRIVATE_KEY }}
+          clawrouter-api-key: ${{ secrets.CLAWROUTER_API_KEY }}
+          dispatch-token: ${{ github.token }}
+          allow-merge: ${{ vars.CLAWSWEEPER_ALLOW_MERGE || '0' }}
+
+      - name: Route leo-labs-ai/pi-mono
+        if: ${{ !cancelled() && steps.targets.outcome == 'success' && contains(steps.targets.outputs.repos, ',leo-labs-ai/pi-mono,') }}
+        uses: ./.github/actions/route-scheduled-target
+        with:
+          target-repo: leo-labs-ai/pi-mono
+          lifecycle-only: "false"
+          valkyriweb-client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
+          valkyriweb-private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
+          bermont-digital-client-id: ${{ vars.BERMONT_DIGITAL_CLAWSWEEPER_APP_CLIENT_ID }}
+          bermont-digital-private-key: ${{ secrets.BERMONT_DIGITAL_CLAWSWEEPER_APP_PRIVATE_KEY }}
+          clawrouter-api-key: ${{ secrets.CLAWROUTER_API_KEY }}
+          dispatch-token: ${{ github.token }}
+          allow-merge: ${{ vars.CLAWSWEEPER_ALLOW_MERGE || '0' }}
+
+      - name: Route leo-labs-ai/my-pi
+        if: ${{ !cancelled() && steps.targets.outcome == 'success' && contains(steps.targets.outputs.repos, ',leo-labs-ai/my-pi,') }}
+        uses: ./.github/actions/route-scheduled-target
+        with:
+          target-repo: leo-labs-ai/my-pi
+          lifecycle-only: "false"
+          valkyriweb-client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
+          valkyriweb-private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
+          bermont-digital-client-id: ${{ vars.BERMONT_DIGITAL_CLAWSWEEPER_APP_CLIENT_ID }}
+          bermont-digital-private-key: ${{ secrets.BERMONT_DIGITAL_CLAWSWEEPER_APP_PRIVATE_KEY }}
+          clawrouter-api-key: ${{ secrets.CLAWROUTER_API_KEY }}
+          dispatch-token: ${{ github.token }}
+          allow-merge: ${{ vars.CLAWSWEEPER_ALLOW_MERGE || '0' }}
+
+      - name: Route valkyriweb/horizon
+        if: ${{ !cancelled() && steps.targets.outcome == 'success' && contains(steps.targets.outputs.repos, ',valkyriweb/horizon,') }}
+        uses: ./.github/actions/route-scheduled-target
+        with:
+          target-repo: valkyriweb/horizon
+          lifecycle-only: "false"
+          valkyriweb-client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
+          valkyriweb-private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
+          bermont-digital-client-id: ${{ vars.BERMONT_DIGITAL_CLAWSWEEPER_APP_CLIENT_ID }}
+          bermont-digital-private-key: ${{ secrets.BERMONT_DIGITAL_CLAWSWEEPER_APP_PRIVATE_KEY }}
+          clawrouter-api-key: ${{ secrets.CLAWROUTER_API_KEY }}
+          dispatch-token: ${{ github.token }}
+          allow-merge: ${{ vars.CLAWSWEEPER_ALLOW_MERGE || '0' }}
+
+      - name: Route valkyriweb/clawrouter
+        if: ${{ !cancelled() && steps.targets.outcome == 'success' && contains(steps.targets.outputs.repos, ',valkyriweb/clawrouter,') }}
+        uses: ./.github/actions/route-scheduled-target
+        with:
+          target-repo: valkyriweb/clawrouter
+          lifecycle-only: "false"
+          valkyriweb-client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
+          valkyriweb-private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
+          bermont-digital-client-id: ${{ vars.BERMONT_DIGITAL_CLAWSWEEPER_APP_CLIENT_ID }}
+          bermont-digital-private-key: ${{ secrets.BERMONT_DIGITAL_CLAWSWEEPER_APP_PRIVATE_KEY }}
+          clawrouter-api-key: ${{ secrets.CLAWROUTER_API_KEY }}
+          dispatch-token: ${{ github.token }}
+          allow-merge: ${{ vars.CLAWSWEEPER_ALLOW_MERGE || '0' }}
+
+      - name: Route valkyriweb/clawsweeper
+        if: ${{ !cancelled() && steps.targets.outcome == 'success' && contains(steps.targets.outputs.repos, ',valkyriweb/clawsweeper,') }}
+        uses: ./.github/actions/route-scheduled-target
+        with:
+          target-repo: valkyriweb/clawsweeper
+          lifecycle-only: "false"
+          valkyriweb-client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
+          valkyriweb-private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
+          bermont-digital-client-id: ${{ vars.BERMONT_DIGITAL_CLAWSWEEPER_APP_CLIENT_ID }}
+          bermont-digital-private-key: ${{ secrets.BERMONT_DIGITAL_CLAWSWEEPER_APP_PRIVATE_KEY }}
+          clawrouter-api-key: ${{ secrets.CLAWROUTER_API_KEY }}
+          dispatch-token: ${{ github.token }}
+          allow-merge: ${{ vars.CLAWSWEEPER_ALLOW_MERGE || '0' }}
+
+      - name: Route valkyriweb/openclaw
+        if: ${{ !cancelled() && steps.targets.outcome == 'success' && contains(steps.targets.outputs.repos, ',valkyriweb/openclaw,') }}
+        uses: ./.github/actions/route-scheduled-target
+        with:
+          target-repo: valkyriweb/openclaw
+          lifecycle-only: "false"
+          valkyriweb-client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
+          valkyriweb-private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
+          bermont-digital-client-id: ${{ vars.BERMONT_DIGITAL_CLAWSWEEPER_APP_CLIENT_ID }}
+          bermont-digital-private-key: ${{ secrets.BERMONT_DIGITAL_CLAWSWEEPER_APP_PRIVATE_KEY }}
+          clawrouter-api-key: ${{ secrets.CLAWROUTER_API_KEY }}
+          dispatch-token: ${{ github.token }}
+          allow-merge: ${{ vars.CLAWSWEEPER_ALLOW_MERGE || '0' }}
+
+      - name: Route valkyriweb/lue-kube
+        if: ${{ !cancelled() && steps.targets.outcome == 'success' && contains(steps.targets.outputs.repos, ',valkyriweb/lue-kube,') }}
+        uses: ./.github/actions/route-scheduled-target
+        with:
+          target-repo: valkyriweb/lue-kube
+          lifecycle-only: "false"
+          valkyriweb-client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
+          valkyriweb-private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
+          bermont-digital-client-id: ${{ vars.BERMONT_DIGITAL_CLAWSWEEPER_APP_CLIENT_ID }}
+          bermont-digital-private-key: ${{ secrets.BERMONT_DIGITAL_CLAWSWEEPER_APP_PRIVATE_KEY }}
+          clawrouter-api-key: ${{ secrets.CLAWROUTER_API_KEY }}
+          dispatch-token: ${{ github.token }}
+          allow-merge: ${{ vars.CLAWSWEEPER_ALLOW_MERGE || '0' }}
+
+      - name: Route valkyriweb/openclaw-claude
+        if: ${{ !cancelled() && steps.targets.outcome == 'success' && contains(steps.targets.outputs.repos, ',valkyriweb/openclaw-claude,') }}
+        uses: ./.github/actions/route-scheduled-target
+        with:
+          target-repo: valkyriweb/openclaw-claude
+          lifecycle-only: "true"
+          valkyriweb-client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
+          valkyriweb-private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
+          bermont-digital-client-id: ${{ vars.BERMONT_DIGITAL_CLAWSWEEPER_APP_CLIENT_ID }}
+          bermont-digital-private-key: ${{ secrets.BERMONT_DIGITAL_CLAWSWEEPER_APP_PRIVATE_KEY }}
+          clawrouter-api-key: ${{ secrets.CLAWROUTER_API_KEY }}
+          dispatch-token: ${{ github.token }}
+          allow-merge: ${{ vars.CLAWSWEEPER_ALLOW_MERGE || '0' }}
 
   classifier-preflight:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.lifecycle_only && !inputs.execute }}
