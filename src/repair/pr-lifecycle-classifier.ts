@@ -53,7 +53,6 @@ type ClassifierRequest = {
   state?: { review: string };
   questions?: { route: { type: "choice"; instructions: string; criteria: typeof CRITERIA } };
   max_tokens?: number;
-  thinking?: { type: "disabled" };
   output_config?: {
     format: {
       type: "json_schema";
@@ -172,7 +171,8 @@ export async function classifyReviewText(
       {
         model: env.CLAWSWEEPER_LIFECYCLE_FALLBACK_MODEL || "clawrouter/claude-sonnet-5-200k",
         max_tokens: 256,
-        thinking: { type: "disabled" },
+        // Sonnet 5.5 rejects thinking.type "disabled" with HTTP 400. It does not
+        // think before the answer, so omitting thinking keeps one text block.
         output_config: {
           format: {
             type: "json_schema",

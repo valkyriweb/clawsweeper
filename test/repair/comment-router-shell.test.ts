@@ -65,16 +65,24 @@ test("classifier preflight is isolated from all router mutations", () => {
 });
 
 test("classifier probe stays on ARC and the long router jobs use ubuntu-latest", () => {
-  const preflight = workflow.split("\n  classifier-preflight:\n")[1]?.split(/\n  [a-z][a-z-]+:\n/)[0];
+  const preflight = workflow
+    .split("\n  classifier-preflight:\n")[1]
+    ?.split(/\n  [a-z][a-z-]+:\n/)[0];
   assert.ok(preflight);
   assert.match(preflight, /\n    runs-on: lue-clawsweeper-arc\n/);
-  assert.doesNotMatch(preflight, /runs-on:.*(?:ubuntu-latest|mac-mini|inputs\.(?:runner|execution_runner))/);
+  assert.doesNotMatch(
+    preflight,
+    /runs-on:.*(?:ubuntu-latest|mac-mini|inputs\.(?:runner|execution_runner))/,
+  );
   assert.ok(preflight.includes("native_gh=/usr/local/bin/gh-native"));
   for (const job of ["fan-out-scheduled-sweep", "route-comments"]) {
     const block = workflow.split(`\n  ${job}:\n`)[1]?.split(/\n  [a-z][a-z-]+:\n/)[0];
     assert.ok(block);
     assert.match(block, /\n    runs-on: ubuntu-latest\n/);
-    assert.doesNotMatch(block, /runs-on:.*(?:lue-clawsweeper-arc|mac-mini|inputs\.(?:runner|execution_runner))/);
+    assert.doesNotMatch(
+      block,
+      /runs-on:.*(?:lue-clawsweeper-arc|mac-mini|inputs\.(?:runner|execution_runner))/,
+    );
     assert.equal(block.includes("gh-native"), false);
     assert.equal(block.includes("ghx"), false);
     assert.ok(block.includes("native_gh=$(command -v gh)"));
