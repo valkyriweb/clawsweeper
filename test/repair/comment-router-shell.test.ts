@@ -64,27 +64,22 @@ test("classifier preflight is isolated from all router mutations", () => {
   assert.doesNotMatch(workflow, /github\.event_path/);
 });
 
-test("classifier and router use the configured self-hosted pool, not worker runner inputs", () => {
-  const selection =
-    "    runs-on: ${{ fromJSON(vars.CLAWSWEEPER_RUNNER_LABELS || '[\"lue-clawsweeper-arc\"]') }}";
-  for (const job of ["classifier-preflight", "route-comments"]) {
+test("classifier jobs use the mac-mini tailnet and the gh-only alert uses ubuntu-latest", () => {
+  const mini = "\n    runs-on: [self-hosted, macOS, ARM64, mac-mini]\n";
+  for (const job of ["classifier-preflight", "route-comments", "fan-out-scheduled-sweep"]) {
     const block = workflow.split(`\n  ${job}:\n`)[1]?.split(/\n  [a-z][a-z-]+:\n/)[0];
     assert.ok(block);
-    assert.ok(block.includes(selection));
+    assert.ok(block.includes(mini));
     assert.doesNotMatch(
       block,
-      /runs-on: ubuntu-latest|runs-on:.*inputs\.(?:runner|execution_runner)/,
+      /runs-on:.*(?:ubuntu-latest|lue-clawsweeper-arc|inputs\.(?:runner|execution_runner))/,
     );
   }
-  for (const job of ["fan-out-scheduled-sweep", "alert-on-failure"]) {
-    const block = workflow.split(`\n  ${job}:\n`)[1]?.split(/\n  [a-z][a-z-]+:\n/)[0];
-    assert.ok(block);
-    assert.ok(block.includes(selection));
-    assert.doesNotMatch(
-      block,
-      /runs-on: ubuntu-latest|runs-on:.*inputs\.(?:runner|execution_runner)/,
-    );
-  }
+  const alert = workflow.split("\n  alert-on-failure:\n")[1]?.split(/\n  [a-z][a-z-]+:\n/)[0];
+  assert.ok(alert);
+  assert.match(alert, /\n    runs-on: ubuntu-latest\n/);
+  assert.equal(alert.includes("gh-native"), false);
+  assert.equal(alert.includes("CLAWROUTER"), false);
 });
 
 test("router and self-hosted repair jobs select native gh and fail closed if absent", () => {
@@ -94,6 +89,7 @@ test("router and self-hosted repair jobs select native gh and fail closed if abs
   );
   for (const [job, source] of [
     ["classifier-preflight", workflow],
+    ["fan-out-scheduled-sweep", workflow],
     ["route-comments", workflow],
     ["cluster", worker],
     ["execute", worker],
