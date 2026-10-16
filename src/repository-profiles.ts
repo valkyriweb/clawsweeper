@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Schema } from "effect";
+import { parseReviewStandardConfig, type ReviewStandardConfig } from "./review-standard.js";
 
 const RepairAllowedPaths = Schema.NonEmptyArray(
   Schema.String.pipe(
@@ -115,6 +116,8 @@ export interface RepositoryProfile {
    * deliberately separate from `automationPolicy`, which gates mutations.
    */
   issueTriageIntake?: boolean;
+  /** ADLC review-and-merge standard. Defaults to mode "off"; phase 1 allows only off or dry_run. */
+  reviewStandard?: ReviewStandardConfig;
 }
 
 interface TargetRepositoryConfig {
@@ -147,6 +150,7 @@ interface ConfiguredRepositoryProfile {
   repairAllowedPaths?: readonly string[];
   piReviewLifecycle?: boolean;
   issueTriageIntake?: boolean;
+  reviewStandard?: ReviewStandardConfig;
 }
 
 // Branch whose pushes commit-review accepts when a target sets no explicit
@@ -429,6 +433,7 @@ function configuredRepositoryProfile(profile: ConfiguredRepositoryProfile): Repo
   if (profile.repairAllowedPaths) result.repairAllowedPaths = profile.repairAllowedPaths;
   if (profile.piReviewLifecycle !== undefined) result.piReviewLifecycle = profile.piReviewLifecycle;
   if (profile.issueTriageIntake !== undefined) result.issueTriageIntake = profile.issueTriageIntake;
+  if (profile.reviewStandard !== undefined) result.reviewStandard = profile.reviewStandard;
   return result;
 }
 
@@ -592,6 +597,12 @@ function validateConfiguredRepositoryProfile(
       throw new Error(`${label}.issue_close_dry_run must be a boolean`);
     }
     result.issueCloseDryRun = profile.issue_close_dry_run;
+  }
+  if (profile.review_standard !== undefined) {
+    result.reviewStandard = parseReviewStandardConfig(
+      profile.review_standard,
+      `${label}.review_standard`,
+    );
   }
   if (profile.commit_review_ref !== undefined) {
     result.commitReviewRef = branchRefValue(
