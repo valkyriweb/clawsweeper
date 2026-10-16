@@ -79,8 +79,14 @@ jobs:
   plan:
     name: Plan commits
     if: ${{ !(github.event_name == 'repository_dispatch' && github.event.client_payload.target_repo == 'openclaw/clawhub' && vars.CLAWSWEEPER_ENABLE_CLAWHUB != '1') }}
-    runs-on: ${{ fromJSON(vars.CLAWSWEEPER_RUNNER_LABELS || '["lue-clawsweeper-arc"]') }}
+    # Hosted on purpose. This job calls GitHub only. It does not call ClawRouter.
+    # Standard ubuntu-latest minutes are free on this public repo.
+    runs-on: ubuntu-latest
     timeout-minutes: 40
+    # Node gh calls honor GH_BIN. The workflow value points at the self-hosted
+    # binary, which is not on GitHub-hosted runners.
+    env:
+      GH_BIN: gh
     outputs:
       create_checks: ${{ steps.mode.outputs.create_checks }}
       enabled: ${{ steps.mode.outputs.enabled }}
@@ -618,7 +624,9 @@ jobs:
     name: Commit reports
     needs: [plan, review]
     if: ${{ always() && (needs.plan.outputs.planned_count != '0' || needs.plan.outputs.skipped_count != '0') }}
-    runs-on: ${{ fromJSON(vars.CLAWSWEEPER_RUNNER_LABELS || '["lue-clawsweeper-arc"]') }}
+    # Hosted on purpose. This job publishes reports and dispatches findings.
+    # It does not call ClawRouter. Review commit stays on the ARC label.
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     # Force PATH-resolved native gh. The workflow-level GH_BIN may be pinned
     # to a self-hosted absolute path (e.g. CLAWSWEEPER_GH_BIN=/usr/local/bin/ghx)
