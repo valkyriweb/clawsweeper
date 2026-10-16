@@ -64,19 +64,25 @@ test("classifier preflight is isolated from all router mutations", () => {
   assert.doesNotMatch(workflow, /github\.event_path/);
 });
 
-test("comment router jobs run on GitHub-hosted runners, not the ARC pool", () => {
-  for (const job of [
-    "classifier-preflight",
-    "route-comments",
-    "fan-out-scheduled-sweep",
-    "alert-on-failure",
-  ]) {
+test("classifier and router use the configured self-hosted pool, not worker runner inputs", () => {
+  const selection =
+    "    runs-on: ${{ fromJSON(vars.CLAWSWEEPER_RUNNER_LABELS || '[\"lue-clawsweeper-arc\"]') }}";
+  for (const job of ["classifier-preflight", "route-comments"]) {
     const block = workflow.split(`\n  ${job}:\n`)[1]?.split(/\n  [a-z][a-z-]+:\n/)[0];
     assert.ok(block);
-    assert.match(block, /\n    runs-on: ubuntu-latest\n/);
+    assert.ok(block.includes(selection));
     assert.doesNotMatch(
       block,
-      /runs-on:.*(?:lue-clawsweeper-arc|inputs\.(?:runner|execution_runner))/,
+      /runs-on: ubuntu-latest|runs-on:.*inputs\.(?:runner|execution_runner)/,
+    );
+  }
+  for (const job of ["fan-out-scheduled-sweep", "alert-on-failure"]) {
+    const block = workflow.split(`\n  ${job}:\n`)[1]?.split(/\n  [a-z][a-z-]+:\n/)[0];
+    assert.ok(block);
+    assert.ok(block.includes(selection));
+    assert.doesNotMatch(
+      block,
+      /runs-on: ubuntu-latest|runs-on:.*inputs\.(?:runner|execution_runner)/,
     );
   }
 });
@@ -88,7 +94,6 @@ test("router and self-hosted repair jobs select native gh and fail closed if abs
   );
   for (const [job, source] of [
     ["classifier-preflight", workflow],
-    ["fan-out-scheduled-sweep", workflow],
     ["route-comments", workflow],
     ["cluster", worker],
     ["execute", worker],
@@ -98,12 +103,10 @@ test("router and self-hosted repair jobs select native gh and fail closed if abs
       ?.split("      - name: Select native GitHub CLI\n")[1]
       ?.split("\n      - ")[0];
     assert.ok(step);
-    const hosted = source !== worker;
-    if (!hosted) assert.ok(step.includes("if: ${{ runner.environment == 'self-hosted' }}"));
+    if (source === worker)
+      assert.ok(step.includes("if: ${{ runner.environment == 'self-hosted' }}"));
     const script = step.split("        run: |\n")[1].replace(/^          /gm, "");
-    const assignment = hosted ? "native_gh=$(command -v gh)" : "native_gh=/usr/local/bin/gh-native";
-    assert.ok(script.includes(assignment));
-    if (hosted) assert.equal(script.includes("gh-native"), false);
+    assert.ok(script.includes("native_gh=/usr/local/bin/gh-native"));
     assert.ok(script.includes('echo "GH_BIN=$native_gh" >> "$GITHUB_ENV"'));
     const dir = mkdtempSync(join(tmpdir(), "router-native-cli-"));
     try {
@@ -121,7 +124,10 @@ test("router and self-hosted repair jobs select native gh and fail closed if abs
         GITHUB_ENV: join(dir, "env"),
         GH_TOKEN: "synthetic-fixture",
       };
-      const rendered = script.replace(assignment, 'native_gh="$TEST_NATIVE_GH"');
+      const rendered = script.replace(
+        "native_gh=/usr/local/bin/gh-native",
+        'native_gh="$TEST_NATIVE_GH"',
+      );
       const result = spawnSync(
         "bash",
         [
