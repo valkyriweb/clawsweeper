@@ -382,7 +382,7 @@ jobs:
         run: |
           set -euo pipefail
           # The child route-comments job calls the classifier. This step does not.
-          gh workflow run "repair comment router" --ref "$GITHUB_REF_NAME" \
+          gh workflow run "repair comment router" --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF_NAME" \
             -f execute=true \
             -f lifecycle_only=true \
             -f force_reprocess=false \
@@ -756,7 +756,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh workflow run "repair comment router" --ref "$GITHUB_REF_NAME" \
+          gh workflow run "repair comment router" --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF_NAME" \
             -f execute=false \
             -f lifecycle_only=true \
             -f force_reprocess=false \

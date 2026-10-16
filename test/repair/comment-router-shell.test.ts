@@ -100,6 +100,7 @@ test("classifier preflight and route-comments use the mac-mini labels", () => {
   const proof = workflow.split("\n  dispatch-scheduled-lifecycle:\n")[1] ?? "";
   assert.match(proof, /\n    runs-on: ubuntu-latest\n/);
   assert.equal(proof.includes("CLAWROUTER"), false);
+  assert.ok(proof.includes('gh workflow run "repair comment router" --repo "$GITHUB_REPOSITORY"'));
   assert.ok(proof.includes("-f execute=false"));
   assert.ok(proof.includes("lifecycle_route=mini"));
   assert.equal(proof.includes("runs-on: [self-hosted"), false);

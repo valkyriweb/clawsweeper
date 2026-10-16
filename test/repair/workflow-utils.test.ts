@@ -382,6 +382,10 @@ test("comment router mints target tokens through the routed facade", () => {
   assert.match(fanout, /target_repo=valkyriweb\/openclaw-claude/);
   assert.match(fanout, /lifecycle_only=true/);
   assert.match(fanout, /lifecycle_route=mini/);
+  assert.match(
+    fanout,
+    /gh workflow run "repair comment router" --repo "\$GITHUB_REPOSITORY" --ref "\$GITHUB_REF_NAME"/,
+  );
   assert.match(fanout, /-f execute=true \\/);
   assert.match(fanout, /CLAWSWEEPER_MODELS: \$\{\{ vars\.CLAWSWEEPER_MODELS \|\| '' \}\}/);
   const scheduled = JSON.parse(
