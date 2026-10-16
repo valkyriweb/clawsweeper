@@ -442,7 +442,8 @@
           "alchemy.run.ts",
           "deploy/**"
         ]
-      }
+      },
+      "skip_comment_router_schedule": true
     }
   ]
 }
