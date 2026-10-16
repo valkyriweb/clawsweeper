@@ -94,6 +94,10 @@ export interface RepositoryProfile {
   // on their own items. `CLAWSWEEPER_INCLUDE_MAINTAINER_AUTHORED=true` is a
   // fleet-wide override.
   includeMaintainerAuthored?: boolean;
+  // When true (the default), issue closes for `stale_insufficient_info` and
+  // `cannot_reproduce` are labelled and reported but never applied. Set
+  // `issue_close_dry_run: false` per target to let them close.
+  issueCloseDryRun?: boolean;
   // Per-target git ref whose pushes commit-review accepts. Most repos ship from
   // `main`, so the absent default is `DEFAULT_COMMIT_REVIEW_REF`. Production
   // overlays that deploy from a non-default branch (e.g. paperclip's `bermont`)
@@ -137,6 +141,7 @@ interface ConfiguredRepositoryProfile {
   docsMaintainer: DocsMaintainerConfig;
   reviewProvider?: ReviewProvider;
   includeMaintainerAuthored?: boolean;
+  issueCloseDryRun?: boolean;
   commitReviewRef?: string;
   postRepairReviewLabel?: string;
   repairAllowedPaths?: readonly string[];
@@ -369,6 +374,23 @@ export function issueTriageIntakeBlockReason(targetRepo: string): string | null 
   return null;
 }
 
+export const ISSUE_CLOSE_DRY_RUN_REASONS: ReadonlySet<RepositoryCloseReason> = new Set([
+  "stale_insufficient_info",
+  "cannot_reproduce",
+]);
+
+export function isIssueCloseDryRun(
+  profile: Pick<RepositoryProfile, "issueCloseDryRun">,
+  kind: RepositoryItemKind,
+  reason: RepositoryCloseReason,
+): boolean {
+  return (
+    kind === "issue" &&
+    ISSUE_CLOSE_DRY_RUN_REASONS.has(reason) &&
+    profile.issueCloseDryRun !== false
+  );
+}
+
 export function isAutoCloseAllowed(
   profile: RepositoryProfile,
   kind: RepositoryItemKind,
@@ -398,6 +420,9 @@ function configuredRepositoryProfile(profile: ConfiguredRepositoryProfile): Repo
   if (profile.reviewProvider) result.reviewProvider = profile.reviewProvider;
   if (profile.includeMaintainerAuthored !== undefined) {
     result.includeMaintainerAuthored = profile.includeMaintainerAuthored;
+  }
+  if (profile.issueCloseDryRun !== undefined) {
+    result.issueCloseDryRun = profile.issueCloseDryRun;
   }
   if (profile.commitReviewRef) result.commitReviewRef = profile.commitReviewRef;
   if (profile.postRepairReviewLabel) result.postRepairReviewLabel = profile.postRepairReviewLabel;
@@ -561,6 +586,12 @@ function validateConfiguredRepositoryProfile(
       throw new Error(`${label}.include_maintainer_authored must be a boolean`);
     }
     result.includeMaintainerAuthored = profile.include_maintainer_authored;
+  }
+  if (profile.issue_close_dry_run !== undefined) {
+    if (profile.issue_close_dry_run !== true && profile.issue_close_dry_run !== false) {
+      throw new Error(`${label}.issue_close_dry_run must be a boolean`);
+    }
+    result.issueCloseDryRun = profile.issue_close_dry_run;
   }
   if (profile.commit_review_ref !== undefined) {
     result.commitReviewRef = branchRefValue(

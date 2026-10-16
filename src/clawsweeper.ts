@@ -19,6 +19,7 @@ import {
   REPOSITORY_PROFILES,
   automationPolicyBlockReason,
   isAutoCloseAllowed,
+  isIssueCloseDryRun,
   normalizeRepo,
   repositoryProfileFor,
   repositoryProfileForSlug,
@@ -810,6 +811,8 @@ const DEFAULT_BACKFILL_REVIEW_AGE_MINUTES = 360;
 const DAILY_REVIEW_DAYS = 1;
 const WEEKLY_REVIEW_DAYS = 7;
 const STALE_INSUFFICIENT_INFO_MIN_AGE_DAYS = 60;
+// Ported from openclaw/clawsweeper@77bb944 (src/clawsweeper-policy.ts).
+export const STALE_INSUFFICIENT_INFO_MIN_INACTIVE_DAYS = 60;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const RECENT_MISSING_OPEN_MS = DAY_MS;
 const DEFAULT_CODEX_MODEL = "gpt-5.6-terra";
@@ -7071,6 +7074,149 @@ export function telegramVisibleProofLabelsForTest(
   return nextTelegramVisibleProofLabels(labels, { status: proofStatus });
 }
 
+// Ported from openclaw/clawsweeper@77bb944
+// (src/clawsweeper-apply-guard-activity.ts).
+export function issueRecentHumanCommentBlockReasonFromComments(
+  comments: readonly unknown[],
+  days: number,
+  now = Date.now(),
+): string | null {
+  for (const comment of comments) {
+    const record = asRecord(comment);
+    if (asRecord(record.user).type === "Bot") continue;
+    // A missing or non-string timestamp is treated as recent, matching upstream.
+    const createdAt = stringOrUndefined(record.created_at) ?? "";
+    if (!isOlderThanDays(createdAt, days, now)) {
+      return `issue has a non-bot comment within the last ${days} days`;
+    }
+  }
+  return null;
+}
+
+function issueRecentHumanCommentBlockReasonSafe(number: number, days: number): string | null {
+  try {
+    return issueRecentHumanCommentBlockReasonFromComments(
+      ghPaged<unknown>(`repos/${targetRepo()}/issues/${number}/comments`),
+      days,
+    );
+  } catch (error) {
+    return `issue comment activity check failed: ${
+      error instanceof Error ? error.message : String(error)
+    }`;
+  }
+}
+
+// Ported from openclaw/clawsweeper@77bb944 (label definitions in
+// src/clawsweeper-policy.ts, selection in src/clawsweeper-label-selection.ts).
+const REPRODUCTION_LABELS: readonly { name: string; color: string; description: string }[] = [
+  {
+    name: "clawsweeper:current-main-repro",
+    color: "0A3069",
+    description: "ClawSweeper found a high-confidence current-main issue reproduction.",
+  },
+  {
+    name: "clawsweeper:source-repro",
+    color: "0A3069",
+    description: "ClawSweeper found a high-confidence source-level issue reproduction.",
+  },
+  {
+    name: "clawsweeper:not-repro-on-main",
+    color: "2DA44E",
+    description:
+      "ClawSweeper found high-confidence evidence that this issue no longer reproduces on main.",
+  },
+  {
+    name: "clawsweeper:needs-live-repro",
+    color: "FBCA04",
+    description:
+      "ClawSweeper needs live local, crabbox, or manual validation to confirm this issue.",
+  },
+  {
+    name: "clawsweeper:needs-info",
+    color: "6E7781",
+    description: "ClawSweeper needs more reporter information before it can verify this issue.",
+  },
+];
+const REPRODUCTION_LABEL_NAMES = new Set(REPRODUCTION_LABELS.map((label) => label.name));
+
+export function reproductionLabelsFor(state: {
+  reproductionStatus: string;
+  reproductionConfidence: string;
+}): string[] {
+  const labels: string[] = [];
+  if (state.reproductionConfidence === "high") {
+    if (state.reproductionStatus === "reproduced") labels.push("clawsweeper:current-main-repro");
+    if (state.reproductionStatus === "source_reproducible") labels.push("clawsweeper:source-repro");
+    if (state.reproductionStatus === "not_reproduced") labels.push("clawsweeper:not-repro-on-main");
+  }
+  if (
+    state.reproductionStatus === "source_reproducible" &&
+    state.reproductionConfidence !== "high"
+  ) {
+    labels.push("clawsweeper:needs-live-repro");
+  }
+  if (state.reproductionStatus === "unclear" && state.reproductionConfidence !== "high") {
+    labels.push("clawsweeper:needs-info");
+  }
+  return labels;
+}
+
+export function nextReproductionLabels(
+  labels: readonly string[],
+  state: { reproductionStatus: string; reproductionConfidence: string },
+): string[] {
+  return [
+    ...labels.filter((label) => !REPRODUCTION_LABEL_NAMES.has(label)),
+    ...reproductionLabelsFor(state),
+  ];
+}
+
+function syncReproductionLabels(options: {
+  repo: string;
+  number: number;
+  labels: readonly string[];
+  markdown: string;
+  dryRun: boolean;
+}): string[] {
+  const nextLabels = nextReproductionLabels(options.labels, {
+    reproductionStatus: frontMatterValue(options.markdown, "reproduction_status") ?? "",
+    reproductionConfidence: frontMatterValue(options.markdown, "reproduction_confidence") ?? "",
+  });
+  const toAdd = nextLabels.filter((label) => !options.labels.includes(label));
+  const toRemove = options.labels.filter((label) => !nextLabels.includes(label));
+  if (toAdd.length === 0 && toRemove.length === 0) return nextLabels;
+  if (options.dryRun) return nextLabels;
+  if (automationPolicyBlockReason(options.repo, "label")) return [...options.labels];
+  for (const name of toAdd) ensureReproductionLabel(name);
+  const args = ["issue", "edit", String(options.number)];
+  for (const name of toAdd) args.push("--add-label", name);
+  for (const name of toRemove) args.push("--remove-label", name);
+  ghWithRetry(args);
+  return nextLabels;
+}
+
+function ensureReproductionLabel(name: string): void {
+  const definition = REPRODUCTION_LABELS.find((label) => label.name === name);
+  if (!definition) return;
+  try {
+    ghWithRetry(
+      [
+        "label",
+        "create",
+        definition.name,
+        "--color",
+        definition.color,
+        "--description",
+        definition.description,
+      ],
+      2,
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!/already exists/i.test(message)) throw error;
+  }
+}
+
 function syncTelegramVisibleProofLabel(options: {
   repo: string;
   number: number;
@@ -9539,6 +9685,15 @@ function applyDecisionsCommand(args: Args): void {
         dryRun,
       });
     }
+    if (state === "open" && item.kind === "issue") {
+      item.labels = syncReproductionLabels({
+        repo,
+        number,
+        labels: item.labels,
+        markdown,
+        dryRun,
+      });
+    }
     markdown = replaceFrontMatterValue(markdown, "labels", JSON.stringify(item.labels));
     const reviewComment = renderReviewCommentFromReport(markdown, closeReason ?? "none");
     const existingReviewComment = issueReviewComment(number, [
@@ -9762,6 +9917,30 @@ function applyDecisionsCommand(args: Args): void {
       });
       processedCount += 1;
       maybeLogProgress(`skipped #${number}: ${ageSkipReason}`);
+      if (processedCount >= processedLimit) break;
+      continue;
+    }
+    if (item.kind === "issue" && closeReason === "stale_insufficient_info") {
+      const commentBlockReason = issueRecentHumanCommentBlockReasonSafe(
+        number,
+        STALE_INSUFFICIENT_INFO_MIN_INACTIVE_DAYS,
+      );
+      if (commentBlockReason) {
+        results.push({ number, action: "kept_open", reason: commentBlockReason });
+        processedCount += 1;
+        maybeLogProgress(`skipped #${number}: ${commentBlockReason}`);
+        if (processedCount >= processedLimit) break;
+        continue;
+      }
+    }
+    if (isIssueCloseDryRun(repositoryProfileFor(repo), item.kind, closeReason)) {
+      results.push({
+        number,
+        action: "kept_open",
+        reason: `issue_close_dry_run: would close as ${closeReasonText(closeReason)}`,
+      });
+      processedCount += 1;
+      maybeLogProgress(`skipped #${number}: issue_close_dry_run for ${closeReason}`);
       if (processedCount >= processedLimit) break;
       continue;
     }
