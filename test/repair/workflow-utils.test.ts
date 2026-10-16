@@ -378,6 +378,7 @@ test("comment router mints target tokens through the routed facade", () => {
   assert.equal(fanout.match(/uses: \.\/\.github\/actions\/setup-pnpm/g)?.length, 1);
   assert.equal(fanout.match(/uses: \.\/\.github\/actions\/setup-state/g)?.length, 1);
   assert.equal(fanout.match(/uses: \.\/\.github\/actions\/route-scheduled-target/g)?.length, 12);
+  assert.match(fanout, /CLAWSWEEPER_MODELS: \$\{\{ vars\.CLAWSWEEPER_MODELS \|\| '' \}\}/);
   const scheduled = JSON.parse(
     fs.readFileSync("config/target-repositories.json", "utf8"),
   ).repositories.filter(
