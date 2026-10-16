@@ -332,30 +332,33 @@ export function buildUsageTelemetryEvent(
   const sessionId = defaultSessionId(metadata, github);
   const turnId = defaultTurnId(metadata);
 
+  const optional: Partial<UsageEventMetadata> = {};
+  if (metadata.workflow) optional.workflow = metadata.workflow;
+  if (metadata.mode) optional.mode = metadata.mode;
+  if (metadata.phase) optional.phase = metadata.phase;
+  if (provider) optional.provider = provider;
+  if (sessionId) optional.session_id = sessionId;
+  if (turnId) optional.turn_id = turnId;
+  if (metadata.target_repo) optional.target_repo = metadata.target_repo;
+  if (metadata.cluster_id) optional.cluster_id = metadata.cluster_id;
+  if (typeof metadata.item_number === "number") optional.item_number = metadata.item_number;
+  if (metadata.commit_sha) optional.commit_sha = metadata.commit_sha;
+  if (metadata.job_path) optional.job_path = metadata.job_path;
+  if (metadata.model) optional.model = metadata.model;
+  if (metadata.reasoning_effort) optional.reasoning_effort = metadata.reasoning_effort;
+  if (metadata.service_tier) optional.service_tier = metadata.service_tier;
+  if (metadata.sandbox) optional.sandbox = metadata.sandbox;
+  if (typeof metadata.timeout_ms === "number") optional.timeout_ms = metadata.timeout_ms;
+  if (typeof metadata.elapsed_ms === "number") optional.elapsed_ms = metadata.elapsed_ms;
+  if (metadata.transcript_path) optional.transcript_path = metadata.transcript_path;
+  if (metadata.stderr_path) optional.stderr_path = metadata.stderr_path;
+  if (metadata.output_path) optional.output_path = metadata.output_path;
+
   return {
     surface: "clawsweeper",
     emitted_at: (options.emittedAt ?? new Date()).toISOString(),
     ...github,
-    ...(metadata.workflow ? { workflow: metadata.workflow } : {}),
-    ...(metadata.mode ? { mode: metadata.mode } : {}),
-    ...(metadata.phase ? { phase: metadata.phase } : {}),
-    ...(provider ? { provider } : {}),
-    ...(sessionId ? { session_id: sessionId } : {}),
-    ...(turnId ? { turn_id: turnId } : {}),
-    ...(metadata.target_repo ? { target_repo: metadata.target_repo } : {}),
-    ...(metadata.cluster_id ? { cluster_id: metadata.cluster_id } : {}),
-    ...(typeof metadata.item_number === "number" ? { item_number: metadata.item_number } : {}),
-    ...(metadata.commit_sha ? { commit_sha: metadata.commit_sha } : {}),
-    ...(metadata.job_path ? { job_path: metadata.job_path } : {}),
-    ...(metadata.model ? { model: metadata.model } : {}),
-    ...(metadata.reasoning_effort ? { reasoning_effort: metadata.reasoning_effort } : {}),
-    ...(metadata.service_tier ? { service_tier: metadata.service_tier } : {}),
-    ...(metadata.sandbox ? { sandbox: metadata.sandbox } : {}),
-    ...(typeof metadata.timeout_ms === "number" ? { timeout_ms: metadata.timeout_ms } : {}),
-    ...(typeof metadata.elapsed_ms === "number" ? { elapsed_ms: metadata.elapsed_ms } : {}),
-    ...(metadata.transcript_path ? { transcript_path: metadata.transcript_path } : {}),
-    ...(metadata.stderr_path ? { stderr_path: metadata.stderr_path } : {}),
-    ...(metadata.output_path ? { output_path: metadata.output_path } : {}),
+    ...optional,
     status: metadata.status,
     tokens: metadata.tokens ?? null,
   };
