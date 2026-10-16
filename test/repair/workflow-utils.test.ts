@@ -363,12 +363,36 @@ test("comment router mints target tokens through the routed facade", () => {
     workflow,
     /select\(\.skip_comment_router_schedule != true or \.pi_review_lifecycle == true\)/,
   );
-  assert.match(workflow, /-f lifecycle_only="\$lifecycle_only"/);
   assert.match(workflow, /config\/target-repositories\.json/);
   assert.doesNotMatch(
     workflow,
     /jq -r '\.repositories\[\]\.target_repo' config\/target-repositories\.json/,
   );
+  assert.doesNotMatch(workflow, /gh workflow run/);
+
+  const fanout = workflow
+    .split("\n  fan-out-scheduled-sweep:\n")[1]
+    ?.split("\n  classifier-preflight:\n")[0];
+  assert.ok(fanout);
+  assert.equal(fanout.match(/uses: actions\/checkout@v5/g)?.length, 1);
+  assert.equal(fanout.match(/uses: \.\/\.github\/actions\/setup-pnpm/g)?.length, 1);
+  assert.equal(fanout.match(/uses: \.\/\.github\/actions\/setup-state/g)?.length, 1);
+  assert.equal(fanout.match(/uses: \.\/\.github\/actions\/route-scheduled-target/g)?.length, 12);
+  const scheduled = JSON.parse(
+    fs.readFileSync("config/target-repositories.json", "utf8"),
+  ).repositories.filter(
+    (entry) =>
+      entry.target_repo !== "leo-labs-ai/paperclip" &&
+      (entry.skip_comment_router_schedule !== true || entry.pi_review_lifecycle === true),
+  );
+  assert.equal(scheduled.length, 12);
+  for (const entry of scheduled) {
+    const marker = fanout.indexOf(`target-repo: ${entry.target_repo}\n`);
+    assert.ok(marker > 0, entry.target_repo);
+    const window = fanout.slice(marker, marker + 240);
+    const lifecycle = entry.pi_review_lifecycle === true ? "true" : "false";
+    assert.match(window, new RegExp(`lifecycle-only: "${lifecycle}"`));
+  }
 });
 
 test("comment-router schedule skip flag isolates openclaw-claude without dropping it from the allowlist", () => {

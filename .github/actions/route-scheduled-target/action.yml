@@ -1,0 +1,213 @@
+name: Route one scheduled comment target
+description: Mint a target token, route that repository, and record a named result. Checkout and pnpm stay in the caller so a burst shares them.
+
+inputs:
+  target-repo:
+    description: Configured target repository (owner/name).
+    required: true
+  lifecycle-only:
+    description: "true for Pi lifecycle reconciliation, false for a generic comment scan."
+    required: true
+  lookback-minutes:
+    description: Comment lookback. Matches the workflow_dispatch input default the old fan-out left unset.
+    required: true
+    default: "180"
+  max-comments:
+    description: Maximum comments to inspect. Matches the workflow_dispatch input default.
+    required: true
+    default: "100"
+  runner:
+    description: Runner labels JSON for repair planning.
+    required: true
+    default: '["self-hosted","macOS","ARM64","mac-mini"]'
+  execution-runner:
+    description: Runner labels JSON for fix execution.
+    required: true
+    default: '["self-hosted","macOS","ARM64","mac-mini"]'
+  valkyriweb-client-id:
+    description: Valkyriweb App client ID.
+    required: true
+  valkyriweb-private-key:
+    description: Valkyriweb App private key.
+    required: true
+  bermont-digital-client-id:
+    description: Bermont Digital App client ID.
+    required: true
+  bermont-digital-private-key:
+    description: Bermont Digital App private key.
+    required: true
+  clawrouter-api-key:
+    description: ClawRouter API key for the router process.
+    required: true
+  dispatch-token:
+    description: Token used to dispatch repair workers. Caller passes github.token.
+    required: true
+  allow-merge:
+    description: CLAWSWEEPER_ALLOW_MERGE value.
+    required: true
+    default: "0"
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve target authorization
+      id: target-auth
+      shell: bash
+      env:
+        TARGET_REPO: ${{ inputs.target-repo }}
+      run: |
+        set -euo pipefail
+        pnpm run --silent workflow -- target-auth --target-repo "$TARGET_REPO" --access-mode comment >> "$GITHUB_OUTPUT"
+
+    - name: Create target token
+      id: app_token
+      uses: ./.github/actions/create-target-token
+      with:
+        target-repo: ${{ inputs.target-repo }}
+        access-mode: ${{ steps.target-auth.outputs.automation_policy == 'review_only' && 'comment' || 'mutate' }}
+        lifecycle-evidence-read: "true"
+        valkyriweb-client-id: ${{ inputs.valkyriweb-client-id }}
+        valkyriweb-private-key: ${{ inputs.valkyriweb-private-key }}
+        bermont-digital-client-id: ${{ inputs.bermont-digital-client-id }}
+        bermont-digital-private-key: ${{ inputs.bermont-digital-private-key }}
+
+    - name: Route ClawSweeper comments
+      id: route
+      if: success()
+      shell: bash
+      env:
+        CLAWROUTER_API_KEY: ${{ inputs.clawrouter-api-key }}
+        GH_TOKEN: ${{ steps.app_token.outputs.token }}
+        CLAWSWEEPER_DISPATCH_TOKEN: ${{ inputs.dispatch-token }}
+        CLAWSWEEPER_MUTATION_TOKEN_SOURCE: clawsweeper-app
+        CLAWSWEEPER_ALLOW_MERGE: ${{ inputs.allow-merge }}
+        CLAWSWEEPER_LIFECYCLE_ONLY: ${{ inputs.lifecycle-only }}
+        TARGET_REPO: ${{ inputs.target-repo }}
+        LOOKBACK_MINUTES: ${{ inputs.lookback-minutes }}
+        MAX_COMMENTS: ${{ inputs.max-comments }}
+        RUNNER: ${{ inputs.runner }}
+        EXECUTION_RUNNER: ${{ inputs.execution-runner }}
+      run: |
+        set -euo pipefail
+        args=(
+          --write-report
+          --repo "$TARGET_REPO"
+          --lookback-minutes "$LOOKBACK_MINUTES"
+          --max-comments "$MAX_COMMENTS"
+          --runner "$RUNNER"
+          --execution-runner "$EXECUTION_RUNNER"
+          --wait-for-capacity
+          --execute
+        )
+        pnpm run repair:comment-router -- "${args[@]}"
+
+    - name: Commit comment router ledger
+      id: publish
+      if: always() && steps.app_token.outcome == 'success'
+      shell: bash
+      run: |
+        pnpm run repair:publish-main -- \
+          --message "chore: record ClawSweeper comment routing" \
+          --path results/comment-router.json \
+          --path results/comment-router-latest.json \
+          --path jobs \
+          --rebase-strategy theirs
+
+    - name: Detect waiting repair dispatches
+      id: waiting
+      if: success()
+      shell: bash
+      run: |
+        set -euo pipefail
+        count="0"
+        if [ -f results/comment-router-latest.json ]; then
+          count="$(pnpm run --silent workflow -- count-command-actions --report results/comment-router-latest.json --action dispatch_repair --status waiting)"
+        fi
+        echo "count=$count" >> "$GITHUB_OUTPUT"
+
+    - name: Retry waiting repair dispatches
+      id: retry
+      if: steps.waiting.outputs.count != '' && steps.waiting.outputs.count != '0'
+      shell: bash
+      env:
+        CLAWROUTER_API_KEY: ${{ inputs.clawrouter-api-key }}
+        GH_TOKEN: ${{ steps.app_token.outputs.token }}
+        CLAWSWEEPER_DISPATCH_TOKEN: ${{ inputs.dispatch-token }}
+        CLAWSWEEPER_MUTATION_TOKEN_SOURCE: clawsweeper-app
+        CLAWSWEEPER_ALLOW_MERGE: ${{ inputs.allow-merge }}
+        CLAWSWEEPER_LIFECYCLE_ONLY: ${{ inputs.lifecycle-only }}
+        TARGET_REPO: ${{ inputs.target-repo }}
+        LOOKBACK_MINUTES: ${{ inputs.lookback-minutes }}
+        MAX_COMMENTS: ${{ inputs.max-comments }}
+        RUNNER: ${{ inputs.runner }}
+        EXECUTION_RUNNER: ${{ inputs.execution-runner }}
+        WAITING_COUNT: ${{ steps.waiting.outputs.count }}
+      run: |
+        set -euo pipefail
+        args=(
+          --write-report
+          --repo "$TARGET_REPO"
+          --lookback-minutes "$LOOKBACK_MINUTES"
+          --max-comments "$MAX_COMMENTS"
+          --runner "$RUNNER"
+          --execution-runner "$EXECUTION_RUNNER"
+          --wait-for-capacity
+          --execute
+        )
+        echo "Retrying $WAITING_COUNT waiting repair dispatch(es) after publishing router state."
+        pnpm run repair:comment-router -- "${args[@]}"
+
+    - name: Commit comment router retry ledger
+      id: retry-publish
+      if: always() && steps.app_token.outcome == 'success' && steps.waiting.outputs.count != '' && steps.waiting.outputs.count != '0'
+      shell: bash
+      run: |
+        pnpm run repair:publish-main -- \
+          --message "chore: record ClawSweeper repair dispatch retry" \
+          --path results/comment-router.json \
+          --path results/comment-router-latest.json \
+          --path jobs \
+          --rebase-strategy theirs
+
+    - name: Record scheduled target result
+      if: always()
+      shell: bash
+      env:
+        TARGET_REPO: ${{ inputs.target-repo }}
+        AUTH_OUTCOME: ${{ steps.target-auth.outcome }}
+        TOKEN_OUTCOME: ${{ steps.app_token.outcome }}
+        ROUTE_OUTCOME: ${{ steps.route.outcome }}
+        PUBLISH_OUTCOME: ${{ steps.publish.outcome }}
+        RETRY_OUTCOME: ${{ steps.retry.outcome }}
+        RETRY_PUBLISH_OUTCOME: ${{ steps.retry-publish.outcome }}
+      run: |
+        set -euo pipefail
+        result="success"
+        detail=""
+        if [ "$AUTH_OUTCOME" != "success" ]; then
+          result="failure"
+          detail="auth"
+        elif [ "$TOKEN_OUTCOME" != "success" ]; then
+          result="failure"
+          detail="token"
+        elif [ "$ROUTE_OUTCOME" != "success" ]; then
+          result="failure"
+          detail="route"
+        elif [ "$PUBLISH_OUTCOME" = "failure" ]; then
+          result="failure"
+          detail="publish"
+        elif [ "$RETRY_OUTCOME" = "failure" ]; then
+          result="failure"
+          detail="retry"
+        elif [ "$RETRY_PUBLISH_OUTCOME" = "failure" ]; then
+          result="failure"
+          detail="retry-publish"
+        fi
+        if [ -n "$detail" ]; then
+          echo "| $TARGET_REPO | $result ($detail) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "::error title=route $TARGET_REPO::$detail"
+        else
+          echo "| $TARGET_REPO | success |" >> "$GITHUB_STEP_SUMMARY"
+        fi
+        printf '%s\t%s\t%s\n' "$TARGET_REPO" "$result" "$detail" >> "$RUNNER_TEMP/scheduled-route-results.tsv"
+        [ "$result" = "success" ]
