@@ -24,7 +24,9 @@ concurrency:
 jobs:
   check:
     name: pnpm check
-    runs-on: ${{ fromJSON(vars.CLAWSWEEPER_RUNNER_LABELS || '["lue-clawsweeper-arc"]') }}
+    # Hosted on purpose. This job does not call ClawRouter. The public repo's
+    # standard ubuntu-latest minutes are free, and the ARC label is preemptible.
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
