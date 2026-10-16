@@ -99,9 +99,9 @@ jobs:
   # Manual and repository_dispatch runs stay on route-comments.
   fan-out-scheduled-sweep:
     if: ${{ github.event_name == 'schedule' && (vars.CLAWSWEEPER_COMMENT_ROUTER_EXECUTE || '0') == '1' }}
-    # Leaves the ARC pool. Stock gh is on the hosted image. A Pi lifecycle
-    # classification inside the router still calls ClawRouter; this runner
-    # has no tailnet path to it.
+    # Leaves the ARC pool. Stock gh is on the hosted image. A scheduled Pi
+    # classification in this job still calls ClawRouter from here, with no
+    # tailnet path. route-comments is the tailnet path.
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -375,9 +375,9 @@ jobs:
 
   classifier-preflight:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.lifecycle_only && !inputs.execute }}
-    # The only job that must reach ClawRouter. The ARC pool is inside the
-    # cluster and can open the tailnet ingress. It does not run on pull_request.
-    runs-on: lue-clawsweeper-arc
+    # Read-only probe on the mac-mini label that reached ClawRouter on 22–29 Sep.
+    # It does not run on pull_request. Nothing in this workflow uses the ARC pool.
+    runs-on: [self-hosted, macOS, ARM64, mac-mini]
     timeout-minutes: 5
     permissions:
       contents: read
@@ -419,13 +419,13 @@ jobs:
           JS
 
   route-comments:
-    # Scheduled ticks fan out above; read-only classifier probes never enter
-    # the router's token creation or ledger publication steps.
-    if: ${{ github.event_name != 'schedule' && !(github.event_name == 'workflow_dispatch' && inputs.lifecycle_only && !inputs.execute) }}
-    # Leaves the ARC pool. Stock gh is on the hosted image. An authorized
-    # failed Pi review still calls ClawRouter from the router process, and
-    # that fetch fails off the tailnet the same way hosted run 35743722373 did.
-    runs-on: ubuntu-latest
+    # Scheduled ticks fan out above. A lifecycle-only dry run still enters here
+    # so the router process can call ClawRouter. execute=false adds no --execute
+    # flag, and the ledger publish steps below stay skipped.
+    if: ${{ github.event_name != 'schedule' }}
+    # mac-mini-1/2-valkyriweb. The tailnet path that reached ClawRouter on
+    # 22–29 Sep. Hard-coded: vars.CLAWSWEEPER_RUNNER_LABELS is the ARC pool.
+    runs-on: [self-hosted, macOS, ARM64, mac-mini]
     timeout-minutes: 20
     env:
       CLAWSWEEPER_MODELS: ${{ vars.CLAWSWEEPER_MODELS || '' }}
@@ -451,11 +451,11 @@ jobs:
           sparse-checkout-cone-mode: false
 
       # Repair helpers call gh directly; GH_BIN alone does not bypass PATH wrappers.
-      # The hosted image ships stock gh. The self-hosted binary path is not on this runner.
+      # mac-mini runners keep the native binary off PATH wrappers.
       - name: Select native GitHub CLI
         run: |
           set -euo pipefail
-          native_gh=$(command -v gh)
+          native_gh=/usr/local/bin/gh-native
           test -x "$native_gh"
           "$native_gh" --version
           cli_dir=$(mktemp -d "$RUNNER_TEMP/clawsweeper-native-gh.XXXXXX")
@@ -590,7 +590,7 @@ jobs:
           pnpm run repair:comment-router -- "${args[@]}"
 
       - name: Commit comment router ledger
-        if: always() && steps.app_token.outcome == 'success'
+        if: always() && steps.app_token.outcome == 'success' && (github.event_name != 'workflow_dispatch' || inputs.execute)
         run: |
           pnpm run repair:publish-main -- \
             --message "chore: record ClawSweeper comment routing" \
@@ -611,7 +611,7 @@ jobs:
           echo "count=$count" >> "$GITHUB_OUTPUT"
 
       - name: Retry waiting repair dispatches
-        if: ${{ steps.waiting-repair-dispatches.outputs.count != '' && steps.waiting-repair-dispatches.outputs.count != '0' }}
+        if: ${{ steps.waiting-repair-dispatches.outputs.count != '' && steps.waiting-repair-dispatches.outputs.count != '0' && (github.event_name != 'workflow_dispatch' || inputs.execute) }}
         env:
           CLAWROUTER_API_KEY: ${{ secrets.CLAWROUTER_API_KEY }}
           GH_TOKEN: ${{ steps.app_token.outputs.token }}
@@ -681,7 +681,7 @@ jobs:
           pnpm run repair:comment-router -- "${args[@]}"
 
       - name: Commit comment router retry ledger
-        if: ${{ always() && steps.app_token.outcome == 'success' && steps.waiting-repair-dispatches.outputs.count != '' && steps.waiting-repair-dispatches.outputs.count != '0' }}
+        if: ${{ always() && steps.app_token.outcome == 'success' && steps.waiting-repair-dispatches.outputs.count != '' && steps.waiting-repair-dispatches.outputs.count != '0' && (github.event_name != 'workflow_dispatch' || inputs.execute) }}
         run: |
           pnpm run repair:publish-main -- \
             --message "chore: record ClawSweeper repair dispatch retry" \
@@ -695,7 +695,7 @@ jobs:
   # up to date instead of opening a new issue per failure.
   alert-on-failure:
     needs: [fan-out-scheduled-sweep, route-comments]
-    if: ${{ always() && contains(needs.*.result, 'failure') }}
+    if: ${{ always() && contains(needs.*.result, 'failure') && !(github.event_name == 'workflow_dispatch' && inputs.lifecycle_only && !inputs.execute) }}
     # Issue comment only. No ClawRouter call, so this does not take the ARC replica.
     runs-on: ubuntu-latest
     timeout-minutes: 5

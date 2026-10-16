@@ -26,8 +26,11 @@ test("classifier preflight is isolated from all router mutations", () => {
         " && format('repair-classifier-preflight-{0}', github.ref) || format('repair-comment-router-{0}',",
     ),
   );
-  assert.ok(
-    router.includes("    if: ${{ github.event_name != 'schedule' && !(" + condition + ") }}"),
+  assert.ok(router.includes("    if: ${{ github.event_name != 'schedule' }}"));
+  assert.equal(router.includes("!(" + condition + ")"), false);
+  assert.match(
+    router,
+    /Commit comment router ledger\n {8}if: always\(\) && steps\.app_token\.outcome == 'success' && \(github\.event_name != 'workflow_dispatch' \|\| inputs\.execute\)/,
   );
   assert.match(preflight, /    permissions:\n      contents: read\n    steps:/);
   assert.match(
@@ -64,43 +67,44 @@ test("classifier preflight is isolated from all router mutations", () => {
   assert.doesNotMatch(workflow, /github\.event_path/);
 });
 
-test("classifier probe stays on ARC and the long router jobs use ubuntu-latest", () => {
-  const preflight = workflow
-    .split("\n  classifier-preflight:\n")[1]
-    ?.split(/\n  [a-z][a-z-]+:\n/)[0];
-  assert.ok(preflight);
-  assert.match(preflight, /\n    runs-on: lue-clawsweeper-arc\n/);
-  assert.doesNotMatch(
-    preflight,
-    /runs-on:.*(?:ubuntu-latest|mac-mini|inputs\.(?:runner|execution_runner))/,
-  );
-  assert.ok(preflight.includes("native_gh=/usr/local/bin/gh-native"));
-  for (const job of ["fan-out-scheduled-sweep", "route-comments"]) {
+test("classifier preflight and route-comments use the mac-mini labels", () => {
+  const mini = "\n    runs-on: [self-hosted, macOS, ARM64, mac-mini]\n";
+  assert.doesNotMatch(workflow, /lue-clawsweeper-arc/);
+  for (const job of ["classifier-preflight", "route-comments"]) {
     const block = workflow.split(`\n  ${job}:\n`)[1]?.split(/\n  [a-z][a-z-]+:\n/)[0];
     assert.ok(block);
-    assert.match(block, /\n    runs-on: ubuntu-latest\n/);
-    assert.doesNotMatch(
-      block,
-      /runs-on:.*(?:lue-clawsweeper-arc|mac-mini|inputs\.(?:runner|execution_runner))/,
-    );
-    assert.equal(block.includes("gh-native"), false);
+    assert.ok(block.includes(mini));
+    assert.doesNotMatch(block, /runs-on:.*(?:ubuntu-latest|inputs\.(?:runner|execution_runner))/);
+    assert.ok(block.includes("native_gh=/usr/local/bin/gh-native"));
     assert.equal(block.includes("ghx"), false);
-    assert.ok(block.includes("native_gh=$(command -v gh)"));
   }
+  const fanOut = workflow
+    .split("\n  fan-out-scheduled-sweep:\n")[1]
+    ?.split(/\n  [a-z][a-z-]+:\n/)[0];
+  assert.ok(fanOut);
+  assert.match(fanOut, /\n    runs-on: ubuntu-latest\n/);
+  assert.equal(fanOut.includes("gh-native"), false);
+  assert.equal(fanOut.includes("ghx"), false);
+  assert.ok(fanOut.includes("native_gh=$(command -v gh)"));
   const alert = workflow.split("\n  alert-on-failure:\n")[1]?.split(/\n  [a-z][a-z-]+:\n/)[0];
   assert.ok(alert);
   assert.match(alert, /\n    runs-on: ubuntu-latest\n/);
+  assert.match(
+    alert,
+    /!\(github\.event_name == 'workflow_dispatch' && inputs\.lifecycle_only && !inputs\.execute\)/,
+  );
   assert.equal(alert.includes("gh-native"), false);
   assert.equal(alert.includes("CLAWROUTER"), false);
 });
 
-test("ARC probe and self-hosted repair jobs select native gh and fail closed if absent", () => {
+test("mac-mini router jobs and self-hosted repair jobs select native gh and fail closed if absent", () => {
   const worker = readFileSync(
     new URL("../../.github/workflows/repair-cluster-worker.yml", import.meta.url),
     "utf8",
   );
   for (const [job, source] of [
     ["classifier-preflight", workflow],
+    ["route-comments", workflow],
     ["cluster", worker],
     ["execute", worker],
   ]) {
