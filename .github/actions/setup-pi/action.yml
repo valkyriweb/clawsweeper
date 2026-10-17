@@ -267,12 +267,12 @@ runs:
           out="$(mktemp)"
           err="$(mktemp)"
           started=$SECONDS
-          printf 'Reply with exactly: ok\n' | timeout -k 5 30 pi -p --mode json --no-session --model "clawrouter/$model" -t read >"$out" 2>"$err"
+          printf 'Reply with exactly: ok\n' | timeout -k 5 30 pi -p --mode json --no-session --model "clawrouter/$model" -t read,glob,grep,agent,Agent >"$out" 2>"$err"
           status=$?
           echo "smoke pi $model: status=$status s=$((SECONDS - started))"
           echo "smoke pi $model stdout: $(redact < "$out")"
           echo "smoke pi $model stderr: $(redact < "$err")"
-          echo "smoke pi $model error: $(grep -oE '"errorMessage":"[^"]*"' "$out" | head -1 | redact)"
+          echo "smoke pi $model error: $(node -e 'for (const line of require("fs").readFileSync(process.argv[1], "utf8").split("\n")) { try { const m = JSON.parse(line).message; if (m?.errorMessage) { console.log(m.errorMessage); break; } } catch {} }' "$out" | redact)"
           rm -f "$out" "$err"
         done
         exit 0
