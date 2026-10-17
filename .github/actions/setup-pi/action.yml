@@ -9,7 +9,7 @@ inputs:
     default: "@valkyriweb/my-pi-actions"
   profile-version:
     description: Pi profile package version. Empty installs the latest published package.
-    default: "0.6.18"
+    default: "0.7.5"
   token:
     description: >-
       GitHub Packages token with read:packages. Must be a PAT (or other user
@@ -88,6 +88,26 @@ runs:
           .filter((entry) => !fs.existsSync(entry));
         if (missing.length > 0) {
           console.error(`Pi profile has missing extension entries: ${missing.join(", ")}`);
+          process.exit(1);
+        }
+        // A bundled member's deps must resolve from the installed tree, or Pi
+        // fails at extension load and the review step swallows it.
+        const resolves = (fromDir, name) => {
+          for (let dir = fromDir; ; dir = path.dirname(dir)) {
+            if (fs.existsSync(path.join(dir, "node_modules", name, "package.json"))) return true;
+            if (dir === path.dirname(dir)) return false;
+          }
+        };
+        const unresolved = [];
+        for (const member of manifest.bundledDependencies ?? manifest.bundleDependencies ?? []) {
+          const memberDir = path.join(profileRoot, "node_modules", member);
+          const memberManifest = JSON.parse(fs.readFileSync(path.join(memberDir, "package.json"), "utf8"));
+          for (const dep of Object.keys(memberManifest.dependencies ?? {})) {
+            if (!resolves(memberDir, dep)) unresolved.push(`${member} -> ${dep}`);
+          }
+        }
+        if (unresolved.length > 0) {
+          console.error(`::error::Pi profile has unresolved bundled dependencies: ${unresolved.join(", ")}`);
           process.exit(1);
         }
         const settings = fs.existsSync(settingsPath) ? JSON.parse(fs.readFileSync(settingsPath, "utf8")) : {};
