@@ -90,7 +90,8 @@ runs:
         permission-contents: read
         permission-issues: write
         permission-pull-requests: write
-        permission-checks: ${{ steps.resolve.outputs.lifecycle_evidence_read == 'true' && 'read' || '' }}
+        # PR command lookups read statusCheckRollup. The Bermont App has no checks permission.
+        permission-checks: read
         permission-actions: ${{ steps.resolve.outputs.lifecycle_evidence_read == 'true' && 'read' || '' }}
 
     - name: Create Valkyriweb mutate token
