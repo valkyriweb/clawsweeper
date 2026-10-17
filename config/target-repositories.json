@@ -418,6 +418,21 @@
           "not_actionable_in_repo"
         ]
       }
+    },
+    {
+      "target_repo": "Detoil/centaur",
+      "display_name": "Centaur (Detoil agent-run companies app)",
+      "checkout_dir": "centaur",
+      "github_app_credential_route": "valkyriweb",
+      "automation_policy": "review_only",
+      "issue_close_dry_run": true,
+      "include_maintainer_authored": true,
+      "skip_comment_router_schedule": true,
+      "prompt_note": "Centaur is Detoil's self-hosted app for agent-run companies (boards, goals, agent hierarchy, decisions, routines, chat-first UX, durable agent runtime), deployed to lue-kube via Alchemy. This is a client work repo owned by the Detoil org: review only, never close, merge, or push. Read `GLOSSARY.md`, `docs/architecture.md`, and `docs/adr/` (`docs/adr/README.md` says which ADRs bind) before judging design. Stack (ADR-0001): TypeScript 7 strict ESM pnpm workspace, Biome, Effect 4 as the application spine — flag Promise-first code in domain or service modules, non-v4 Effect idioms, services without both `layer` and `testLayer`, and tests that sleep instead of using `TestClock`. Model/provider ids must be configuration, never literals; secrets (BYOK keys, connector logins) must be encrypted at rest and never reach a model prompt; every run emits cost events. Infrastructure changes go only through `alchemy.run.ts`, never hand-applied manifests. Service areas: `area:core` (packages/core domain schemas, errors, service interfaces), `area:db` (packages/db migrations, repositories), `area:gateway` (packages/gateway model gateway, budgets, cost events), `area:runtime` (packages/runtime cluster entities, workflows, tool execution), `area:tools` (packages/tools built-in tools, widgets, connectors), `area:server` (apps/server HttpApi, realtime), `area:web` (apps/web React UI), `area:deploy` (deploy/, alchemy.run.ts), `area:docs` (docs/, ADRs, spec). Use at most two area tags; `area:cross-cutting` when it spans many. Validation: `pnpm typecheck && pnpm test && pnpm lint`.",
+      "apply_close_rules": {
+        "issue": [],
+        "pull_request": []
+      }
     }
   ]
 }

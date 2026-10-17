@@ -413,7 +413,8 @@ test("comment-router schedule skip flag isolates openclaw-claude without droppin
   const config = JSON.parse(fs.readFileSync("config/target-repositories.json", "utf8"));
   const repos = config.repositories.map((entry) => entry.target_repo);
   assert.ok(repos.includes("valkyriweb/openclaw-claude"));
-  assert.equal(repos.length, 13);
+  assert.ok(repos.includes("Detoil/centaur"));
+  assert.equal(repos.length, 14);
 
   const scheduled = config.repositories
     .filter((entry) => entry.target_repo !== "leo-labs-ai/paperclip")
@@ -422,6 +423,7 @@ test("comment-router schedule skip flag isolates openclaw-claude without droppin
   assert.equal(scheduled.length, 11);
   assert.ok(!scheduled.includes("valkyriweb/openclaw-claude"));
   assert.ok(!scheduled.includes("leo-labs-ai/paperclip"));
+  assert.ok(!scheduled.includes("Detoil/centaur"));
   for (const keep of [
     "bermont-digital/sale-sight-plugin",
     "bermont-digital/smilerite",
