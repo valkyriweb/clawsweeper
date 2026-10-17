@@ -77,6 +77,19 @@ runs:
           echo "::error::Pi profile package not found after install: $profile_root" >&2
           exit 1
         fi
+        # npm leaves a bundling profile's own registry deps uninstalled, so its
+        # bundled members cannot load. Install them into the global root, which
+        # Node reaches when it walks up from the members.
+        profile_deps=()
+        while IFS= read -r dep; do profile_deps+=("$dep"); done < <(node -e '
+          const m = require(process.argv[1]);
+          const bundled = new Set(m.bundledDependencies ?? m.bundleDependencies ?? []);
+          for (const [name, range] of Object.entries(m.dependencies ?? {})) {
+            if (!bundled.has(name)) console.log(`${name}@${range}`);
+          }' "$profile_root/package.json")
+        if [ "${#profile_deps[@]}" -gt 0 ]; then
+          npm install -g --ignore-scripts "${profile_deps[@]}"
+        fi
         mkdir -p "$HOME/.pi/agent"
         node - "$HOME/.pi/agent/settings.json" "$profile_root" "$host_package" <<'NODE'
         const fs = require("node:fs");
