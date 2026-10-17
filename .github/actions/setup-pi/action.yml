@@ -80,13 +80,16 @@ runs:
         # npm leaves a bundling profile's own registry deps uninstalled, so its
         # bundled members cannot load. Install them into the global root, which
         # Node reaches when it walks up from the members.
-        profile_deps=()
-        while IFS= read -r dep; do profile_deps+=("$dep"); done < <(node -e '
+        deps_list="$(node -e '
           const m = require(process.argv[1]);
           const bundled = new Set(m.bundledDependencies ?? m.bundleDependencies ?? []);
           for (const [name, range] of Object.entries(m.dependencies ?? {})) {
             if (!bundled.has(name)) console.log(`${name}@${range}`);
-          }' "$profile_root/package.json")
+          }' "$profile_root/package.json")"
+        profile_deps=()
+        while IFS= read -r dep; do
+          if [ -n "$dep" ]; then profile_deps+=("$dep"); fi
+        done <<< "$deps_list"
         if [ "${#profile_deps[@]}" -gt 0 ]; then
           npm install -g --ignore-scripts "${profile_deps[@]}"
         fi
