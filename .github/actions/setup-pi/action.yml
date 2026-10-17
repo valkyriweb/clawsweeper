@@ -9,7 +9,7 @@ inputs:
     default: "@valkyriweb/my-pi-actions"
   profile-version:
     description: Pi profile package version. Empty installs the latest published package.
-    default: "0.6.18"
+    default: "0.6.38"
   token:
     description: >-
       GitHub Packages token with read:packages. Must be a PAT (or other user
@@ -53,7 +53,8 @@ runs:
           printf '%s\n' '//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}' >> "$npmrc"
         fi
         export NPM_CONFIG_USERCONFIG="$npmrc"
-        pi_package="@valkyriweb/pi-coding-agent"
+        host_package="@valkyriweb/pi-coding-agent"
+        pi_package="$host_package"
         profile_package="$PI_PROFILE_PACKAGE"
         if [ -n "$PI_VERSION" ]; then
           pi_package="$pi_package@$PI_VERSION"
@@ -77,10 +78,10 @@ runs:
           exit 1
         fi
         mkdir -p "$HOME/.pi/agent"
-        node - "$HOME/.pi/agent/settings.json" "$profile_root" <<'NODE'
+        node - "$HOME/.pi/agent/settings.json" "$profile_root" "$host_package" <<'NODE'
         const fs = require("node:fs");
         const path = require("node:path");
-        const [settingsPath, profileRoot] = process.argv.slice(2);
+        const [settingsPath, profileRoot, hostPackage] = process.argv.slice(2);
         const manifestPath = path.join(profileRoot, "package.json");
         const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
         const missing = (manifest.pi?.extensions ?? [])
@@ -88,6 +89,41 @@ runs:
           .filter((entry) => !fs.existsSync(entry));
         if (missing.length > 0) {
           console.error(`Pi profile has missing extension entries: ${missing.join(", ")}`);
+          process.exit(1);
+        }
+        // Profiles peer on the host Pi packages, which the host aliases for its
+        // extensions. A profile built for another host scope cannot load here.
+        const hostPeers = new Set(Object.keys(manifest.peerDependencies ?? {}));
+        if (!hostPeers.has(hostPackage)) {
+          console.error(`::error::Pi profile peers on ${[...hostPeers].join(", ") || "nothing"}, not the installed host ${hostPackage}`);
+          process.exit(1);
+        }
+        // A bundled member's deps must resolve from the installed tree, or Pi
+        // fails at extension load and the review step swallows it.
+        const resolves = (fromDir, name) => {
+          for (let dir = fromDir; ; dir = path.dirname(dir)) {
+            if (fs.existsSync(path.join(dir, "node_modules", name, "package.json"))) return true;
+            if (dir === path.dirname(dir)) return false;
+          }
+        };
+        const unresolved = [];
+        for (const member of manifest.bundledDependencies ?? manifest.bundleDependencies ?? []) {
+          const memberDir = path.join(profileRoot, "node_modules", member);
+          const memberManifestPath = path.join(memberDir, "package.json");
+          if (!fs.existsSync(memberManifestPath)) {
+            unresolved.push(`${member} (not installed)`);
+            continue;
+          }
+          const memberManifest = JSON.parse(fs.readFileSync(memberManifestPath, "utf8"));
+          const requiredPeers = Object.keys(memberManifest.peerDependencies ?? {}).filter(
+            (dep) => !hostPeers.has(dep) && memberManifest.peerDependenciesMeta?.[dep]?.optional !== true,
+          );
+          for (const dep of [...Object.keys(memberManifest.dependencies ?? {}), ...requiredPeers]) {
+            if (!resolves(memberDir, dep)) unresolved.push(`${member} -> ${dep}`);
+          }
+        }
+        if (unresolved.length > 0) {
+          console.error(`::error::Pi profile has unresolved bundled dependencies: ${unresolved.join(", ")}`);
           process.exit(1);
         }
         const settings = fs.existsSync(settingsPath) ? JSON.parse(fs.readFileSync(settingsPath, "utf8")) : {};
