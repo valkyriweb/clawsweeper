@@ -199,10 +199,11 @@ runs:
         };
         fs.writeFileSync(modelsPath, `${JSON.stringify(config, null, 2)}\n`);
         NODE
-        # Listing is local and hides providers without a key, so a placeholder
-        # stands in; the real key exists only in the review step env.
-        listing="$(CLAWROUTER_API_KEY=setup-check pi --list-models clawrouter 2>&1 || true)"
-        if [[ "$listing" == *"errors loading models.json"* || "$listing" != *"claude-opus-5-200k"* ]]; then
+        # The listing hides providers without a key, so a placeholder stands in;
+        # the real key exists only in the review step env. PI_OFFLINE skips the
+        # pi.dev catalog fetch.
+        listing="$(PI_OFFLINE=1 CLAWROUTER_API_KEY=setup-check pi --list-models clawrouter 2>&1 || true)"
+        if [[ "$listing" == *"errors loading models.json"* ]] || ! grep -qE '^clawrouter +claude-opus-5-200k( |$)' <<< "$listing"; then
           echo "$listing" >&2
           echo "::error::Pi does not list clawrouter/claude-opus-5-200k after writing $HOME/.pi/agent/models.json" >&2
           exit 1
