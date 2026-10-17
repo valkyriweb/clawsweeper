@@ -8,7 +8,7 @@ inputs:
     description: "Required target access mode: read, comment, or mutate."
     required: true
   lifecycle-evidence-read:
-    description: "Opt in to checks/actions reads only for targets with pi_review_lifecycle enabled."
+    description: "Opt in to checks/actions reads only for targets with pi_review_lifecycle enabled. Valkyriweb comment tokens always carry both."
     required: false
     default: "false"
   working-directory:

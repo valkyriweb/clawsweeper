@@ -194,10 +194,7 @@ test("lifecycle opt-in is wired through CLI and all static token branches", () =
   const action = fs.readFileSync(".github/actions/create-target-token/action.yml", "utf8");
   assert.match(action, /lifecycle-evidence-read:[\s\S]*?default: "false"/);
   assert.match(action, /--lifecycle-evidence-read "\$LIFECYCLE_EVIDENCE_READ"/);
-  for (const [permission, count] of [
-    ["checks", 5],
-    ["actions", 5],
-  ] as const) {
+  for (const [permission, count] of [["checks", 5], ["actions", 5]] as const) {
     assert.equal(
       action.split(
         `permission-${permission}: \u0024{{ steps.resolve.outputs.lifecycle_evidence_read == 'true' && 'read' || '' }}`,
@@ -205,8 +202,8 @@ test("lifecycle opt-in is wired through CLI and all static token branches", () =
       count,
     );
   }
-  const tokenStep = (id: string) =>
-    action.split(`id: ${id}\n`)[1]?.split("\n    - name:")[0] ?? "";
+  const tokenStep = (id: string) => action.split(`id: ${id}\n`)[1]?.split("\n    - name:")[0] ?? "";
+  assert.match(tokenStep("bermont-digital-comment"), /^\s+permission-contents: read$/m);
   assert.match(tokenStep("valkyriweb-comment"), /^\s+permission-checks: read$/m);
   assert.match(tokenStep("valkyriweb-comment"), /^\s+permission-actions: read$/m);
   assert.doesNotMatch(tokenStep("bermont-digital-comment"), /^\s+permission-checks: read$/m);
