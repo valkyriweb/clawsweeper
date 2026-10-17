@@ -4596,13 +4596,16 @@ test("commit finding intake reads reports from the state repo checkout", () => {
 
 test("sweep target mutation requests use the routed facade", () => {
   const workflow = readWorkflowFixture("sweep.yml");
-  const targetWriteTokenBlocks = workflow
-    .split("access-mode: mutate")
-    .slice(1)
-    .map((block) => block.split("\n      - ")[0]);
-
-  assert.equal(targetWriteTokenBlocks.length, 1);
+  assert.doesNotMatch(workflow, /access-mode: mutate$/m);
   assert.match(workflow, /uses: \.\/\.github\/actions\/create-target-token/);
+  const eventJob = workflow.split("\n  event-review-apply:\n")[1]?.split("\n  plan:\n")[0] ?? "";
+  const eventToken = eventJob.split("id: target-write-token\n")[1]?.split("\n      - ")[0] ?? "";
+  assert.match(
+    eventToken,
+    /access-mode: \$\{\{ steps\.target-read-token\.outputs\.automation-policy == 'review_only' && 'comment' \|\| 'mutate' \}\}/,
+  );
+  const completion = eventJob.split("- name: Mark re-review complete\n")[1]?.split("\n      - ")[0];
+  assert.match(completion ?? "", /GH_TOKEN: \$\{\{ steps\.target-write-token\.outputs\.token \}\}/);
   assert.match(workflow, /target_automation_policy == 'review_only' && 'comment' \|\| 'mutate'/);
   assert.match(workflow, /apply_sync_comments_only == 'true' && 'comment' \|\| 'mutate'/);
 });
