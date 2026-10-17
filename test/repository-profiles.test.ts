@@ -22,9 +22,19 @@ test("automation policies are explicit and fail closed for protected targets", (
   assert.equal(saleSight.githubAppCredentialRoute, "bermont-digital");
   assert.equal(smilerite.githubAppCredentialRoute, "bermont-digital");
   const centaur = repositoryProfileFor("Detoil/centaur");
+  assert.equal(repositoryProfileFor("detoil/centaur").targetRepo, centaur.targetRepo);
   assert.equal(centaur.automationPolicy, "review_only");
   assert.equal(centaur.githubAppCredentialRoute, "valkyriweb");
-  assert.match(automationPolicyBlockReason(centaur.targetRepo, "merge") ?? "", /review_only/);
+  for (const capability of [
+    "repair",
+    "branch_push",
+    "pull_request",
+    "merge",
+    "close",
+    "label",
+  ] as const) {
+    assert.match(automationPolicyBlockReason(centaur.targetRepo, capability) ?? "", /review_only/);
+  }
   assert.equal(repositoryProfileFor("valkyriweb/clawsweeper").automationPolicy, "full");
   assert.equal(
     repositoryProfileFor("valkyriweb/clawsweeper").githubAppCredentialRoute,
