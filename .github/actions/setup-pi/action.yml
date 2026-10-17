@@ -194,6 +194,19 @@ runs:
                 compat: { forceAdaptiveThinking: true, supportsToolReferences: false },
                 input: ["text", "image"],
               },
+              {
+                // GPT models use the Responses wire with a bearer key, as setup-codex does.
+                id: "gpt-6-luna-200k",
+                name: "GPT-6 Luna 200k (ClawRouter)",
+                api: "openai-responses",
+                baseUrl: `${baseUrl}/v1`,
+                contextWindow: 200000,
+                maxTokens: 128000,
+                reasoning: true,
+                thinkingLevelMap: { minimal: "low", low: "low", medium: "medium", high: "high", xhigh: "xhigh" },
+                compat: { supportsStore: false },
+                input: ["text", "image"],
+              },
             ],
           },
         };
@@ -203,9 +216,9 @@ runs:
         # the real key exists only in the review step env. PI_OFFLINE skips the
         # pi.dev catalog fetch.
         listing="$(PI_OFFLINE=1 CLAWROUTER_API_KEY=setup-check pi --list-models clawrouter 2>&1 || true)"
-        if [[ "$listing" == *"errors loading models.json"* ]] || ! grep -qE '^clawrouter +claude-opus-5-200k( |$)' <<< "$listing"; then
+        if [[ "$listing" == *"errors loading models.json"* ]] || ! grep -qE '^clawrouter +claude-opus-5-200k( |$)' <<< "$listing" || ! grep -qE '^clawrouter +gpt-6-luna-200k( |$)' <<< "$listing"; then
           echo "$listing" >&2
-          echo "::error::Pi does not list clawrouter/claude-opus-5-200k after writing $HOME/.pi/agent/models.json" >&2
+          echo "::error::Pi does not list clawrouter/claude-opus-5-200k and clawrouter/gpt-6-luna-200k after writing $HOME/.pi/agent/models.json" >&2
           exit 1
         fi
 
@@ -249,16 +262,19 @@ runs:
           }
         }
         NODE
-        out="$(mktemp)"
-        err="$(mktemp)"
-        started=$SECONDS
-        printf 'Reply with exactly: ok\n' | timeout -k 5 30 pi -p --mode json --no-session --model clawrouter/claude-opus-5-200k -t read >"$out" 2>"$err"
-        status=$?
         redact() { node -e 'const k=process.env.CLAWROUTER_API_KEY; let s=require("fs").readFileSync(0,"utf8"); console.log(s.split(k).join("[redacted]").replace(/\s+/g," ").slice(0,400));'; }
-        echo "smoke pi: status=$status s=$((SECONDS - started))"
-        echo "smoke pi stdout: $(redact < "$out")"
-        echo "smoke pi stderr: $(redact < "$err")"
-        rm -f "$out" "$err"
+        for model in claude-opus-5-200k gpt-6-luna-200k; do
+          out="$(mktemp)"
+          err="$(mktemp)"
+          started=$SECONDS
+          printf 'Reply with exactly: ok\n' | timeout -k 5 30 pi -p --mode json --no-session --model "clawrouter/$model" -t read,glob,grep,agent,Agent >"$out" 2>"$err"
+          status=$?
+          echo "smoke pi $model: status=$status s=$((SECONDS - started))"
+          echo "smoke pi $model stdout: $(redact < "$out")"
+          echo "smoke pi $model stderr: $(redact < "$err")"
+          echo "smoke pi $model error: $(node -e 'for (const line of require("fs").readFileSync(process.argv[1], "utf8").split("\n")) { try { const m = JSON.parse(line).message; if (m?.errorMessage) { console.log(m.errorMessage); break; } } catch {} }' "$out" | redact)"
+          rm -f "$out" "$err"
+        done
         exit 0
 
     - name: Verify Pi profile config
