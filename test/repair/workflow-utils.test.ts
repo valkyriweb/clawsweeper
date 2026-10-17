@@ -377,7 +377,7 @@ test("comment router mints target tokens through the routed facade", () => {
   assert.equal(fanout.match(/uses: actions\/checkout@v5/g)?.length, 1);
   assert.equal(fanout.match(/uses: \.\/\.github\/actions\/setup-pnpm/g)?.length, 1);
   assert.equal(fanout.match(/uses: \.\/\.github\/actions\/setup-state/g)?.length, 1);
-  assert.equal(fanout.match(/uses: \.\/\.github\/actions\/route-scheduled-target/g)?.length, 11);
+  assert.equal(fanout.match(/uses: \.\/\.github\/actions\/route-scheduled-target/g)?.length, 12);
   assert.equal(fanout.match(/gh workflow run/g)?.length, 1);
   assert.match(fanout, /target_repo=valkyriweb\/openclaw-claude/);
   assert.match(fanout, /lifecycle_only=true/);
@@ -395,7 +395,7 @@ test("comment router mints target tokens through the routed facade", () => {
       entry.target_repo !== "leo-labs-ai/paperclip" &&
       (entry.skip_comment_router_schedule !== true || entry.pi_review_lifecycle === true),
   );
-  assert.equal(scheduled.length, 12);
+  assert.equal(scheduled.length, 13);
   for (const entry of scheduled) {
     if (entry.pi_review_lifecycle === true) {
       assert.equal(entry.target_repo, "valkyriweb/openclaw-claude");
@@ -420,10 +420,9 @@ test("comment-router schedule skip flag isolates openclaw-claude without droppin
     .filter((entry) => entry.target_repo !== "leo-labs-ai/paperclip")
     .filter((entry) => entry.skip_comment_router_schedule !== true)
     .map((entry) => entry.target_repo);
-  assert.equal(scheduled.length, 11);
+  assert.equal(scheduled.length, 12);
   assert.ok(!scheduled.includes("valkyriweb/openclaw-claude"));
   assert.ok(!scheduled.includes("leo-labs-ai/paperclip"));
-  assert.ok(!scheduled.includes("Detoil/centaur"));
   for (const keep of [
     "bermont-digital/sale-sight-plugin",
     "bermont-digital/smilerite",
@@ -436,6 +435,7 @@ test("comment-router schedule skip flag isolates openclaw-claude without droppin
     "valkyriweb/clawsweeper",
     "valkyriweb/openclaw",
     "valkyriweb/lue-kube",
+    "Detoil/centaur",
   ]) {
     assert.ok(scheduled.includes(keep), keep);
   }
@@ -448,7 +448,7 @@ test("native Pi target receives lifecycle-only recovery, not generic schedule sc
       entry.target_repo !== "leo-labs-ai/paperclip" &&
       (entry.skip_comment_router_schedule !== true || entry.pi_review_lifecycle === true),
   );
-  assert.equal(scheduled.length, 12);
+  assert.equal(scheduled.length, 13);
   const native = scheduled.filter((entry) => entry.pi_review_lifecycle === true);
   assert.deepEqual(
     native.map((entry) => entry.target_repo),

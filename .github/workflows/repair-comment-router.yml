@@ -375,6 +375,20 @@ jobs:
           dispatch-token: ${{ github.token }}
           allow-merge: ${{ vars.CLAWSWEEPER_ALLOW_MERGE || '0' }}
 
+      - name: Route Detoil/centaur
+        if: ${{ !cancelled() && steps.targets.outcome == 'success' && contains(steps.targets.outputs.repos, ',Detoil/centaur,') }}
+        uses: ./.github/actions/route-scheduled-target
+        with:
+          target-repo: Detoil/centaur
+          lifecycle-only: "false"
+          valkyriweb-client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
+          valkyriweb-private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
+          bermont-digital-client-id: ${{ vars.BERMONT_DIGITAL_CLAWSWEEPER_APP_CLIENT_ID }}
+          bermont-digital-private-key: ${{ secrets.BERMONT_DIGITAL_CLAWSWEEPER_APP_PRIVATE_KEY }}
+          clawrouter-api-key: ${{ secrets.CLAWROUTER_API_KEY }}
+          dispatch-token: ${{ github.token }}
+          allow-merge: ${{ vars.CLAWSWEEPER_ALLOW_MERGE || '0' }}
+
       - name: Dispatch valkyriweb/openclaw-claude to the mac-mini
         if: ${{ !cancelled() && steps.targets.outcome == 'success' && contains(steps.targets.outputs.repos, ',valkyriweb/openclaw-claude,') }}
         env:
