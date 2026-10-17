@@ -67,6 +67,7 @@ import {
   type Args,
 } from "./clawsweeper-args.js";
 import { escapeRegExp, safeOutputTail, trimMiddle, truncateText } from "./clawsweeper-text.js";
+import { redactSecrets } from "./repair/collect-codex-debug.js";
 import {
   appendUsageEventJsonl,
   buildUsageTelemetryEvent,
@@ -9375,6 +9376,11 @@ function reviewCommand(args: Args): void {
       } else {
         codexFailures += 1;
       }
+      // The provider stderr tail lives only in errorMessage; ephemeral runners
+      // keep no other copy.
+      console.error(
+        `[review] ${new Date().toISOString()} shard=${shardIndex}/${shardCount} review-failed #${item.number} provider=${reviewProvider} detail=${JSON.stringify(redactSecrets(safeOutputTail(errorMessage, 4000)))}`,
+      );
       const providerLabelForStdout = reviewProviderLabel(reviewProvider);
       decision = codexFailureDecision(
         reviewProvider,

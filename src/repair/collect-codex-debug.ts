@@ -99,9 +99,12 @@ export function redactSecrets(text: string) {
     .replace(/\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}\b/g, "[REDACTED_OPENAI_KEY]")
     .replace(/\bgithub_pat_[A-Za-z0-9_]{20,}\b/g, "[REDACTED_GITHUB_TOKEN]")
     .replace(/\bgh[pousr]_[A-Za-z0-9_]{20,}\b/g, "[REDACTED_GITHUB_TOKEN]")
-    .replace(/\b(OPENAI_API_KEY|CODEX_API_KEY|GH_TOKEN|GITHUB_TOKEN)=([^\s"']+)/g, "$1=[REDACTED]")
     .replace(
-      /"((?:OPENAI_API_KEY|CODEX_API_KEY|GH_TOKEN|GITHUB_TOKEN))"\s*:\s*"[^"]*"/g,
+      /\b(OPENAI_API_KEY|CODEX_API_KEY|CLAWROUTER_API_KEY|GH_TOKEN|GITHUB_TOKEN)=([^\s"']+)/g,
+      "$1=[REDACTED]",
+    )
+    .replace(
+      /"((?:OPENAI_API_KEY|CODEX_API_KEY|CLAWROUTER_API_KEY|GH_TOKEN|GITHUB_TOKEN))"\s*:\s*"[^"]*"/g,
       '"$1":"[REDACTED]"',
     );
 }
