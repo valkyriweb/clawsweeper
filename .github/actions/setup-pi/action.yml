@@ -209,6 +209,58 @@ runs:
           exit 1
         fi
 
+    # Diagnostic only: never fails the job. Separates a key, network or model
+    # hang from a Pi hang, logging just status and the first redacted bytes.
+    - name: Smoke ClawRouter and Pi
+      shell: bash
+      env:
+        CLAWROUTER_BASE_URL: ${{ inputs.clawrouter-base-url }}
+      run: |
+        set +e -o pipefail
+        if [ -z "${CLAWROUTER_API_KEY:-}" ]; then
+          echo "smoke skipped: CLAWROUTER_API_KEY is not set for setup-pi"
+          exit 0
+        fi
+        node - "${CLAWROUTER_BASE_URL%/}" <<'NODE'
+        const [baseUrl] = process.argv.slice(2);
+        const key = process.env.CLAWROUTER_API_KEY;
+        const redact = (text) => text.split(key).join("[redacted]").replace(/\s+/g, " ").slice(0, 120);
+        const request = { model: "claude-opus-5-200k", max_tokens: 16, messages: [{ role: "user", content: "Reply with exactly: ok" }] };
+        // The last probe matches Pi's request shape: streaming with adaptive thinking.
+        const probes = [
+          ["x-api-key", { "x-api-key": key }, request],
+          ["bearer", { authorization: `Bearer ${key}` }, request],
+          ["x-api-key stream+thinking", { "x-api-key": key }, { ...request, max_tokens: 1024, stream: true, thinking: { type: "adaptive" } }],
+        ];
+        for (const [label, auth, body] of probes) {
+          const started = Date.now();
+          try {
+            const res = await fetch(`${baseUrl}/messages`, {
+              method: "POST",
+              headers: { "content-type": "application/json", "anthropic-version": "2023-06-01", ...auth },
+              body: JSON.stringify(body),
+              signal: AbortSignal.timeout(30_000),
+            });
+            console.log(`smoke messages ${label}: headers status=${res.status} ms=${Date.now() - started}`);
+            const text = await res.text();
+            console.log(`smoke messages ${label}: status=${res.status} ms=${Date.now() - started} body=${redact(text)}`);
+          } catch (error) {
+            console.log(`smoke messages ${label}: error=${redact(String(error?.cause ?? error))} ms=${Date.now() - started}`);
+          }
+        }
+        NODE
+        out="$(mktemp)"
+        err="$(mktemp)"
+        started=$SECONDS
+        printf 'Reply with exactly: ok\n' | timeout -k 5 30 pi -p --mode json --no-session --model clawrouter/claude-opus-5-200k -t read >"$out" 2>"$err"
+        status=$?
+        redact() { node -e 'const k=process.env.CLAWROUTER_API_KEY; let s=require("fs").readFileSync(0,"utf8"); console.log(s.split(k).join("[redacted]").replace(/\s+/g," ").slice(0,400));'; }
+        echo "smoke pi: status=$status s=$((SECONDS - started))"
+        echo "smoke pi stdout: $(redact < "$out")"
+        echo "smoke pi stderr: $(redact < "$err")"
+        rm -f "$out" "$err"
+        exit 0
+
     - name: Verify Pi profile config
       shell: bash
       run: |
