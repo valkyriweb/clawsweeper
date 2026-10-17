@@ -67,6 +67,7 @@ import {
   type Args,
 } from "./clawsweeper-args.js";
 import { escapeRegExp, safeOutputTail, trimMiddle, truncateText } from "./clawsweeper-text.js";
+import { redactSecrets } from "./repair/collect-codex-debug.js";
 import {
   appendUsageEventJsonl,
   buildUsageTelemetryEvent,
@@ -5594,6 +5595,14 @@ export function runPi(options: RunPiOptions): Decision {
     // Best-effort.
   }
 
+  if (result.error || result.status !== 0) {
+    // Ephemeral runners keep no other copy of Pi's diagnostics. The log is
+    // public, so emit only a short stderr head; stdout can hold target content.
+    console.error(
+      `[review] ${new Date().toISOString()} pi-failed #${item.number} status=${result.status ?? "unknown"} stderr=${JSON.stringify(piStderrHead(stderr))}`,
+    );
+  }
+
   if (result.error) {
     const timedOut = (result.error as NodeJS.ErrnoException).code === "ETIMEDOUT";
     emitUsage(timedOut ? "timeout" : "failed", elapsedMs);
@@ -5641,6 +5650,11 @@ export function runPi(options: RunPiOptions): Decision {
       })`,
     );
   }
+}
+
+// Redact before slicing so a cut cannot leave an unmatched token fragment.
+export function piStderrHead(stderr: string, maxLength = 300): string {
+  return redactSecrets(stderr.trim()).slice(0, maxLength);
 }
 
 // Extract the JSON object Pi emitted. Pi's `--mode json` outputs one JSON

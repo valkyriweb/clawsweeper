@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { extractPiJsonPayload } from "../dist/clawsweeper.js";
+import { extractPiJsonPayload, piStderrHead } from "../dist/clawsweeper.js";
 
 function messageEnd(text: string): string {
   return JSON.stringify({
@@ -84,4 +84,11 @@ test("ignores later non-assistant JSONL events", () => {
   ].join("\n");
 
   assert.throws(() => extractPiJsonPayload(stdout), /pi provider returned non-JSON payload/u);
+});
+
+test("piStderrHead redacts before truncating and caps the length", () => {
+  const token = `ghs_${"a".repeat(36)}`;
+  assert.equal(piStderrHead(`  auth failed ${token}\n`, 20), "auth failed [REDACTE");
+  assert.equal(piStderrHead("x".repeat(500)).length, 300);
+  assert.equal(piStderrHead(""), "");
 });
