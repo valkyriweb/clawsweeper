@@ -5641,8 +5641,10 @@ export function runPi(options: RunPiOptions): Decision {
   const dropped: string[] = [];
   payload = pruneSchemaExtraKeys(payload, JSON.parse(schemaText), "decision", dropped);
   if (dropped.length > 0) {
+    // Key names come from the model, so redact and cap them like stderr.
+    const keys = JSON.stringify(piStderrHead(dropped.join(","), 200));
     console.error(
-      `[review] ${new Date().toISOString()} pi-pruned #${item.number} keys=${dropped.join(",")}`,
+      `[review] ${new Date().toISOString()} pi-pruned #${item.number} count=${dropped.length} keys=${keys}`,
     );
   }
 
@@ -5690,7 +5692,7 @@ export function pruneSchemaExtraKeys(
   if (typeof value !== "object" || value === null || node.properties === undefined) return value;
   const pruned: Record<string, unknown> = {};
   for (const [key, entry] of Object.entries(value)) {
-    const child = node.properties[key];
+    const child = Object.hasOwn(node.properties, key) ? node.properties[key] : undefined;
     if (child === undefined) {
       if (node.additionalProperties === false) {
         dropped.push(`${path}.${key}`);
