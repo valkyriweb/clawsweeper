@@ -16,6 +16,9 @@ inputs:
       token): @valkyriweb/my-pi-actions is a user-account-scoped package that
       GitHub App installation tokens cannot read. Empty uses github.token.
     default: ""
+  clawrouter-base-url:
+    description: ClawRouter base URL for the Pi `clawrouter` provider (must end in `/v1`, as for setup-codex).
+    default: "https://clawrouter.lue-kube.bermont.digital/v1"
   cache-suffix:
     description: Extra cache key suffix for target-tool downloads.
     default: ""
@@ -155,6 +158,55 @@ runs:
         };
         fs.writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
         NODE
+
+    # Pi has no built-in clawrouter provider. The key stays in the environment:
+    # models.json names the variable, and Pi resolves it when it sends a request.
+    - name: Configure Pi ClawRouter provider
+      shell: bash
+      env:
+        CLAWROUTER_BASE_URL: ${{ inputs.clawrouter-base-url }}
+      run: |
+        set -euo pipefail
+        base_url="${CLAWROUTER_BASE_URL%/}"
+        if [[ "$base_url" != */v1 ]]; then
+          echo "::error::clawrouter-base-url must end in /v1 (got: $base_url)" >&2
+          exit 1
+        fi
+        node - "$HOME/.pi/agent/models.json" "${base_url%/v1}" <<'NODE'
+        const fs = require("node:fs");
+        const [modelsPath, baseUrl] = process.argv.slice(2);
+        const config = fs.existsSync(modelsPath) ? JSON.parse(fs.readFileSync(modelsPath, "utf8")) : {};
+        config.providers = {
+          ...(config.providers ?? {}),
+          clawrouter: {
+            // anthropic-messages appends /v1/messages to the base URL.
+            baseUrl,
+            api: "anthropic-messages",
+            apiKey: "$CLAWROUTER_API_KEY",
+            models: [
+              {
+                id: "claude-opus-5-200k",
+                name: "Claude Opus 5 200k (ClawRouter)",
+                contextWindow: 200000,
+                maxTokens: 64000,
+                reasoning: true,
+                thinkingLevelMap: { low: "low", medium: "medium", high: "high", xhigh: "max" },
+                compat: { forceAdaptiveThinking: true, supportsToolReferences: false },
+                input: ["text", "image"],
+              },
+            ],
+          },
+        };
+        fs.writeFileSync(modelsPath, `${JSON.stringify(config, null, 2)}\n`);
+        NODE
+        # Listing is local and hides providers without a key, so a placeholder
+        # stands in; the real key exists only in the review step env.
+        listing="$(CLAWROUTER_API_KEY=setup-check pi --list-models clawrouter 2>&1 || true)"
+        if [[ "$listing" == *"errors loading models.json"* || "$listing" != *"claude-opus-5-200k"* ]]; then
+          echo "$listing" >&2
+          echo "::error::Pi does not list clawrouter/claude-opus-5-200k after writing $HOME/.pi/agent/models.json" >&2
+          exit 1
+        fi
 
     - name: Verify Pi profile config
       shell: bash
