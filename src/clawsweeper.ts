@@ -5638,6 +5638,16 @@ export function runPi(options: RunPiOptions): Decision {
     );
   }
 
+  const dropped: string[] = [];
+  payload = pruneSchemaExtraKeys(payload, JSON.parse(schemaText), "decision", dropped);
+  if (dropped.length > 0) {
+    // Key names come from the model, so redact and cap them like stderr.
+    const keys = JSON.stringify(piStderrHead(dropped.join(","), 200));
+    console.error(
+      `[review] ${new Date().toISOString()} pi-pruned #${item.number} count=${dropped.length} keys=${keys}`,
+    );
+  }
+
   try {
     const decision = parseDecision(payload, item);
     emitUsage("success", elapsedMs);
@@ -5655,6 +5665,45 @@ export function runPi(options: RunPiOptions): Decision {
 // Redact before slicing so a cut cannot leave an unmatched token fragment.
 export function piStderrHead(stderr: string, maxLength = 300): string {
   return redactSecrets(stderr.trim()).slice(0, maxLength);
+}
+
+// Pi has no provider-level schema enforcement, so the model can add keys the
+// schema forbids. parseDecision reads none of them; dropping them keeps one
+// stray key from discarding an otherwise valid review. Required fields and
+// value checks still go through parseDecision.
+export function pruneSchemaExtraKeys(
+  value: unknown,
+  schema: unknown,
+  path: string,
+  dropped: string[],
+): unknown {
+  if (typeof schema !== "object" || schema === null) return value;
+  const node = schema as {
+    properties?: Record<string, unknown>;
+    items?: unknown;
+    additionalProperties?: unknown;
+  };
+  if (Array.isArray(value)) {
+    if (node.items === undefined) return value;
+    return value.map((entry, index) =>
+      pruneSchemaExtraKeys(entry, node.items, `${path}[${index}]`, dropped),
+    );
+  }
+  if (typeof value !== "object" || value === null || node.properties === undefined) return value;
+  const pruned: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    const child = Object.hasOwn(node.properties, key) ? node.properties[key] : undefined;
+    if (child === undefined) {
+      if (node.additionalProperties === false) {
+        dropped.push(`${path}.${key}`);
+      } else {
+        pruned[key] = entry;
+      }
+      continue;
+    }
+    pruned[key] = pruneSchemaExtraKeys(entry, child, `${path}.${key}`, dropped);
+  }
+  return pruned;
 }
 
 // Extract the JSON object Pi emitted. Pi's `--mode json` outputs one JSON
