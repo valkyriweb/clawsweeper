@@ -9,7 +9,7 @@ inputs:
     default: "@valkyriweb/my-pi-actions"
   profile-version:
     description: Pi profile package version. Empty installs the latest published package.
-    default: "0.7.5"
+    default: "0.6.38"
   token:
     description: >-
       GitHub Packages token with read:packages. Must be a PAT (or other user
@@ -77,10 +77,10 @@ runs:
           exit 1
         fi
         mkdir -p "$HOME/.pi/agent"
-        node - "$HOME/.pi/agent/settings.json" "$profile_root" <<'NODE'
+        node - "$HOME/.pi/agent/settings.json" "$profile_root" "@valkyriweb/pi-coding-agent" <<'NODE'
         const fs = require("node:fs");
         const path = require("node:path");
-        const [settingsPath, profileRoot] = process.argv.slice(2);
+        const [settingsPath, profileRoot, hostPackage] = process.argv.slice(2);
         const manifestPath = path.join(profileRoot, "package.json");
         const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
         const missing = (manifest.pi?.extensions ?? [])
@@ -88,6 +88,13 @@ runs:
           .filter((entry) => !fs.existsSync(entry));
         if (missing.length > 0) {
           console.error(`Pi profile has missing extension entries: ${missing.join(", ")}`);
+          process.exit(1);
+        }
+        // Profiles peer on the host Pi packages, which the host aliases for its
+        // extensions. A profile built for another host scope cannot load here.
+        const hostPeers = new Set(Object.keys(manifest.peerDependencies ?? {}));
+        if (!hostPeers.has(hostPackage)) {
+          console.error(`::error::Pi profile peers on ${[...hostPeers].join(", ") || "nothing"}, not the installed host ${hostPackage}`);
           process.exit(1);
         }
         // A bundled member's deps must resolve from the installed tree, or Pi
@@ -101,8 +108,16 @@ runs:
         const unresolved = [];
         for (const member of manifest.bundledDependencies ?? manifest.bundleDependencies ?? []) {
           const memberDir = path.join(profileRoot, "node_modules", member);
-          const memberManifest = JSON.parse(fs.readFileSync(path.join(memberDir, "package.json"), "utf8"));
-          for (const dep of Object.keys(memberManifest.dependencies ?? {})) {
+          const memberManifestPath = path.join(memberDir, "package.json");
+          if (!fs.existsSync(memberManifestPath)) {
+            unresolved.push(`${member} (not installed)`);
+            continue;
+          }
+          const memberManifest = JSON.parse(fs.readFileSync(memberManifestPath, "utf8"));
+          const requiredPeers = Object.keys(memberManifest.peerDependencies ?? {}).filter(
+            (dep) => !hostPeers.has(dep) && memberManifest.peerDependenciesMeta?.[dep]?.optional !== true,
+          );
+          for (const dep of [...Object.keys(memberManifest.dependencies ?? {}), ...requiredPeers]) {
             if (!resolves(memberDir, dep)) unresolved.push(`${member} -> ${dep}`);
           }
         }
