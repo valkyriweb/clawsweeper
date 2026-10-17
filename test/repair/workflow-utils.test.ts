@@ -194,14 +194,24 @@ test("lifecycle opt-in is wired through CLI and all static token branches", () =
   const action = fs.readFileSync(".github/actions/create-target-token/action.yml", "utf8");
   assert.match(action, /lifecycle-evidence-read:[\s\S]*?default: "false"/);
   assert.match(action, /--lifecycle-evidence-read "\$LIFECYCLE_EVIDENCE_READ"/);
-  for (const permission of ["checks", "actions"]) {
+  const lifecycleGatedSteps = { checks: 5, actions: 5 };
+  for (const [permission, count] of Object.entries(lifecycleGatedSteps)) {
     assert.equal(
       action.split(
         `permission-${permission}: \u0024{{ steps.resolve.outputs.lifecycle_evidence_read == 'true' && 'read' || '' }}`,
       ).length - 1,
-      6,
+      count,
     );
   }
+  const tokenStep = (id: string) => {
+    const step = action.split(`id: ${id}\n`)[1] ?? "";
+    return step.split("\n    - name:")[0];
+  };
+  assert.match(tokenStep("bermont-digital-comment"), /^\s+permission-contents: read$/m);
+  assert.match(tokenStep("valkyriweb-comment"), /^\s+permission-checks: read$/m);
+  assert.match(tokenStep("valkyriweb-comment"), /^\s+permission-actions: read$/m);
+  assert.doesNotMatch(tokenStep("bermont-digital-comment"), /^\s+permission-checks: read$/m);
+  assert.doesNotMatch(tokenStep("bermont-digital-comment"), /^\s+permission-actions: read$/m);
   const router = fs.readFileSync(".github/workflows/repair-comment-router.yml", "utf8");
   assert.match(router, /lifecycle-evidence-read: "true"/);
 });
