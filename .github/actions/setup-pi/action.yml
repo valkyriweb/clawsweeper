@@ -53,7 +53,8 @@ runs:
           printf '%s\n' '//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}' >> "$npmrc"
         fi
         export NPM_CONFIG_USERCONFIG="$npmrc"
-        pi_package="@valkyriweb/pi-coding-agent"
+        host_package="@valkyriweb/pi-coding-agent"
+        pi_package="$host_package"
         profile_package="$PI_PROFILE_PACKAGE"
         if [ -n "$PI_VERSION" ]; then
           pi_package="$pi_package@$PI_VERSION"
@@ -77,7 +78,7 @@ runs:
           exit 1
         fi
         mkdir -p "$HOME/.pi/agent"
-        node - "$HOME/.pi/agent/settings.json" "$profile_root" "@valkyriweb/pi-coding-agent" <<'NODE'
+        node - "$HOME/.pi/agent/settings.json" "$profile_root" "$host_package" <<'NODE'
         const fs = require("node:fs");
         const path = require("node:path");
         const [settingsPath, profileRoot, hostPackage] = process.argv.slice(2);
