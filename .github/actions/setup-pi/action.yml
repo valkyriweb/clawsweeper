@@ -241,6 +241,7 @@ runs:
               body: JSON.stringify(body),
               signal: AbortSignal.timeout(30_000),
             });
+            console.log(`smoke messages ${label}: headers status=${res.status} ms=${Date.now() - started}`);
             const text = await res.text();
             console.log(`smoke messages ${label}: status=${res.status} ms=${Date.now() - started} body=${redact(text)}`);
           } catch (error) {
