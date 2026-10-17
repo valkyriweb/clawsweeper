@@ -237,12 +237,14 @@ jobs:
           bermont-digital-client-id: ${{ vars.BERMONT_DIGITAL_CLAWSWEEPER_APP_CLIENT_ID }}
           bermont-digital-private-key: ${{ secrets.BERMONT_DIGITAL_CLAWSWEEPER_APP_PRIVATE_KEY }}
 
+      # review_only targets get a comment token; close, label and repair paths
+      # below enforce automation_policy themselves.
       - name: Create target write token
         id: target-write-token
         uses: ./.github/actions/create-target-token
         with:
           target-repo: ${{ steps.target.outputs.target_repo }}
-          access-mode: mutate
+          access-mode: ${{ steps.target-read-token.outputs.automation-policy == 'review_only' && 'comment' || 'mutate' }}
           valkyriweb-client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
           valkyriweb-private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
           bermont-digital-client-id: ${{ vars.BERMONT_DIGITAL_CLAWSWEEPER_APP_CLIENT_ID }}

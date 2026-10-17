@@ -99,6 +99,22 @@ test("target auth resolves explicit routes and denies review-only mutation befor
   );
 });
 
+test("event review token mode is accepted for review_only and full targets", () => {
+  const workflow = fs.readFileSync(".github/workflows/sweep.yml", "utf8");
+  assert.match(workflow, /automation-policy == 'review_only' && 'comment' \|\| 'mutate'/);
+  const expected = { "Detoil/centaur": "comment", "valkyriweb/lue-kube": "mutate" };
+  for (const [targetRepo, accessMode] of Object.entries(expected)) {
+    const policy = targetAuthFor({ targetRepo, accessMode: "read" }).automation_policy;
+    const selected = policy === "review_only" ? "comment" : "mutate";
+    assert.equal(selected, accessMode);
+    assert.equal(targetAuthFor({ targetRepo, accessMode: selected }).access_mode, accessMode);
+  }
+  assert.throws(
+    () => targetAuthFor({ targetRepo: "Detoil/centaur", accessMode: "mutate" }),
+    /review_only.*denies target token access-mode=mutate/,
+  );
+});
+
 test("lifecycle evidence reads require caller opt-in and the target profile", () => {
   for (const accessMode of ["read", "comment", "mutate"] as const) {
     const base = targetAuthFor({ targetRepo: "valkyriweb/openclaw-claude", accessMode });
