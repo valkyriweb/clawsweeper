@@ -209,6 +209,48 @@ runs:
           exit 1
         fi
 
+    # Diagnostic only: never fails the job. Separates a key, network or model
+    # hang from a Pi hang, logging just status and the first redacted bytes.
+    - name: Smoke ClawRouter and Pi
+      if: ${{ env.CLAWROUTER_API_KEY != '' }}
+      shell: bash
+      env:
+        CLAWROUTER_BASE_URL: ${{ inputs.clawrouter-base-url }}
+      run: |
+        set -uo pipefail
+        node - "${CLAWROUTER_BASE_URL%/}" <<'NODE' || true
+        const [baseUrl] = process.argv.slice(2);
+        const key = process.env.CLAWROUTER_API_KEY;
+        const redact = (text) => text.split(key).join("[redacted]").replace(/\s+/g, " ").slice(0, 200);
+        const body = JSON.stringify({ model: "claude-opus-5-200k", max_tokens: 16, messages: [{ role: "user", content: "Reply with exactly: ok" }] });
+        const auths = { "x-api-key": { "x-api-key": key }, bearer: { authorization: `Bearer ${key}` } };
+        for (const [label, auth] of Object.entries(auths)) {
+          const started = Date.now();
+          try {
+            const res = await fetch(`${baseUrl}/messages`, {
+              method: "POST",
+              headers: { "content-type": "application/json", "anthropic-version": "2023-06-01", ...auth },
+              body,
+              signal: AbortSignal.timeout(30_000),
+            });
+            const text = await res.text();
+            console.log(`smoke messages ${label}: status=${res.status} ms=${Date.now() - started} body=${redact(text)}`);
+          } catch (error) {
+            console.log(`smoke messages ${label}: error=${redact(String(error?.cause ?? error))} ms=${Date.now() - started}`);
+          }
+        }
+        NODE
+        out="$(mktemp)"
+        err="$(mktemp)"
+        started=$SECONDS
+        printf 'Reply with exactly: ok\n' | timeout 30 pi -p --mode json --no-session --model clawrouter/claude-opus-5-200k -t read >"$out" 2>"$err"
+        status=$?
+        redact() { node -e 'const k=process.env.CLAWROUTER_API_KEY; let s=require("fs").readFileSync(0,"utf8"); console.log(s.split(k).join("[redacted]").replace(/\s+/g," ").slice(0,400));'; }
+        echo "smoke pi: status=$status s=$((SECONDS - started))"
+        echo "smoke pi stdout: $(redact < "$out")"
+        echo "smoke pi stderr: $(redact < "$err")"
+        rm -f "$out" "$err"
+
     - name: Verify Pi profile config
       shell: bash
       run: |
