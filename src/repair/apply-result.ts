@@ -33,6 +33,7 @@ import {
 } from "./repair-merge-message.js";
 import { validateClosePolicy, validateMergePolicy } from "./merge-close-policy.js";
 import { automationPolicyBlockReason } from "../repository-profiles.js";
+import { isDraftIssueJob } from "./draft-issue-implementation.js";
 
 const MAINTAINER_AUTHOR_ASSOCIATIONS = new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
 const CLOSE_ACTIONS = new Set([
@@ -73,6 +74,8 @@ if (!resultPathArg && !latest) {
 }
 
 const job = parseJob(jobPath);
+if (isDraftIssueJob(job.frontmatter))
+  throw new Error("draft-only jobs prohibit apply and post-flight mutations");
 const errors = validateJob(job);
 if (errors.length > 0) {
   console.error(errors.join("\n"));

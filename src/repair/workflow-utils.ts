@@ -4,7 +4,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
-import { parseArgs } from "./lib.js";
+import { parseArgs, parseJob, validateJob, assertAllowedOwner } from "./lib.js";
+import { assertDraftIssueExecution, isDraftIssueJob } from "./draft-issue-implementation.js";
 import { isJsonObject } from "./json-types.js";
 import {
   DEFAULT_COMMIT_REVIEW_REF,
@@ -119,12 +120,16 @@ function runCli(): void {
     case "models":
       runModelsCommand();
       break;
+    case "repair-job-auth":
+      printOutput(repairJobAuth(requiredString("job-path")));
+      break;
     case "target-auth":
       printOutput(
         targetAuthFor({
           targetRepo: requiredString("target-repo"),
           accessMode: requiredTargetTokenAccessMode(requiredString("access-mode")),
           lifecycleEvidenceRead: optionalString("lifecycle-evidence-read"),
+          jobPath: optionalString("job-path"),
         }),
       );
       break;
@@ -412,7 +417,21 @@ function writeModelsVariable(repo: string, json: string): void {
   }
 }
 
-export type TargetTokenAccessMode = "read" | "comment" | "mutate";
+export type TargetTokenAccessMode = "read" | "comment" | "mutate" | "draft_issue_implementation";
+
+export function repairJobAuth(jobPath: string) {
+  const job = parseJob(jobPath);
+  const errors = validateJob(job);
+  if (errors.length) throw new Error(errors.join("; "));
+  assertAllowedOwner(job.frontmatter.repo, process.env.CLAWSWEEPER_ALLOWED_OWNER);
+  const draftOnly = isDraftIssueJob(job.frontmatter);
+  if (draftOnly) assertDraftIssueExecution(job.frontmatter);
+  return {
+    target_repo: job.frontmatter.repo,
+    draft_only: String(draftOnly),
+    access_mode: draftOnly ? "draft_issue_implementation" : "mutate",
+  };
+}
 
 /**
  * Fail closed before legacy workflows mint with the Valkyriweb private key.
@@ -421,6 +440,9 @@ export type TargetTokenAccessMode = "read" | "comment" | "mutate";
  */
 export function legacyTargetAuthFor(targetRepo: string): string {
   const profile = repositoryProfileFor(targetRepo);
+  if (profile.automationPolicy === "draft_pr_only") {
+    throw new Error("draft_pr_only requires exact-job authorization, not a legacy token");
+  }
   if (profile.githubAppCredentialRoute !== "valkyriweb") {
     throw new Error(
       `${profile.targetRepo} github_app_credential_route=${profile.githubAppCredentialRoute} cannot use the legacy Valkyriweb target token`,
@@ -438,6 +460,7 @@ export function targetAuthFor(options: {
   targetRepo: string;
   accessMode: TargetTokenAccessMode;
   lifecycleEvidenceRead?: string;
+  jobPath?: string;
 }): Record<
   | "target_repo"
   | "target_repo_owner"
@@ -451,6 +474,19 @@ export function targetAuthFor(options: {
   const lifecycleEvidenceRead = options.lifecycleEvidenceRead || "false";
   if (lifecycleEvidenceRead !== "true" && lifecycleEvidenceRead !== "false") {
     throw new Error("--lifecycle-evidence-read must be true or false");
+  }
+  if (options.accessMode === "draft_issue_implementation") {
+    if (!options.jobPath) throw new Error("draft target token requires --job-path");
+    const authorization = repairJobAuth(options.jobPath);
+    if (
+      authorization.draft_only !== "true" ||
+      authorization.target_repo.toLowerCase() !== profile.targetRepo.toLowerCase()
+    ) {
+      throw new Error("draft target token requires the exact authorized draft issue job");
+    }
+  }
+  if (options.accessMode === "comment" && profile.automationPolicy === "draft_pr_only") {
+    throw new Error("draft_pr_only denies comment tokens");
   }
   if (options.accessMode === "mutate" && profile.automationPolicy !== "full") {
     throw new Error(
@@ -476,9 +512,16 @@ export function targetAuthFor(options: {
 }
 
 function requiredTargetTokenAccessMode(value: string): TargetTokenAccessMode {
-  const allowed = new Set<TargetTokenAccessMode>(["read", "comment", "mutate"]);
+  const allowed = new Set<TargetTokenAccessMode>([
+    "read",
+    "comment",
+    "mutate",
+    "draft_issue_implementation",
+  ]);
   if (allowed.has(value as TargetTokenAccessMode)) return value as TargetTokenAccessMode;
-  throw new Error("--access-mode must be one of: read, comment, mutate");
+  throw new Error(
+    "--access-mode must be one of: read, comment, mutate, draft_issue_implementation",
+  );
 }
 
 function reviewModelFromPlan(plan: LooseRecord): string {

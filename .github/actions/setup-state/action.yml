@@ -4,6 +4,10 @@ inputs:
   token:
     description: GitHub token with contents read/write access to the state repo.
     required: true
+  persist-credentials:
+    description: Persist checkout credentials only when this job must publish state.
+    required: false
+    default: "true"
   state-repository:
     description: Generated state repository.
     required: false
@@ -41,6 +45,7 @@ runs:
         ref: ${{ inputs.state-ref }}
         path: ${{ inputs.state-path }}
         token: ${{ inputs.token }}
+        persist-credentials: ${{ inputs.persist-credentials }}
         filter: ${{ inputs.filter }}
         fetch-depth: ${{ inputs.fetch-depth }}
 

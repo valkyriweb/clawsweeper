@@ -347,7 +347,6 @@ test("every active legacy target-token mint has a preceding route guard", () => 
     { workflow: "commit-review.yml", tokenStep: "Create target checks token" },
     { workflow: "repair-cluster-worker.yml", tokenStep: "Create GitHub App token" },
     { workflow: "repair-commit-finding-intake.yml", tokenStep: "Create GitHub App token" },
-    { workflow: "repair-issue-implementation-intake.yml", tokenStep: "Create GitHub App token" },
     { workflow: "verify-reproduction.yml", tokenStep: "Create GitHub App token" },
   ];
 

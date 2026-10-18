@@ -81,8 +81,10 @@ jobs:
       allow_automerge: ${{ steps.capture_gates.outputs.allow_automerge }}
       allow_merge: ${{ steps.capture_gates.outputs.allow_merge }}
       job_exists: ${{ steps.check_job.outputs.job_exists }}
+      draft_only: ${{ steps.job_auth.outputs.draft_only }}
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      CLAWSWEEPER_ALLOW_DRAFT_ISSUE_IMPLEMENTATION: ${{ vars.CLAWSWEEPER_ALLOW_DRAFT_ISSUE_IMPLEMENTATION == '1' && '1' || '0' }}
       CLAWSWEEPER_ALLOWED_OWNER: ${{ vars.CLAWSWEEPER_ALLOWED_OWNER || 'bermont-digital' }}
       CLAWSWEEPER_ALLOW_EXECUTE: ${{ (inputs.mode == 'execute' || inputs.mode == 'autonomous') && vars.CLAWSWEEPER_ALLOW_EXECUTE == '1' && '1' || '0' }}
       CLAWSWEEPER_ALLOW_FIX_PR: ${{ (inputs.mode == 'execute' || inputs.mode == 'autonomous') && vars.CLAWSWEEPER_ALLOW_FIX_PR == '1' && '1' || '0' }}
@@ -111,6 +113,7 @@ jobs:
           echo "GH_BIN=$native_gh" >> "$GITHUB_ENV"
       - uses: actions/checkout@v5
         with:
+          persist-credentials: false
           filter: blob:none
           # Avoid reviving stale sparse settings when checkout removes worktreeConfig.
           sparse-checkout: |
@@ -125,6 +128,7 @@ jobs:
           private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
           owner: valkyriweb
           repository: clawsweeper-state
+          read-only: "true"
 
       # Jobs live in the generated state repo; hydrate before resolving the
       # target so JOB_PATH exists in the worktree.
@@ -132,6 +136,7 @@ jobs:
         with:
           token: ${{ steps.state-token.outputs.token }}
           state-repository: valkyriweb/clawsweeper-state
+          persist-credentials: "false"
 
       - name: Resolve target repository
         id: target
@@ -154,13 +159,21 @@ jobs:
         with:
           build-script: build:repair
 
+      - name: Authorize repair job before target token
+        id: job_auth
+        env:
+          JOB_PATH: ${{ inputs.job }}
+        run: node dist/repair/workflow-utils.js repair-job-auth --job-path "$JOB_PATH" >> "$GITHUB_OUTPUT"
+
       - name: Authorize legacy target token
+        if: ${{ steps.job_auth.outputs.draft_only == 'false' }}
         env:
           TARGET_REPO: ${{ steps.target.outputs.repo }}
         run: pnpm run --silent workflow -- legacy-target-auth --target-repo "$TARGET_REPO"
 
       - name: Create GitHub App token
         id: app_token
+        if: ${{ steps.job_auth.outputs.draft_only == 'false' }}
         uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
         with:
           client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
@@ -171,6 +184,19 @@ jobs:
           permission-contents: read
           permission-issues: read
           permission-pull-requests: read
+
+      - name: Create authorized draft lane token
+        id: draft_token
+        if: ${{ steps.job_auth.outputs.draft_only == 'true' }}
+        uses: ./.github/actions/create-target-token
+        with:
+          target-repo: ${{ steps.job_auth.outputs.target_repo }}
+          access-mode: read
+          job-path: ${{ inputs.job }}
+          valkyriweb-client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
+          valkyriweb-private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
+          bermont-digital-client-id: ${{ vars.BERMONT_DIGITAL_CLAWSWEEPER_APP_CLIENT_ID }}
+          bermont-digital-private-key: ${{ secrets.BERMONT_DIGITAL_CLAWSWEEPER_APP_PRIVATE_KEY }}
 
       - name: Check job file
         id: check_job
@@ -196,7 +222,7 @@ jobs:
       - name: Verify GitHub read token
         if: ${{ steps.check_job.outputs.job_exists == '1' }}
         env:
-          GH_TOKEN: ${{ steps.app_token.outputs.token }}
+          GH_TOKEN: ${{ steps.draft_token.outputs.token || steps.app_token.outputs.token }}
         run: |
           if [ -z "${GH_TOKEN:-}" ]; then
             echo "GitHub App token is required"
@@ -211,10 +237,10 @@ jobs:
       - name: Run worker
         if: ${{ steps.check_job.outputs.job_exists == '1' }}
         env:
-          GH_TOKEN: ${{ steps.app_token.outputs.token }}
+          GH_TOKEN: ${{ steps.draft_token.outputs.token || steps.app_token.outputs.token }}
         run: |
           worker_mode="${{ inputs.mode }}"
-          if [ "$worker_mode" != "plan" ] && [ "${CLAWSWEEPER_ALLOW_EXECUTE}" != "1" ]; then
+          if [ "${{ steps.job_auth.outputs.draft_only }}" != "true" ] && [ "$worker_mode" != "plan" ] && [ "${CLAWSWEEPER_ALLOW_EXECUTE}" != "1" ]; then
             echo "CLAWSWEEPER_ALLOW_EXECUTE is not explicitly 1; rendering plan-only output for requested $worker_mode run"
             worker_mode="plan"
           fi
@@ -265,6 +291,7 @@ jobs:
     timeout-minutes: 45
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      CLAWSWEEPER_ALLOW_DRAFT_ISSUE_IMPLEMENTATION: ${{ vars.CLAWSWEEPER_ALLOW_DRAFT_ISSUE_IMPLEMENTATION == '1' && '1' || '0' }}
       CLAWSWEEPER_ALLOWED_OWNER: ${{ vars.CLAWSWEEPER_ALLOWED_OWNER || 'bermont-digital' }}
       CLAWSWEEPER_ALLOW_EXECUTE: ${{ needs.cluster.outputs.allow_execute == '1' && '1' || '0' }}
       CLAWSWEEPER_ALLOW_FIX_PR: ${{ needs.cluster.outputs.allow_fix_pr == '1' && '1' || '0' }}
@@ -301,6 +328,7 @@ jobs:
           echo "GH_BIN=$native_gh" >> "$GITHUB_ENV"
       - uses: actions/checkout@v5
         with:
+          persist-credentials: false
           filter: blob:none
           # Keep the same full-tree contract as the planning job above.
           sparse-checkout: |
@@ -315,6 +343,7 @@ jobs:
           private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
           owner: valkyriweb
           repository: clawsweeper-state
+          read-only: "true"
 
       # Jobs live in the generated state repo; hydrate before resolving the
       # target so JOB_PATH exists in the worktree.
@@ -322,6 +351,7 @@ jobs:
         with:
           token: ${{ steps.state-token.outputs.token }}
           state-repository: valkyriweb/clawsweeper-state
+          persist-credentials: "false"
 
       - name: Resolve target repository
         id: target
@@ -344,13 +374,21 @@ jobs:
         with:
           build-script: build:repair
 
+      - name: Authorize repair job before target token
+        id: job_auth
+        env:
+          JOB_PATH: ${{ inputs.job }}
+        run: node dist/repair/workflow-utils.js repair-job-auth --job-path "$JOB_PATH" >> "$GITHUB_OUTPUT"
+
       - name: Authorize legacy target token
+        if: ${{ steps.job_auth.outputs.draft_only == 'false' }}
         env:
           TARGET_REPO: ${{ steps.target.outputs.repo }}
         run: pnpm run --silent workflow -- legacy-target-auth --target-repo "$TARGET_REPO"
 
       - name: Create GitHub App token
         id: app_token
+        if: ${{ steps.job_auth.outputs.draft_only == 'false' }}
         uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
         with:
           client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
@@ -364,7 +402,33 @@ jobs:
           permission-pull-requests: write
           permission-workflows: write
 
+      - name: Create draft executor read token
+        id: draft_read_token
+        if: ${{ steps.job_auth.outputs.draft_only == 'true' }}
+        uses: ./.github/actions/create-target-token
+        with:
+          target-repo: ${{ steps.job_auth.outputs.target_repo }}
+          access-mode: read
+          valkyriweb-client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
+          valkyriweb-private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
+          bermont-digital-client-id: ${{ vars.BERMONT_DIGITAL_CLAWSWEEPER_APP_CLIENT_ID }}
+          bermont-digital-private-key: ${{ secrets.BERMONT_DIGITAL_CLAWSWEEPER_APP_PRIVATE_KEY }}
+
+      - name: Create authorized draft lane token
+        id: draft_token
+        if: ${{ steps.job_auth.outputs.draft_only == 'true' }}
+        uses: ./.github/actions/create-target-token
+        with:
+          target-repo: ${{ steps.job_auth.outputs.target_repo }}
+          access-mode: draft_issue_implementation
+          job-path: ${{ inputs.job }}
+          valkyriweb-client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
+          valkyriweb-private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
+          bermont-digital-client-id: ${{ vars.BERMONT_DIGITAL_CLAWSWEEPER_APP_CLIENT_ID }}
+          bermont-digital-private-key: ${{ secrets.BERMONT_DIGITAL_CLAWSWEEPER_APP_PRIVATE_KEY }}
+
       - name: Create engine dispatch token
+        if: ${{ steps.job_auth.outputs.draft_only == 'false' }}
         id: engine-token
         uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
         with:
@@ -407,11 +471,12 @@ jobs:
         run: pnpm run repair:validate-job -- "${{ inputs.job }}"
 
       - name: Execute credited fix artifact
-        if: ${{ steps.check_job.outputs.job_exists == '1' && env.CLAWSWEEPER_ALLOW_EXECUTE == '1' && env.CLAWSWEEPER_ALLOW_FIX_PR == '1' }}
+        if: ${{ steps.check_job.outputs.job_exists == '1' && (steps.job_auth.outputs.draft_only == 'true' || (env.CLAWSWEEPER_ALLOW_EXECUTE == '1' && env.CLAWSWEEPER_ALLOW_FIX_PR == '1')) }}
         timeout-minutes: 40
         env:
           CLAWROUTER_API_KEY: ${{ vars.CLAWSWEEPER_CODEX_AUTH_MODE == 'clawrouter' && secrets.CLAWROUTER_API_KEY || '' }}
-          GH_TOKEN: ${{ steps.app_token.outputs.token }}
+          GH_TOKEN: ${{ steps.draft_read_token.outputs.token || steps.app_token.outputs.token }}
+          CLAWSWEEPER_DRAFT_GH_TOKEN: ${{ steps.draft_token.outputs.token }}
           # Target installs may pull @valkyriweb npm packages from GitHub
           # Packages (e.g. my-pi → @valkyriweb/agent-relay + pi-*). npm
           # packages use granular per-package permissions, which GitHub App
@@ -424,40 +489,40 @@ jobs:
         run: pnpm run repair:execute-fix -- "${{ inputs.job }}" --latest
 
       - name: Apply safe closure actions
-        if: ${{ steps.check_job.outputs.job_exists == '1' && env.CLAWSWEEPER_ALLOW_EXECUTE == '1' }}
+        if: ${{ steps.job_auth.outputs.draft_only == 'false' && steps.check_job.outputs.job_exists == '1' && env.CLAWSWEEPER_ALLOW_EXECUTE == '1' }}
         env:
-          GH_TOKEN: ${{ steps.app_token.outputs.token }}
+          GH_TOKEN: ${{ steps.draft_token.outputs.token || steps.app_token.outputs.token }}
         run: pnpm run repair:apply-result -- "${{ inputs.job }}" --latest
 
       - name: Post-flight finalize fix PRs
-        if: ${{ steps.check_job.outputs.job_exists == '1' && env.CLAWSWEEPER_ALLOW_EXECUTE == '1' && env.CLAWSWEEPER_ALLOW_FIX_PR == '1' }}
+        if: ${{ steps.job_auth.outputs.draft_only == 'false' && steps.check_job.outputs.job_exists == '1' && env.CLAWSWEEPER_ALLOW_EXECUTE == '1' && env.CLAWSWEEPER_ALLOW_FIX_PR == '1' }}
         env:
-          GH_TOKEN: ${{ steps.app_token.outputs.token }}
+          GH_TOKEN: ${{ steps.draft_token.outputs.token || steps.app_token.outputs.token }}
         run: pnpm run repair:post-flight -- "${{ inputs.job }}" --latest
 
       - name: Apply post-flight closeouts
-        if: ${{ steps.check_job.outputs.job_exists == '1' && env.CLAWSWEEPER_ALLOW_EXECUTE == '1' }}
+        if: ${{ steps.job_auth.outputs.draft_only == 'false' && steps.check_job.outputs.job_exists == '1' && env.CLAWSWEEPER_ALLOW_EXECUTE == '1' }}
         env:
-          GH_TOKEN: ${{ steps.app_token.outputs.token }}
+          GH_TOKEN: ${{ steps.draft_token.outputs.token || steps.app_token.outputs.token }}
         run: pnpm run repair:apply-result -- "${{ inputs.job }}" --latest
 
       - name: Tag ClawSweeper targets
-        if: ${{ always() && steps.check_job.outputs.job_exists == '1' && env.CLAWSWEEPER_ALLOW_EXECUTE == '1' }}
+        if: ${{ steps.job_auth.outputs.draft_only == 'false' && always() && steps.check_job.outputs.job_exists == '1' && env.CLAWSWEEPER_ALLOW_EXECUTE == '1' }}
         continue-on-error: true
         env:
-          GH_TOKEN: ${{ steps.app_token.outputs.token }}
+          GH_TOKEN: ${{ steps.draft_token.outputs.token || steps.app_token.outputs.token }}
         run: pnpm run repair:tag-clawsweeper -- .clawsweeper-repair/runs --apply --live --open-branches false --report .clawsweeper-repair/runs/clawsweeper-label-report.json
 
       - name: Detect repair requeue requests
         id: repair_requeue
-        if: ${{ always() && steps.check_job.outputs.job_exists == '1' && env.CLAWSWEEPER_ALLOW_EXECUTE == '1' && env.CLAWSWEEPER_ALLOW_FIX_PR == '1' }}
+        if: ${{ steps.job_auth.outputs.draft_only == 'false' && always() && steps.check_job.outputs.job_exists == '1' && env.CLAWSWEEPER_ALLOW_EXECUTE == '1' && env.CLAWSWEEPER_ALLOW_FIX_PR == '1' }}
         run: |
           set -euo pipefail
           count="$(pnpm run --silent workflow -- count-requeue-required --dir .clawsweeper-repair/runs)"
           echo "count=$count" >> "$GITHUB_OUTPUT"
 
       - name: Requeue source-head repair races
-        if: ${{ steps.repair_requeue.outputs.count != '' && steps.repair_requeue.outputs.count != '0' }}
+        if: ${{ steps.job_auth.outputs.draft_only == 'false' && steps.repair_requeue.outputs.count != '' && steps.repair_requeue.outputs.count != '0' }}
         env:
           GH_TOKEN: ${{ steps.engine-token.outputs.token }}
           CLAWSWEEPER_MUTATION_TOKEN_SOURCE: clawsweeper-app
