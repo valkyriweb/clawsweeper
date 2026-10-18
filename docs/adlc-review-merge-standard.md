@@ -2,7 +2,7 @@
 
 Status: design plus draft PRs. Nothing is enabled. No auto-merge, no branch protection or required-check change, no merges. Owner: Forge. Commissioned by Captain for Luke, 16 Oct 2026.
 
-Sources: "How the Claude Code team does code review" (claude.dev, 15 Oct 2026) and Cindy Sridharan's per-principle pre-commit reviewer swarm (dedicated reviewers, one principle each: clarity, abstraction, dependency structure, API breakage, regression, test coherence, perf, security, edge cases). Existing parts reused: the ClawSweeper fork (valkyriweb/clawsweeper: PR review, repair lane, commit review, config/target-repositories.json), the forge-digest skill, the 8 Oct PR-flow approvals, the clawsweeper#264 dry-run pattern, and the horizon push-to-main proposal.
+Sources: "How the Claude Code team does code review" (claude.dev, 15 Oct 2026); Cindy Sridharan's per-principle pre-commit reviewer swarm (dedicated reviewers, one principle each: clarity, abstraction, dependency structure, API breakage, regression, test coherence, perf, security, edge cases); and Kyle Mistele's control loops talk, "Loop Engineering from first principles" (https://ai.engineer/talks/loop-engineering-from-first-principles). Existing parts reused: the ClawSweeper fork (valkyriweb/clawsweeper: PR review, repair lane, commit review, config/target-repositories.json), the forge-digest skill, the 8 Oct PR-flow approvals, the clawsweeper#264 dry-run pattern, and the horizon push-to-main proposal.
 
 ## Goal and guardrail
 
@@ -28,6 +28,7 @@ Spend the least human time per change without raising reverts or incidents. Huma
 | Nightly sweep of existing code | ClawSweeper commit review and nightly sweeps | Phase 2: one nightly pass per adopted repo, findings tagged Pre-existing, routed to the repair lane, capped at 5 per night |
 | Circuit breaker | none | `evaluateCircuitBreaker`, thresholds below |
 | Weekly fleet summary for Luke | forge-digest week rollup | One Monday 09:00 SAST section: per repo tier mix, would-auto-merge count, human approvals per PR, rounds-to-pass, noise rate, reverts, incidents, breaker state |
+| Structure pass (periodic control loop) | none (Captain ask, 18 Oct 2026; Kyle Mistele control loops) | Scheduled structure pass per adopted repo: propose better names, module boundaries and file layout; dry-run lists proposals only; after crawl, small reversible refactor PRs through the same risk tiers; patterns proposed for REVIEW.md and handed to Slop Sweeper for lint rules and source fixes |
 
 Everything new in ClawSweeper sits behind a per-repo `review_standard` block. Missing block means mode `off`. Phase 1 accepts only `off` and `dry_run`; any other mode fails config validation, so live auto-merge cannot be switched on by accident.
 
@@ -49,15 +50,23 @@ Window 14 days per repo. Trips when either:
 
 When tripped, the repo drops to "every PR needs 1 human" at once and stays there until 14 clean days pass and Luke says go. Forge tells Captain the same day; Luke sees it in the weekly summary unless it involves prod.
 
+## Structure pass (periodic control loop)
+
+Inspired by Kyle Mistele's control loops talk ([Loop Engineering from first principles](https://ai.engineer/talks/loop-engineering-from-first-principles)): measure the gap between the codebase and a clear target, make one small correction, then measure again. Captain asked for this on 18 Oct 2026; no Luke decision is needed to add it to the plan.
+
+On a periodic schedule for each adopted repo, an agent proposes better names, module boundaries and file layout, so other agents stop copying bad patterns. The changes ship as small, reversible refactor PRs through the same risk-tiered review. Patterns found feed into the repo's REVIEW.md as a proposal for the owner, and into lint rules. Slop Sweeper owns the lint rules and the source fixes.
+
+While a repo is still in crawl, the pass only proposes and lists. It does not open PRs. Once the repo leaves crawl, it may open those small refactor PRs under the same risk tiers and review rules as every other change. One-step revert still applies.
+
 ## Rollout (crawl, walk, run)
 
 Order: Centaur (Detoil/centaur), then Vera, Core Catering, Tales, lue-kube. One repo at a time, each step only with Luke's go relayed and confirmed.
 
-**Crawl (phase 1, 2 weeks per repo, dry-run).** Merge the ClawSweeper draft once approved. The adopted repo runs consensus review and tier classification in `dry_run`: labels and report only, no merges, no approvals. Owner writes REVIEW.md. Exit when, over 2 weeks: at least 20 PRs classified; the owner agrees with the tier on at least 95 percent of a 20-PR sample, with zero human_required changes classified low; noise rate at most 25 percent; median rounds-to-pass at most 2; eval recall on the revert set at least 70 percent.
+**Crawl (phase 1, 2 weeks per repo, dry-run).** Merge the ClawSweeper draft once approved. The adopted repo runs consensus review and tier classification in `dry_run`: labels and report only, no merges, no approvals. The structure pass proposes and lists only; it does not open refactor PRs. Owner writes REVIEW.md. Exit when, over 2 weeks: at least 20 PRs classified; the owner agrees with the tier on at least 95 percent of a 20-PR sample, with zero human_required changes classified low; noise rate at most 25 percent; median rounds-to-pass at most 2; eval recall on the revert set at least 70 percent.
 
-**Walk (phase 2, 4 weeks).** Needs Luke's explicit OK and a branch protection change done by a human: dismiss stale approvals, require resolved threads, and either a merge queue or the forge-digest re-check as a required step. Low-tier PRs auto-merge through the forge-digest procedure. Nightly eval and nightly code sweep go live. Exit when: revert rate does not rise against the crawl baseline; zero incidents from auto-merged PRs; human approvals per PR median falls; breaker never tripped, or tripped once and recovered.
+**Walk (phase 2, 4 weeks).** Needs Luke's explicit OK and a branch protection change done by a human: dismiss stale approvals, require resolved threads, and either a merge queue or the forge-digest re-check as a required step. Low-tier PRs auto-merge through the forge-digest procedure. Nightly eval and nightly code sweep go live. The structure pass may open small, reversible refactor PRs through the same risk-tiered review, and may propose REVIEW.md lines for the owner and lint-rule tickets for Slop Sweeper. Exit when: revert rate does not rise against the crawl baseline; zero incidents from auto-merged PRs; human approvals per PR median falls; breaker never tripped, or tripped once and recovered.
 
-**Run (phase 3).** Next repo in the order starts at crawl. Owners may widen low tier with evidence (for example flagged UI changes). lue-kube stays human_required for anything under its manifests whatever the tier says.
+**Run (phase 3).** Next repo in the order starts at crawl. Owners may widen low tier with evidence (for example flagged UI changes). The structure pass keeps running on its schedule. lue-kube stays human_required for anything under its manifests whatever the tier says.
 
 ## Rollback
 
