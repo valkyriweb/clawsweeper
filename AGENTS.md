@@ -46,6 +46,7 @@ Repair lane: `pnpm run repair:*` (see `package.json`). Package manager: **pnpm**
 - **Keep heavy load off cluster nodes.** x99 + old-mbp are lue-kube cluster workers; Codex review shards are pinned to mac-mini via `CLAWSWEEPER_REVIEW_RUNNER`. Don't route review to Linux boxes.
 - **Cost discipline.** Sweeps are a token sink. Ramp one notch at a time (safe-ramp doc); never enable all repos/mutations at once.
 - **Upstream:** `origin` = valkyriweb fork, `upstream` = openclaw. Don't auto-merge upstream; cherry-pick deliberately. Upstream uses native gh (no ghx).
+- **Workaround comments.** Fix the root cause or link a tracking issue instead of adding `workaround`/`hack`/`temporary`/`TODO fix` comments; the review prompt flags new ones as a non-blocking suggestion (`prompts/review-item.md`, "Workaround comments").
 
 ## App credentials
 
