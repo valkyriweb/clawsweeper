@@ -6602,3 +6602,53 @@ test("next-actions: legacy prRating without requiredActions/suggestions is backw
   assert.equal(decision.prRating.requiredActions, undefined);
   assert.equal(decision.prRating.suggestions, undefined);
 });
+
+// Merge-risk advisory: advisory only, must never change the review outcome.
+test("merge-risk advisory never changes the parsed decision", () => {
+  const dim = (verdict: string) => ({ verdict, reason: "r" });
+  const withAdvisory = parseDecision(
+    closeDecision({
+      mergeRiskAdvisory: {
+        alignment: dim("high"),
+        impact: dim("high"),
+        verification: dim("high"),
+        rollback: dim("high"),
+        errorDetection: dim("high"),
+      },
+    }),
+  );
+  const without = parseDecision(closeDecision());
+  const malformed = parseDecision(closeDecision({ mergeRiskAdvisory: { impact: "huge" } }));
+  assert.equal(withAdvisory.mergeRiskAdvisory?.band, "high");
+  assert.equal(without.mergeRiskAdvisory, null);
+  assert.equal(malformed.mergeRiskAdvisory, null);
+  const { mergeRiskAdvisory: _a, ...rest } = withAdvisory;
+  const { mergeRiskAdvisory: _b, ...restWithout } = without;
+  assert.deepEqual(rest, restWithout);
+});
+
+test("merge-risk advisory shows only in collapsed PR review details", () => {
+  const body = `${reportFrontMatter({
+    type: "pull_request",
+    number: "74265",
+    decision: "keep_open",
+    close_reason: "none",
+    work_candidate: "none",
+    pull_head_sha: "abc123def456",
+    merge_risk_advisory_score: "2.33",
+    merge_risk_advisory_band: "high",
+  })}
+
+## Summary
+
+Keep this PR open for maintainer review.
+`;
+  const comment = renderReviewCommentFromReport(body, "none");
+  const plain = renderReviewCommentFromReport(
+    body.replace(/^merge_risk_advisory_.*\n/gm, ""),
+    "none",
+  );
+  assert.match(comment, /Merge risk \(advisory\): high \(2\.33\)/);
+  assert.equal(comment.split("\n")[0], plain.split("\n")[0]);
+  assert.equal(comment.indexOf("Merge risk (advisory)") > comment.indexOf("<details>"), true);
+});
