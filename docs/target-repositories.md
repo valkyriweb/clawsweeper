@@ -35,7 +35,10 @@ not be verified. The field is optional; targets without it retain the normal
 ClawSweeper review loop.
 
 A target may set `issue_triage_intake` to `true` (boolean, default off) so new or
-reopened issues start the existing exact-item review. The intake workflow admits
+reopened issues start the existing exact-item review. Only `leo-labs-ai/my-pi` enables it
+today, as a low-blast-radius pilot (issue close stays dry-run there). Each
+admitted issue costs one mac-mini `triage` job and one exact-item review on the
+review pool; pull requests, pushes, comments and other issue actions never start it. The intake workflow admits
 only `issues.opened` and `issues.reopened` for an open issue, then carries the
 normalized `activity.idempotencyKey` to the existing `clawsweeper_repair_item` receiver.
 A bounded `updated_at` or `delivery_id` is required for intake serialization. The

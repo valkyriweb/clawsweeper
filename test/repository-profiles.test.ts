@@ -126,11 +126,12 @@ test("native lifecycle opt-in and repair paths are decoded without coercion", ()
   }
 });
 
-test("issue triage intake is an explicit boolean opt-in that no profile enables yet", () => {
+test("issue triage intake is an explicit boolean opt-in enabled only for leo-labs-ai/my-pi", () => {
   const config = JSON.parse(readFileSync("config/target-repositories.json", "utf8"));
-  for (const entry of config.repositories) {
-    assert.notEqual(entry.issue_triage_intake, true, entry.target_repo);
-  }
+  const enabledRepos = config.repositories
+    .filter((entry: { issue_triage_intake?: unknown }) => entry.issue_triage_intake === true)
+    .map((entry: { target_repo: string }) => entry.target_repo);
+  assert.deepEqual(enabledRepos, ["leo-labs-ai/my-pi"]);
   const enabled = structuredClone(config);
   enabled.repositories[0].issue_triage_intake = true;
   assert.equal(validateTargetRepositoryConfig(enabled).repositories[0].issueTriageIntake, true);
@@ -142,7 +143,8 @@ test("issue triage intake is an explicit boolean opt-in that no profile enables 
       /issue_triage_intake must be a boolean/,
     );
   }
-  assert.match(issueTriageIntakeBlockReason("leo-labs-ai/my-pi") ?? "", /not enabled/);
+  assert.equal(issueTriageIntakeBlockReason("leo-labs-ai/my-pi"), null);
+  assert.match(issueTriageIntakeBlockReason("valkyriweb/horizon") ?? "", /not enabled/);
   assert.match(issueTriageIntakeBlockReason("unknown/repo") ?? "", /no configured profile/);
   assert.match(issueTriageIntakeBlockReason("") ?? "", /missing or invalid/);
 });
