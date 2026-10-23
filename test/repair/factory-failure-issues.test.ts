@@ -11,6 +11,7 @@ import {
   formatSast,
   issueMarker,
   planFactoryFailureUpdates,
+  runGhApi,
   runMarker,
   safeInline,
   scanFactoryFailures,
@@ -300,4 +301,43 @@ test("self-heal workflow runs the scan as a step with least-privilege tokens, no
   assert.match(workflow, /FACTORY_FAILURE_LUE_KUBE_TOKEN/);
   assert.doesNotMatch(workflow, /workflow_run:/);
   assert.equal((workflow.match(/runs-on:/g) ?? []).length, 1);
+});
+
+test("writes send the JSON body on stdin and surface failures without the body", () => {
+  const seen: { args: string[]; input?: string; token?: string }[] = [];
+  const ok = ((args: string[], options: { env?: Record<string, string>; input?: string }) => {
+    seen.push({
+      args,
+      ...(options.input === undefined ? {} : { input: options.input }),
+      ...(options.env?.GH_TOKEN ? { token: options.env.GH_TOKEN } : {}),
+    });
+    return { status: 0, stdout: '{"number":12}', stderr: "" };
+  }) as unknown as Parameters<typeof runGhApi>[3];
+  const body = JSON.stringify({ name: "factory-failure" });
+  assert.deepEqual(runGhApi(["-X", "POST", "repos/o/r/labels", "--input", "-"], "tok", body, ok), {
+    number: 12,
+  });
+  assert.deepEqual(seen[0], {
+    args: ["api", "-X", "POST", "repos/o/r/labels", "--input", "-"],
+    input: body,
+    token: "tok",
+  });
+  const failing = (() => ({
+    status: 1,
+    stdout: "",
+    stderr: `HTTP 422 token ghp_${"b".repeat(36)}`,
+  })) as unknown as Parameters<typeof runGhApi>[3];
+  assert.throws(
+    () =>
+      runGhApi(
+        ["-X", "POST", "repos/o/r/issues", "--input", "-"],
+        "tok",
+        '{"title":"secret body"}',
+        failing,
+      ),
+    (error: Error) =>
+      /HTTP 422/.test(error.message) &&
+      !/ghp_b/.test(error.message) &&
+      !/secret body/.test(error.message),
+  );
 });
