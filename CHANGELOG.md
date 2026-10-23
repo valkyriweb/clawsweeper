@@ -21,6 +21,7 @@ checkpoint, and status-only commits are intentionally omitted.
 
 ### Added
 
+- Added `factory-failure` issues: a step in the existing 30-minute `repair self-heal failed clusters` job (GitHub-hosted, no new job or self-hosted runner time) files one deduped issue per (repo, workflow) for failed, timed-out or startup-failed ClawSweeper runs and lue-kube Land Queue runs, and comments on the open issue for later failures with run URL, head SHA, failing job and SAST time. Cancelled runs, pull-request checks and the comment router (which keeps its own alert issue) are ignored. Names pass through `redactSecrets`; no log excerpts, and no run titles because this repo is public. lue-kube is read with a separate read-only App token and is reported as skipped if the App cannot read its Actions. No auto-fix.
 - Added an off-by-default `issue_triage_intake` target-profile capability and an `issue triage intake` workflow that connects `github_activity` issue-opened/reopened dispatches to the existing `clawsweeper_repair_item` exact-item review. It skips held, closed, locked, pull-request and already-active items. No shipped profile enables it.
 
 - Added a `clawrouter` auth-mode to the `setup-codex` composite action. It writes
