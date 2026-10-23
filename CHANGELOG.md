@@ -9,6 +9,7 @@ checkpoint, and status-only commits are intentionally omitted.
 
 ### Changed
 
+- Enabled `issue_triage_intake` for `leo-labs-ai/my-pi` only, so new or reopened my-pi issues start the existing exact-item review. Every other profile stays off.
 - Retargeted the my-pi profile, repair-label transitions, and repository tests from `valkyriweb/my-pi` to its transferred home at `lue-labs/my-pi`.
 - Added an optional per-target `post_repair_review_label` handoff. After a successful contributor-branch repair push, ClawSweeper adds and verifies the configured native review label before removing `clawsweeper:autofix`; `lue-labs/my-pi` now returns repaired heads to `agentic-review` without converting metadata failures into replacement PRs.
 - Enabled the narrow `clawsweeper_repair_item` repository-dispatch receiver for explicitly authorized autofix/re-review work while keeping broad `clawsweeper_item` intake and scheduled sweeps paused. Repair workers now mint a separate engine-scoped dispatch token instead of reusing the target-repository token; targets with a native review handoff skip the duplicate ClawSweeper re-review.

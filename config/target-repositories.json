@@ -190,6 +190,7 @@
       "github_app_credential_route": "valkyriweb",
       "automation_policy": "full",
       "issue_close_dry_run": true,
+      "issue_triage_intake": true,
       "include_maintainer_authored": true,
       "review_provider": "pi",
       "post_repair_review_label": "agentic-review",
