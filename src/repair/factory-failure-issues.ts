@@ -15,7 +15,7 @@
 // redactSecrets helper and are rendered as inline code.
 import { pathToFileURL } from "node:url";
 import { redactSecrets } from "./collect-codex-debug.js";
-import { ghText } from "./github-cli.js";
+import { ghSpawn, ghText } from "./github-cli.js";
 import { parseArgs } from "./lib.js";
 
 export const FACTORY_FAILURE_LABEL = "factory-failure";
@@ -276,13 +276,32 @@ export function planFactoryFailureUpdates(
 
 export type GhApi = (args: string[], token: string, input?: string) => unknown;
 
-const defaultGhApi: GhApi = (args, token, input) => {
-  const text = ghText(["api", ...args], {
-    env: { GH_TOKEN: token },
-    ...(input === undefined ? {} : { input }),
-  });
+type GhSpawn = typeof ghSpawn;
+
+/**
+ * gh api wrapper. Writes go through ghSpawn because ghText ignores stdin, so
+ * a `--input -` body would be sent empty. Errors carry no request body.
+ */
+export function runGhApi(
+  args: string[],
+  token: string,
+  input?: string,
+  spawn: GhSpawn = ghSpawn,
+): unknown {
+  if (input === undefined) {
+    const text = ghText(["api", ...args], { env: { GH_TOKEN: token } });
+    return text ? JSON.parse(text) : null;
+  }
+  const result = spawn(["api", ...args], { env: { GH_TOKEN: token }, input });
+  if (result.status !== 0) {
+    const detail = redactSecrets(String(result.stderr ?? "").trim()).slice(0, 300);
+    throw new Error(`gh api ${args.slice(0, 3).join(" ")} failed: ${detail}`);
+  }
+  const text = String(result.stdout ?? "").trim();
   return text ? JSON.parse(text) : null;
-};
+}
+
+const defaultGhApi: GhApi = (args, token, input) => runGhApi(args, token, input);
 
 function asArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
