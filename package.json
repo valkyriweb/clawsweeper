@@ -58,6 +58,7 @@
     "repair:dispatch": "node dist/repair/dispatch-jobs.js",
     "repair:requeue": "node dist/repair/requeue-job.js",
     "repair:self-heal": "node dist/repair/self-heal-failed-runs.js",
+    "repair:factory-failure-issues": "node dist/repair/factory-failure-issues.js",
     "repair:publish-result": "node dist/repair/publish-result.js",
     "repair:review-results": "node dist/repair/review-results.js",
     "docs-maintainer:precheck": "node dist/repair/docs-maintainer.js precheck",
