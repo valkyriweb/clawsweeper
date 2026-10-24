@@ -18,7 +18,7 @@ test("classifier preflight is isolated from all router mutations", () => {
   assert.ok(router);
   const condition =
     "github.event_name == 'workflow_dispatch' && inputs.lifecycle_only && !inputs.execute";
-  assert.ok(preflight.includes("    if: ${{ " + condition + " }}"));
+  assert.ok(preflight.includes("    if: ${{ " + condition + " && inputs.lifecycle_route == '' }}"));
   assert.ok(
     workflow.includes(
       "  group: ${{ " +
@@ -27,7 +27,14 @@ test("classifier preflight is isolated from all router mutations", () => {
     ),
   );
   assert.ok(
-    router.includes("    if: ${{ github.event_name != 'schedule' && !(" + condition + ") }}"),
+    router.includes(
+      "    if: ${{ github.event_name != 'schedule' && inputs.lifecycle_route != 'hosted-dispatch' }}",
+    ),
+  );
+  assert.equal(router.includes("!(" + condition + ")"), false);
+  assert.match(
+    router,
+    /Commit comment router ledger\n {8}if: always\(\) && steps\.app_token\.outcome == 'success' && \(github\.event_name != 'workflow_dispatch' \|\| inputs\.execute\)/,
   );
   assert.match(preflight, /    permissions:\n      contents: read\n    steps:/);
   assert.match(
@@ -64,30 +71,51 @@ test("classifier preflight is isolated from all router mutations", () => {
   assert.doesNotMatch(workflow, /github\.event_path/);
 });
 
-test("classifier and router use the configured self-hosted pool, not worker runner inputs", () => {
-  const selection =
-    "    runs-on: ${{ fromJSON(vars.CLAWSWEEPER_RUNNER_LABELS || '[\"lue-clawsweeper-arc\"]') }}";
+test("classifier preflight and route-comments use the mac-mini labels", () => {
+  const mini = "\n    runs-on: [self-hosted, macOS, ARM64, mac-mini]\n";
+  assert.doesNotMatch(workflow, /lue-clawsweeper-arc/);
   for (const job of ["classifier-preflight", "route-comments"]) {
     const block = workflow.split(`\n  ${job}:\n`)[1]?.split(/\n  [a-z][a-z-]+:\n/)[0];
     assert.ok(block);
-    assert.ok(block.includes(selection));
-    assert.doesNotMatch(
-      block,
-      /runs-on: ubuntu-latest|runs-on:.*inputs\.(?:runner|execution_runner)/,
-    );
+    assert.ok(block.includes(mini));
+    assert.doesNotMatch(block, /runs-on:.*(?:ubuntu-latest|inputs\.(?:runner|execution_runner))/);
+    assert.ok(block.includes("native_gh=/usr/local/bin/gh-native"));
+    assert.equal(block.includes("ghx"), false);
   }
-  for (const job of ["fan-out-scheduled-sweep", "alert-on-failure"]) {
-    const block = workflow.split(`\n  ${job}:\n`)[1]?.split(/\n  [a-z][a-z-]+:\n/)[0];
-    assert.ok(block);
-    assert.ok(block.includes(selection));
-    assert.doesNotMatch(
-      block,
-      /runs-on: ubuntu-latest|runs-on:.*inputs\.(?:runner|execution_runner)/,
-    );
-  }
+  const fanOut = workflow
+    .split("\n  fan-out-scheduled-sweep:\n")[1]
+    ?.split(/\n  [a-z][a-z-]+:\n/)[0];
+  assert.ok(fanOut);
+  assert.match(fanOut, /\n    runs-on: ubuntu-latest\n/);
+  assert.equal(fanOut.includes("gh-native"), false);
+  assert.equal(fanOut.includes("ghx"), false);
+  assert.ok(fanOut.includes("native_gh=$(command -v gh)"));
+  assert.equal(fanOut.includes("uses: ./.github/actions/route-scheduled-target"), true);
+  assert.equal(fanOut.includes("target-repo: valkyriweb/openclaw-claude"), false);
+  assert.ok(fanOut.includes("target_repo=valkyriweb/openclaw-claude"));
+  assert.ok(fanOut.includes("lifecycle_route=mini"));
+  assert.equal(fanOut.includes("CLAWROUTER_API_KEY"), true);
+  const handoff = fanOut.split("Dispatch valkyriweb/openclaw-claude")[1] ?? "";
+  assert.equal(handoff.includes("CLAWROUTER"), false);
+  const proof = workflow.split("\n  dispatch-scheduled-lifecycle:\n")[1] ?? "";
+  assert.match(proof, /\n    runs-on: ubuntu-latest\n/);
+  assert.equal(proof.includes("CLAWROUTER"), false);
+  assert.ok(proof.includes('gh workflow run "repair comment router" --repo "$GITHUB_REPOSITORY"'));
+  assert.ok(proof.includes("-f execute=false"));
+  assert.ok(proof.includes("lifecycle_route=mini"));
+  assert.equal(proof.includes("runs-on: [self-hosted"), false);
+  const alert = workflow.split("\n  alert-on-failure:\n")[1]?.split(/\n  [a-z][a-z-]+:\n/)[0];
+  assert.ok(alert);
+  assert.match(alert, /\n    runs-on: ubuntu-latest\n/);
+  assert.match(
+    alert,
+    /!\(github\.event_name == 'workflow_dispatch' && inputs\.lifecycle_only && !inputs\.execute\)/,
+  );
+  assert.equal(alert.includes("gh-native"), false);
+  assert.equal(alert.includes("CLAWROUTER"), false);
 });
 
-test("router and self-hosted repair jobs select native gh and fail closed if absent", () => {
+test("mac-mini router jobs and self-hosted repair jobs select native gh and fail closed if absent", () => {
   const worker = readFileSync(
     new URL("../../.github/workflows/repair-cluster-worker.yml", import.meta.url),
     "utf8",
@@ -236,3 +264,65 @@ for (const name of ["Route ClawSweeper comments", "Retry waiting repair dispatch
     }
   });
 }
+
+test("scheduled target summary names a waiting-detection failure", () => {
+  const action = readFileSync(
+    new URL("../../.github/actions/route-scheduled-target/action.yml", import.meta.url),
+    "utf8",
+  );
+  const step = action.split("- name: Record scheduled target result\n")[1];
+  assert.ok(step);
+  assert.match(step, /WAITING_OUTCOME: \$\{\{ steps\.waiting\.outcome \}\}/);
+  const body = step.split("run: |\n")[1];
+  assert.ok(body);
+  const indent = body.match(/^ +/m)?.[0].length ?? 0;
+  const script = body
+    .split("\n")
+    .map((line) => line.slice(indent))
+    .join("\n");
+  const dir = mkdtempSync(join(tmpdir(), "scheduled-target-summary-"));
+  const summary = join(dir, "summary.md");
+  const record = (outcomes: Record<string, string>) => {
+    writeFileSync(summary, "");
+    return spawnSync("bash", ["-c", script], {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        TARGET_REPO: "valkyriweb/clawsweeper",
+        GITHUB_STEP_SUMMARY: summary,
+        RUNNER_TEMP: dir,
+        AUTH_OUTCOME: "success",
+        TOKEN_OUTCOME: "success",
+        ROUTE_OUTCOME: "success",
+        PUBLISH_OUTCOME: "success",
+        WAITING_OUTCOME: "success",
+        RETRY_OUTCOME: "skipped",
+        RETRY_PUBLISH_OUTCOME: "skipped",
+        ...outcomes,
+      },
+    });
+  };
+  try {
+    const waitingFailed = record({ WAITING_OUTCOME: "failure", RETRY_OUTCOME: "skipped" });
+    assert.notEqual(waitingFailed.status, 0, waitingFailed.stdout);
+    assert.match(
+      readFileSync(summary, "utf8"),
+      /\| valkyriweb\/clawsweeper \| failure \(waiting\) \|/,
+    );
+    const routeFailed = record({
+      ROUTE_OUTCOME: "failure",
+      WAITING_OUTCOME: "skipped",
+      PUBLISH_OUTCOME: "success",
+    });
+    assert.notEqual(routeFailed.status, 0);
+    assert.match(
+      readFileSync(summary, "utf8"),
+      /\| valkyriweb\/clawsweeper \| failure \(route\) \|/,
+    );
+    const countedZero = record({});
+    assert.equal(countedZero.status, 0, countedZero.stderr);
+    assert.match(readFileSync(summary, "utf8"), /\| valkyriweb\/clawsweeper \| success \|/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

@@ -5,6 +5,7 @@ import test from "node:test";
 import {
   REPOSITORY_PROFILES,
   automationPolicyBlockReason,
+  issueTriageIntakeBlockReason,
   repositoryProfileFor,
   resolveAutomationCapabilities,
   validateTargetRepositoryConfig,
@@ -20,6 +21,20 @@ test("automation policies are explicit and fail closed for protected targets", (
   assert.equal(smilerite.automationPolicy, "review_only");
   assert.equal(saleSight.githubAppCredentialRoute, "bermont-digital");
   assert.equal(smilerite.githubAppCredentialRoute, "bermont-digital");
+  const centaur = repositoryProfileFor("Detoil/centaur");
+  assert.equal(repositoryProfileFor("detoil/centaur").targetRepo, centaur.targetRepo);
+  assert.equal(centaur.automationPolicy, "review_only");
+  assert.equal(centaur.githubAppCredentialRoute, "valkyriweb");
+  for (const capability of [
+    "repair",
+    "branch_push",
+    "pull_request",
+    "merge",
+    "close",
+    "label",
+  ] as const) {
+    assert.match(automationPolicyBlockReason(centaur.targetRepo, capability) ?? "", /review_only/);
+  }
   assert.equal(repositoryProfileFor("valkyriweb/clawsweeper").automationPolicy, "full");
   assert.equal(
     repositoryProfileFor("valkyriweb/clawsweeper").githubAppCredentialRoute,
@@ -109,6 +124,29 @@ test("native lifecycle opt-in and repair paths are decoded without coercion", ()
       /repair_allowed_paths must be nonempty repo-relative globs/,
     );
   }
+});
+
+test("issue triage intake is an explicit boolean opt-in enabled only for leo-labs-ai/my-pi", () => {
+  const config = JSON.parse(readFileSync("config/target-repositories.json", "utf8"));
+  const enabledRepos = config.repositories
+    .filter((entry: { issue_triage_intake?: unknown }) => entry.issue_triage_intake === true)
+    .map((entry: { target_repo: string }) => entry.target_repo);
+  assert.deepEqual(enabledRepos, ["leo-labs-ai/my-pi"]);
+  const enabled = structuredClone(config);
+  enabled.repositories[0].issue_triage_intake = true;
+  assert.equal(validateTargetRepositoryConfig(enabled).repositories[0].issueTriageIntake, true);
+  for (const invalid of ["true", 1, null]) {
+    const candidate = structuredClone(config);
+    candidate.repositories[0].issue_triage_intake = invalid;
+    assert.throws(
+      () => validateTargetRepositoryConfig(candidate),
+      /issue_triage_intake must be a boolean/,
+    );
+  }
+  assert.equal(issueTriageIntakeBlockReason("leo-labs-ai/my-pi"), null);
+  assert.match(issueTriageIntakeBlockReason("valkyriweb/horizon") ?? "", /not enabled/);
+  assert.match(issueTriageIntakeBlockReason("unknown/repo") ?? "", /no configured profile/);
+  assert.match(issueTriageIntakeBlockReason("") ?? "", /missing or invalid/);
 });
 
 test("repositoryProfileFor matches mixed-case input against private target profiles", () => {

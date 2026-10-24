@@ -99,6 +99,22 @@ test("target auth resolves explicit routes and denies review-only mutation befor
   );
 });
 
+test("event review token mode is accepted for review_only and full targets", () => {
+  const workflow = fs.readFileSync(".github/workflows/sweep.yml", "utf8");
+  assert.match(workflow, /automation-policy == 'review_only' && 'comment' \|\| 'mutate'/);
+  const expected = { "Detoil/centaur": "comment", "valkyriweb/lue-kube": "mutate" };
+  for (const [targetRepo, accessMode] of Object.entries(expected)) {
+    const policy = targetAuthFor({ targetRepo, accessMode: "read" }).automation_policy;
+    const selected = policy === "review_only" ? "comment" : "mutate";
+    assert.equal(selected, accessMode);
+    assert.equal(targetAuthFor({ targetRepo, accessMode: selected }).access_mode, accessMode);
+  }
+  assert.throws(
+    () => targetAuthFor({ targetRepo: "Detoil/centaur", accessMode: "mutate" }),
+    /review_only.*denies target token access-mode=mutate/,
+  );
+});
+
 test("lifecycle evidence reads require caller opt-in and the target profile", () => {
   for (const accessMode of ["read", "comment", "mutate"] as const) {
     const base = targetAuthFor({ targetRepo: "valkyriweb/openclaw-claude", accessMode });
@@ -194,14 +210,24 @@ test("lifecycle opt-in is wired through CLI and all static token branches", () =
   const action = fs.readFileSync(".github/actions/create-target-token/action.yml", "utf8");
   assert.match(action, /lifecycle-evidence-read:[\s\S]*?default: "false"/);
   assert.match(action, /--lifecycle-evidence-read "\$LIFECYCLE_EVIDENCE_READ"/);
-  for (const permission of ["checks", "actions"]) {
+  const lifecycleGatedSteps = { checks: 5, actions: 5 };
+  for (const [permission, count] of Object.entries(lifecycleGatedSteps)) {
     assert.equal(
       action.split(
         `permission-${permission}: \u0024{{ steps.resolve.outputs.lifecycle_evidence_read == 'true' && 'read' || '' }}`,
       ).length - 1,
-      6,
+      count,
     );
   }
+  const tokenStep = (id: string) => {
+    const step = action.split(`id: ${id}\n`)[1] ?? "";
+    return step.split("\n    - name:")[0];
+  };
+  assert.match(tokenStep("bermont-digital-comment"), /^\s+permission-contents: read$/m);
+  assert.match(tokenStep("valkyriweb-comment"), /^\s+permission-checks: read$/m);
+  assert.match(tokenStep("valkyriweb-comment"), /^\s+permission-actions: read$/m);
+  assert.doesNotMatch(tokenStep("bermont-digital-comment"), /^\s+permission-checks: read$/m);
+  assert.doesNotMatch(tokenStep("bermont-digital-comment"), /^\s+permission-actions: read$/m);
   const router = fs.readFileSync(".github/workflows/repair-comment-router.yml", "utf8");
   assert.match(router, /lifecycle-evidence-read: "true"/);
 });
@@ -363,25 +389,64 @@ test("comment router mints target tokens through the routed facade", () => {
     workflow,
     /select\(\.skip_comment_router_schedule != true or \.pi_review_lifecycle == true\)/,
   );
-  assert.match(workflow, /-f lifecycle_only="\$lifecycle_only"/);
   assert.match(workflow, /config\/target-repositories\.json/);
   assert.doesNotMatch(
     workflow,
     /jq -r '\.repositories\[\]\.target_repo' config\/target-repositories\.json/,
   );
+  assert.equal(workflow.match(/gh workflow run/g)?.length, 2);
+
+  const fanout = workflow
+    .split("\n  fan-out-scheduled-sweep:\n")[1]
+    ?.split("\n  classifier-preflight:\n")[0];
+  assert.ok(fanout);
+  assert.equal(fanout.match(/uses: actions\/checkout@v5/g)?.length, 1);
+  assert.equal(fanout.match(/uses: \.\/\.github\/actions\/setup-pnpm/g)?.length, 1);
+  assert.equal(fanout.match(/uses: \.\/\.github\/actions\/setup-state/g)?.length, 1);
+  assert.equal(fanout.match(/uses: \.\/\.github\/actions\/route-scheduled-target/g)?.length, 12);
+  assert.equal(fanout.match(/gh workflow run/g)?.length, 1);
+  assert.match(fanout, /target_repo=valkyriweb\/openclaw-claude/);
+  assert.match(fanout, /lifecycle_only=true/);
+  assert.match(fanout, /lifecycle_route=mini/);
+  assert.match(
+    fanout,
+    /gh workflow run "repair comment router" --repo "\$GITHUB_REPOSITORY" --ref "\$GITHUB_REF_NAME"/,
+  );
+  assert.match(fanout, /-f execute=true \\/);
+  assert.match(fanout, /CLAWSWEEPER_MODELS: \$\{\{ vars\.CLAWSWEEPER_MODELS \|\| '' \}\}/);
+  const scheduled = JSON.parse(
+    fs.readFileSync("config/target-repositories.json", "utf8"),
+  ).repositories.filter(
+    (entry) =>
+      entry.target_repo !== "leo-labs-ai/paperclip" &&
+      (entry.skip_comment_router_schedule !== true || entry.pi_review_lifecycle === true),
+  );
+  assert.equal(scheduled.length, 13);
+  for (const entry of scheduled) {
+    if (entry.pi_review_lifecycle === true) {
+      assert.equal(entry.target_repo, "valkyriweb/openclaw-claude");
+      assert.equal(fanout.includes(`target-repo: ${entry.target_repo}\n`), false);
+      continue;
+    }
+    const marker = fanout.indexOf(`target-repo: ${entry.target_repo}\n`);
+    assert.ok(marker > 0, entry.target_repo);
+    const window = fanout.slice(marker, marker + 240);
+    assert.match(window, /lifecycle-only: "false"/);
+  }
 });
 
 test("comment-router schedule skip flag isolates openclaw-claude without dropping it from the allowlist", () => {
   const config = JSON.parse(fs.readFileSync("config/target-repositories.json", "utf8"));
   const repos = config.repositories.map((entry) => entry.target_repo);
   assert.ok(repos.includes("valkyriweb/openclaw-claude"));
-  assert.equal(repos.length, 13);
+  assert.ok(repos.includes("Detoil/centaur"));
+  assert.equal(repos.length, 14);
 
   const scheduled = config.repositories
     .filter((entry) => entry.target_repo !== "leo-labs-ai/paperclip")
     .filter((entry) => entry.skip_comment_router_schedule !== true)
     .map((entry) => entry.target_repo);
-  assert.equal(scheduled.length, 11);
+  assert.equal(scheduled.length, 12);
   assert.ok(!scheduled.includes("valkyriweb/openclaw-claude"));
   assert.ok(!scheduled.includes("leo-labs-ai/paperclip"));
   for (const keep of [
@@ -396,6 +461,7 @@ test("comment-router schedule skip flag isolates openclaw-claude without droppin
     "valkyriweb/clawsweeper",
     "valkyriweb/openclaw",
     "valkyriweb/lue-kube",
+    "Detoil/centaur",
   ]) {
     assert.ok(scheduled.includes(keep), keep);
   }
@@ -408,7 +474,7 @@ test("native Pi target receives lifecycle-only recovery, not generic schedule sc
       entry.target_repo !== "leo-labs-ai/paperclip" &&
       (entry.skip_comment_router_schedule !== true || entry.pi_review_lifecycle === true),
   );
-  assert.equal(scheduled.length, 12);
+  assert.equal(scheduled.length, 13);
   const native = scheduled.filter((entry) => entry.pi_review_lifecycle === true);
   assert.deepEqual(
     native.map((entry) => entry.target_repo),

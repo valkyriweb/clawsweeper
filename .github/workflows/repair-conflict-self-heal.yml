@@ -47,7 +47,9 @@ concurrency:
 
 jobs:
   self-heal:
-    runs-on: ${{ fromJSON(vars.CLAWSWEEPER_RUNNER_LABELS || '["lue-clawsweeper-arc"]') }}
+    # Hosted on purpose. This job calls GitHub only. It does not call ClawRouter.
+    # Child workers are dispatched with the app token via the workflow_dispatch API.
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - name: Create GitHub App token

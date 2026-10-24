@@ -45,7 +45,9 @@ concurrency:
 
 jobs:
   self-heal:
-    runs-on: ${{ fromJSON(vars.CLAWSWEEPER_RUNNER_LABELS || '["lue-clawsweeper-arc"]') }}
+    # Hosted on purpose. This job calls GitHub only. It does not call ClawRouter.
+    # Child workers are dispatched with the app token via the workflow_dispatch API.
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - name: Create GitHub App token
@@ -114,3 +116,40 @@ jobs:
             --message "chore: record self-heal dispatch" \
             --path results/self-heal.json \
             --rebase-strategy theirs
+
+      # Factory-failure issues ride on this existing 30-minute hosted job on
+      # purpose: a few GitHub API calls, no extra job, no self-hosted runner,
+      # no ClawRouter. One deduped `factory-failure` issue per (repo, workflow);
+      # later failures comment on the open issue. Cancelled runs are ignored.
+      - name: Create factory-failure issue token
+        id: factory_issue_token
+        if: ${{ !cancelled() }}
+        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+        with:
+          client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
+          private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-actions: read
+          permission-issues: write
+
+      # Read-only Land Queue history. If the App cannot read lue-kube Actions,
+      # the scan reports lue-kube as skipped and still covers ClawSweeper.
+      - name: Create lue-kube Actions read token
+        id: factory_lue_kube_token
+        if: ${{ !cancelled() && steps.factory_issue_token.outcome == 'success' }}
+        continue-on-error: true
+        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+        with:
+          client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
+          private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
+          owner: valkyriweb
+          repositories: lue-kube
+          permission-actions: read
+
+      - name: File factory-failure issues
+        if: ${{ !cancelled() && steps.factory_issue_token.outcome == 'success' }}
+        env:
+          GH_TOKEN: ${{ steps.factory_issue_token.outputs.token }}
+          FACTORY_FAILURE_LUE_KUBE_TOKEN: ${{ steps.factory_lue_kube_token.outputs.token }}
+        run: pnpm run --silent repair:factory-failure-issues -- --lookback-hours 3

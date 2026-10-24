@@ -8,7 +8,7 @@ inputs:
     description: "Required target access mode: read, comment, or mutate."
     required: true
   lifecycle-evidence-read:
-    description: "Opt in to checks/actions reads only for targets with pi_review_lifecycle enabled."
+    description: "Opt in to checks/actions reads only for targets with pi_review_lifecycle enabled. Valkyriweb comment tokens always carry both."
     required: false
     default: "false"
   working-directory:
@@ -90,8 +90,10 @@ runs:
         permission-contents: read
         permission-issues: write
         permission-pull-requests: write
-        permission-checks: ${{ steps.resolve.outputs.lifecycle_evidence_read == 'true' && 'read' || '' }}
-        permission-actions: ${{ steps.resolve.outputs.lifecycle_evidence_read == 'true' && 'read' || '' }}
+        # PR command lookups read statusCheckRollup, which includes each check suite's
+        # workflow run. The Bermont App has neither permission.
+        permission-checks: read
+        permission-actions: read
 
     - name: Create Valkyriweb mutate token
       id: valkyriweb-mutate

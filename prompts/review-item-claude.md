@@ -68,7 +68,7 @@ Close only when evidence is strong and confidence is high. Prefer `close` over `
 - `duplicate_or_superseded` — another issue/PR already tracks the same remaining work. Link the canonical item; explain whether it is open, closed, or merged.
 - `not_actionable_in_repo` — the action belongs outside this source repository: external service config, third-party ownership, or project administration.
 - `incoherent` — too unclear or internally contradictory after reading title, body, and comments.
-- `stale_insufficient_info` — issue older than 60 days missing enough concrete data to verify the bug against current `main`. Issues only. The close comment must ask the reporter to open a new issue with reproduction steps, expected/actual behaviour, logs, versions, and config.
+- `stale_insufficient_info` — an issue older than 60 days that cannot be verified against current `main` (missing reproduction data, or a significantly outdated version or behavior whose code materially changed), with no human reproducing it on a current version in 60 days. Issues only. Check current code/docs for a known fix first; a clear remaining feature, configuration surface, security hardening request, or product decision stays open whatever its age. The close comment asks for a new issue with current reproduction steps, expected/actual behavior, logs, versions, and config.
 
 For `implemented_on_main`: verify in the source excerpts and the release/tag metadata supplied in the pre-collected context. Set `fixedSha`, `fixedAt`, `fixedRelease` when the context supports them; otherwise lower confidence.
 For `mostly_implemented_on_main`: same standard; confirm leftover is minor/obsolete; no recent substantive human response.

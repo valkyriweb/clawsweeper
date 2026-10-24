@@ -9,6 +9,7 @@ checkpoint, and status-only commits are intentionally omitted.
 
 ### Changed
 
+- Enabled `issue_triage_intake` for `leo-labs-ai/my-pi` only, so new or reopened my-pi issues start the existing exact-item review. Every other profile stays off.
 - Retargeted the my-pi profile, repair-label transitions, and repository tests from `valkyriweb/my-pi` to its transferred home at `lue-labs/my-pi`.
 - Added an optional per-target `post_repair_review_label` handoff. After a successful contributor-branch repair push, ClawSweeper adds and verifies the configured native review label before removing `clawsweeper:autofix`; `lue-labs/my-pi` now returns repaired heads to `agentic-review` without converting metadata failures into replacement PRs.
 - Enabled the narrow `clawsweeper_repair_item` repository-dispatch receiver for explicitly authorized autofix/re-review work while keeping broad `clawsweeper_item` intake and scheduled sweeps paused. Repair workers now mint a separate engine-scoped dispatch token instead of reusing the target-repository token; targets with a native review handoff skip the duplicate ClawSweeper re-review.
@@ -20,6 +21,9 @@ checkpoint, and status-only commits are intentionally omitted.
   `CLAWSWEEPER_MODEL` repo variable still overrides. Part of #171.
 
 ### Added
+
+- Added `factory-failure` issues: a step in the existing 30-minute `repair self-heal failed clusters` job (GitHub-hosted, no new job or self-hosted runner time) files one deduped issue per (repo, workflow) for failed, timed-out or startup-failed ClawSweeper runs and lue-kube Land Queue runs, and comments on the open issue for later failures with run URL, head SHA, failing job and SAST time. Cancelled runs, pull-request checks and the comment router (which keeps its own alert issue) are ignored. Names pass through `redactSecrets`; no log excerpts, and no run titles because this repo is public. lue-kube is read with a separate read-only App token and is reported as skipped if the App cannot read its Actions. No auto-fix.
+- Added an off-by-default `issue_triage_intake` target-profile capability and an `issue triage intake` workflow that connects `github_activity` issue-opened/reopened dispatches to the existing `clawsweeper_repair_item` exact-item review. It skips held, closed, locked, pull-request and already-active items. No shipped profile enables it.
 
 - Added a `clawrouter` auth-mode to the `setup-codex` composite action. It writes
   a Codex `model_provider` that routes the Responses wire to ClawRouter

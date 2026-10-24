@@ -153,6 +153,14 @@ test("collectCodexDebug defaults to CODEX_HOME when set", () => {
   }
 });
 
+test("redactSecrets masks ClawRouter keys", () => {
+  assert.equal(redactSecrets("CLAWROUTER_API_KEY=abc123"), "CLAWROUTER_API_KEY=[REDACTED]");
+  assert.equal(
+    redactSecrets('{"CLAWROUTER_API_KEY": "abc123"}'),
+    '{"CLAWROUTER_API_KEY": "[REDACTED]"}',
+  );
+});
+
 test("redactSecrets masks common token shapes", () => {
   assert.equal(
     redactSecrets(

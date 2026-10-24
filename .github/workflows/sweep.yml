@@ -1,14 +1,13 @@
 name: ClawSweeper
 
-# run-name carries the target_repo (and item scope when set) so concurrent dispatches
-# against different repos are distinguishable on the Actions dashboard. Previously every
-# workflow_dispatch fell through to a literal 'Review ClawSweeper items' regardless of
-# target, making same-time runs against different repos look like duplicates.
-run-name: ${{ github.event_name == 'repository_dispatch' && format('Review event item {0}#{1}', github.event.client_payload.target_repo || 'bermont-digital/multica', github.event.client_payload.item_number || '?') || (github.event_name == 'workflow_dispatch' && github.event.inputs.apply_existing == 'true' && github.event.inputs.apply_sync_comments_only == 'true') && format('Sync Codex review comments — {0}', github.event.inputs.target_repo || 'bermont-digital/multica') || (github.event_name == 'workflow_dispatch' && github.event.inputs.apply_existing == 'true') && format('Apply ClawSweeper closures — {0}', github.event.inputs.target_repo || 'bermont-digital/multica') || (github.event_name == 'workflow_dispatch' && github.event.inputs.audit_dashboard == 'true') && format('Audit ClawSweeper state — {0}', github.event.inputs.target_repo || 'bermont-digital/multica') || (github.event_name == 'workflow_dispatch' && github.event.inputs.hot_intake == 'true') && format('Review hot ClawSweeper items — {0}', github.event.inputs.target_repo || 'bermont-digital/multica') || (github.event_name == 'workflow_dispatch' && github.event.inputs.item_number != '') && format('Review ClawSweeper items — {0}#{1}', github.event.inputs.target_repo || 'bermont-digital/multica', github.event.inputs.item_number) || (github.event_name == 'workflow_dispatch' && github.event.inputs.item_numbers != '') && format('Review ClawSweeper items — {0} [{1}]', github.event.inputs.target_repo || 'bermont-digital/multica', github.event.inputs.item_numbers) || github.event_name == 'workflow_dispatch' && format('Review ClawSweeper items — {0}', github.event.inputs.target_repo || 'bermont-digital/multica') || 'Review ClawSweeper items' }}
+# run-name carries the target item and, for issue-triage dispatches, the receipt
+# hash. This lets the existing sweep run history identify exact source-event replays.
+# Other review modes retain their existing dashboard labels.
+run-name: ${{ github.event_name == 'repository_dispatch' && format('Review event item {0}#{1}{2}', github.event.client_payload.target_repo || 'bermont-digital/multica', github.event.client_payload.item_number || '?', github.event.client_payload.idempotency_receipt && format(' [r:{0}]', github.event.client_payload.idempotency_receipt) || '') || (github.event_name == 'workflow_dispatch' && github.event.inputs.apply_existing == 'true' && github.event.inputs.apply_sync_comments_only == 'true') && format('Sync Codex review comments — {0}', github.event.inputs.target_repo || 'bermont-digital/multica') || (github.event_name == 'workflow_dispatch' && github.event.inputs.apply_existing == 'true') && format('Apply ClawSweeper closures — {0}', github.event.inputs.target_repo || 'bermont-digital/multica') || (github.event_name == 'workflow_dispatch' && github.event.inputs.audit_dashboard == 'true') && format('Audit ClawSweeper state — {0}', github.event.inputs.target_repo || 'bermont-digital/multica') || (github.event_name == 'workflow_dispatch' && github.event.inputs.hot_intake == 'true') && format('Review hot ClawSweeper items — {0}', github.event.inputs.target_repo || 'bermont-digital/multica') || (github.event_name == 'workflow_dispatch' && github.event.inputs.item_number != '') && format('Review ClawSweeper items — {0}#{1}', github.event.inputs.target_repo || 'bermont-digital/multica', github.event.inputs.item_number) || (github.event_name == 'workflow_dispatch' && github.event.inputs.item_numbers != '') && format('Review ClawSweeper items — {0} [{1}]', github.event.inputs.target_repo || 'bermont-digital/multica', github.event.inputs.item_numbers) || github.event_name == 'workflow_dispatch' && format('Review ClawSweeper items — {0}', github.event.inputs.target_repo || 'bermont-digital/multica') || 'Review ClawSweeper items' }}
 
 on:
-  # Broad hot-intake and scheduled sweeps stay paused. This exact-item event is
-  # emitted only by an explicit autofix/repair authorization.
+  # Broad hot-intake and scheduled sweeps stay paused. Exact-item events can come
+  # from authorized repair flows or profile-gated issue triage; normal policy gates remain.
   repository_dispatch:
     types: [clawsweeper_repair_item]
   workflow_dispatch:
@@ -156,7 +155,9 @@ env:
 
 concurrency:
   group: ${{ github.event_name == 'repository_dispatch' && format('clawsweeper-event-{0}-{1}', github.event.client_payload.target_repo || 'bermont-digital/multica', github.event.client_payload.item_number || github.run_id) || format('{0}-{1}', (github.event_name == 'workflow_dispatch' && github.event.inputs.apply_existing == 'true' && github.event.inputs.apply_sync_comments_only == 'true') && 'clawsweeper-comment-sync' || (github.event_name == 'workflow_dispatch' && github.event.inputs.apply_existing == 'true') && 'clawsweeper-apply' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.item_number != '' || github.event.inputs.item_numbers != '')) && format('clawsweeper-intake-exact-{0}', github.event.inputs.item_number || github.event.inputs.item_numbers) || (github.event_name == 'workflow_dispatch' && github.event.inputs.hot_intake == 'true') && 'clawsweeper-intake-v2' || (github.event_name == 'workflow_dispatch' && github.event.inputs.audit_dashboard == 'true') && 'clawsweeper-audit' || 'clawsweeper-review', github.event.inputs.target_repo || github.event.client_payload.target_repo || 'bermont-digital/multica') }}
-  cancel-in-progress: ${{ github.event_name == 'repository_dispatch' }}
+  # Do not cancel an in-flight per-item review: it may already have side effects.
+  # GitHub still keeps one pending run per group and replaces it with the newest event.
+  cancel-in-progress: false
 
 jobs:
   event-review-apply:
@@ -236,12 +237,14 @@ jobs:
           bermont-digital-client-id: ${{ vars.BERMONT_DIGITAL_CLAWSWEEPER_APP_CLIENT_ID }}
           bermont-digital-private-key: ${{ secrets.BERMONT_DIGITAL_CLAWSWEEPER_APP_PRIVATE_KEY }}
 
+      # review_only targets get a comment token; close, label and repair paths
+      # below enforce automation_policy themselves.
       - name: Create target write token
         id: target-write-token
         uses: ./.github/actions/create-target-token
         with:
           target-repo: ${{ steps.target.outputs.target_repo }}
-          access-mode: mutate
+          access-mode: ${{ steps.target-read-token.outputs.automation-policy == 'review_only' && 'comment' || 'mutate' }}
           valkyriweb-client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
           valkyriweb-private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
           bermont-digital-client-id: ${{ vars.BERMONT_DIGITAL_CLAWSWEEPER_APP_CLIENT_ID }}
@@ -321,6 +324,8 @@ jobs:
       # user-scoped package: App tokens can't read it; use the read:packages PAT secret.
       - if: ${{ steps.review-routing.outputs.review_provider == 'pi' }}
         uses: ./.github/actions/setup-pi
+        env:
+          CLAWROUTER_API_KEY: ${{ vars.CLAWSWEEPER_CODEX_AUTH_MODE == 'clawrouter' && secrets.CLAWROUTER_API_KEY || '' }}
         with:
           token: ${{ secrets.PI_PACKAGES_TOKEN }}
 
@@ -342,6 +347,9 @@ jobs:
           GH_TOKEN: ${{ steps.target-write-token.outputs.token }}
           ADDITIONAL_PROMPT: ${{ github.event.client_payload.additional_prompt || '' }}
           CLAWSWEEPER_REVIEW_PROVIDER: ${{ vars.CLAWSWEEPER_REVIEW_PROVIDER || '' }}
+          # setup-codex does not export the key; ephemeral ARC pods have no host
+          # config, so the review process needs it in its own env.
+          CLAWROUTER_API_KEY: ${{ vars.CLAWSWEEPER_CODEX_AUTH_MODE == 'clawrouter' && secrets.CLAWROUTER_API_KEY || '' }}
         run: |
           set -euo pipefail
           test -n "$GH_TOKEN"
@@ -958,6 +966,8 @@ jobs:
       # user-scoped package: App tokens can't read it; use the read:packages PAT secret.
       - if: ${{ needs.plan.outputs.review_provider == 'pi' }}
         uses: ./clawsweeper/.github/actions/setup-pi
+        env:
+          CLAWROUTER_API_KEY: ${{ vars.CLAWSWEEPER_CODEX_AUTH_MODE == 'clawrouter' && secrets.CLAWROUTER_API_KEY || '' }}
         with:
           token: ${{ secrets.PI_PACKAGES_TOKEN }}
 
@@ -1006,6 +1016,7 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.target-read-token.outputs.token }}
           CLAWSWEEPER_PROOF_INSPECTION_TOKEN: ${{ steps.target-read-token.outputs.token }}
+          CLAWROUTER_API_KEY: ${{ vars.CLAWSWEEPER_CODEX_AUTH_MODE == 'clawrouter' && secrets.CLAWROUTER_API_KEY || '' }}
           ADDITIONAL_PROMPT: ${{ github.event.inputs.additional_prompt || github.event.client_payload.additional_prompt || '' }}
           # Provider routing flip lever. Empty/unset → default `codex`.
           # Set repo var to `claude-bridge` to route every review through
