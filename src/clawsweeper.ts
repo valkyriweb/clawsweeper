@@ -41,6 +41,7 @@ import {
 } from "./github-retry.js";
 import { parseGhJson, parseGhJsonLines } from "./github-json.js";
 import { stableJson } from "./stable-json.js";
+import { assertGitHubItemIdentity, GitHubItemMovedError } from "./github-item-identity.js";
 import { runText } from "./command.js";
 import {
   buildHistorySnippets,
@@ -3462,6 +3463,7 @@ function fetchItem(number: number): { item: Item; state: string } {
     "--jq",
     "{number,title,html_url,created_at,updated_at,closed_at,state,locked,active_lock_reason,author_association,user:{login:.user.login},labels:[.labels[].name],pull_request:(.pull_request // null)}",
   ]);
+  assertGitHubItemIdentity(issue, targetRepo(), number);
   return {
     item: {
       repo: targetRepo(),
@@ -3480,6 +3482,17 @@ function fetchItem(number: number): { item: Item; state: string } {
     },
     state: issue.state ?? "unknown",
   };
+}
+
+function fetchReviewItem(number: number): { item: Item; state: string } | null {
+  try {
+    return fetchItem(number);
+  } catch (error) {
+    if (!(error instanceof GitHubItemMovedError) && !isGitHubNotFoundError(error)) throw error;
+    if (isGitHubNotFoundError(error)) ghJson<unknown>(["api", `repos/${targetRepo()}`]);
+    console.error(`Skipping ${targetRepo()}#${number}: item is no longer in this repository.`);
+    return null;
+  }
 }
 
 function fetchOpenItemCounts(): OpenItemCounts {
@@ -3653,16 +3666,15 @@ function selectCandidates(options: {
 }): { candidates: Item[]; scannedPages: number } {
   if (options.itemNumbers) {
     const candidates = options.itemNumbers.flatMap((number) => {
-      const { item, state } = fetchItem(number);
-      return state === "open" ? [item] : [];
+      const fetched = fetchReviewItem(number);
+      return fetched?.state === "open" ? [fetched.item] : [];
     });
     return { candidates, scannedPages: 0 };
   }
   if (options.itemNumber) {
     if (options.shardIndex !== 0) return { candidates: [], scannedPages: 0 };
-    const { item, state } = fetchItem(options.itemNumber);
-    if (state !== "open") return { candidates: [], scannedPages: 0 };
-    return { candidates: [item], scannedPages: 0 };
+    const fetched = fetchReviewItem(options.itemNumber);
+    return { candidates: fetched?.state === "open" ? [fetched.item] : [], scannedPages: 0 };
   }
   const due: DueCandidate[] = [];
   const now = Date.now();
@@ -3720,8 +3732,8 @@ function openExplicitItems(itemNumbers: readonly number[]): Item[] {
   for (const number of itemNumbers) {
     if (seen.has(number)) continue;
     seen.add(number);
-    const { item, state } = fetchItem(number);
-    if (state === "open") candidates.push(item);
+    const fetched = fetchReviewItem(number);
+    if (fetched?.state === "open") candidates.push(fetched.item);
   }
   return candidates;
 }
@@ -3837,10 +3849,9 @@ function planCandidates(options: {
     };
   }
   if (options.itemNumber) {
-    const { item, state } = fetchItem(options.itemNumber);
-    const shouldReview = state === "open";
-    const candidates = shouldReview ? [item] : [];
-    const shards = [{ shard: 0, itemNumbers: shouldReview ? [item.number] : [] }];
+    const fetched = fetchReviewItem(options.itemNumber);
+    const candidates = fetched?.state === "open" ? [fetched.item] : [];
+    const shards = [{ shard: 0, itemNumbers: candidates.map((item) => item.number) }];
     return {
       shards,
       scannedPages: 0,
@@ -9719,7 +9730,25 @@ function applyDecisionsCommand(args: Args): void {
     if (decision === "close" && !isCloseProposal) {
       continue;
     }
-    const { item, state } = fetchItem(number);
+    let liveItem: ReturnType<typeof fetchItem>;
+    try {
+      liveItem = fetchItem(number);
+    } catch (error) {
+      if (!(error instanceof GitHubItemMovedError) && !isGitHubNotFoundError(error)) throw error;
+      ghJson<unknown>(["api", `repos/${targetRepo()}`]);
+      markdown = replaceFrontMatterValue(markdown, "action_taken", "skipped_already_closed");
+      markdown = replaceFrontMatterValue(markdown, "apply_checked_at", new Date().toISOString());
+      if (!syncCommentsOnly) archiveClosed(markdown);
+      results.push({
+        number,
+        action: "skipped_already_closed",
+        reason: "item not found in target repository",
+      });
+      processedCount += 1;
+      if (processedCount >= processedLimit) break;
+      continue;
+    }
+    const { item, state } = liveItem;
     let currentContext: ItemContext | undefined;
     const currentItemContext = (): ItemContext => {
       currentContext ??= collectItemContext(item);
