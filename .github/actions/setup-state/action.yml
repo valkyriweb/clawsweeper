@@ -46,7 +46,16 @@ runs:
 
     - name: Export state root
       shell: bash
-      run: echo "CLAWSWEEPER_STATE_DIR=$GITHUB_WORKSPACE/${{ inputs.state-path }}" >> "$GITHUB_ENV"
+      env:
+        INPUTS_STATE_PATH: ${{ inputs['state-path'] }}
+      run: |
+        # Keep spaces, but reject record separators and parent traversal before
+        # the value becomes a GITHUB_ENV record.
+        if [[ ! "$INPUTS_STATE_PATH" =~ ^[^$'\r\n']+$ ]] || [[ "/$INPUTS_STATE_PATH/" == */../* ]]; then
+          echo "::error::Invalid state-path." >&2
+          exit 1
+        fi
+        echo "CLAWSWEEPER_STATE_DIR=$GITHUB_WORKSPACE/${INPUTS_STATE_PATH}" >> "$GITHUB_ENV"
 
     - uses: actions/setup-node@v6
       with:
@@ -56,4 +65,6 @@ runs:
       shell: bash
       env:
         CLAWSWEEPER_STATE_DIR: ${{ inputs.state-path }}
-      run: node "${{ inputs.worktree-path }}/scripts/hydrate-state.ts" --state-dir "${{ inputs.state-path }}" --worktree "${{ inputs.worktree-path }}"
+        INPUTS_WORKTREE_PATH: ${{ inputs['worktree-path'] }}
+        INPUTS_STATE_PATH: ${{ inputs['state-path'] }}
+      run: node "${INPUTS_WORKTREE_PATH}/scripts/hydrate-state.ts" --state-dir "${INPUTS_STATE_PATH}" --worktree "${INPUTS_WORKTREE_PATH}"

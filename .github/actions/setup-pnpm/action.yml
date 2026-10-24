@@ -40,16 +40,18 @@ runs:
 
     - name: Enable pinned pnpm
       shell: bash
+      env:
+        INPUTS_PNPM_VERSION: ${{ inputs['pnpm-version'] }}
       run: |
         set -euo pipefail
         corepack enable
         for attempt in 1 2 3; do
-          if corepack prepare "pnpm@${{ inputs.pnpm-version }}" --activate; then
+          if corepack prepare "pnpm@${INPUTS_PNPM_VERSION}" --activate; then
             exit 0
           fi
           sleep "$((attempt * 10))"
         done
-        corepack prepare "pnpm@${{ inputs.pnpm-version }}" --activate
+        corepack prepare "pnpm@${INPUTS_PNPM_VERSION}" --activate
 
     - name: Resolve pnpm store
       id: pnpm-store
@@ -60,17 +62,26 @@ runs:
     - name: Resolve pnpm cache key
       id: pnpm-cache-key
       shell: bash
+      env:
+        INPUTS_WORKING_DIRECTORY: ${{ inputs['working-directory'] }}
+        INPUTS_PNPM_VERSION: ${{ inputs['pnpm-version'] }}
       run: |
         set -euo pipefail
-        lockfile="${{ inputs.working-directory }}/pnpm-lock.yaml"
+        # The version becomes part of a GITHUB_OUTPUT record, so allow only a
+        # single token of version characters.
+        if [[ ! "$INPUTS_PNPM_VERSION" =~ ^[A-Za-z0-9.+_/@:-]+$ ]]; then
+          echo "::error::Invalid pnpm version." >&2
+          exit 1
+        fi
+        lockfile="${INPUTS_WORKING_DIRECTORY}/pnpm-lock.yaml"
         if [ -f "$lockfile" ]; then
           lock_hash="$(git hash-object "$lockfile")"
         else
           lock_hash="no-lockfile"
         fi
         {
-          echo "key=${RUNNER_OS:-unknown}-pnpm-${{ inputs.pnpm-version }}-$lock_hash"
-          echo "restore_key=${RUNNER_OS:-unknown}-pnpm-${{ inputs.pnpm-version }}-"
+          echo "key=${RUNNER_OS:-unknown}-pnpm-${INPUTS_PNPM_VERSION}-$lock_hash"
+          echo "restore_key=${RUNNER_OS:-unknown}-pnpm-${INPUTS_PNPM_VERSION}-"
           echo "fallback_restore_key=${RUNNER_OS:-unknown}-pnpm-"
         } >> "$GITHUB_OUTPUT"
 
@@ -92,6 +103,8 @@ runs:
     - name: Install dependencies
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        INPUTS_BUILD_SCRIPT: ${{ inputs['build-script'] }}
       run: |
         set -euo pipefail
         for attempt in 1 2 3; do
@@ -103,6 +116,6 @@ runs:
           fi
           sleep "$((attempt * 10))"
         done
-        if [[ -n "${{ inputs.build-script }}" ]]; then
-          pnpm run "${{ inputs.build-script }}"
+        if [[ -n "${INPUTS_BUILD_SCRIPT}" ]]; then
+          pnpm run "${INPUTS_BUILD_SCRIPT}"
         fi

@@ -29,19 +29,21 @@ runs:
 
     - name: Install Claude Code CLI
       shell: bash
+      env:
+        INPUTS_VERSION: ${{ inputs.version }}
       run: |
         set -euo pipefail
         if command -v claude >/dev/null 2>&1; then
           installed=$(claude --version 2>/dev/null | head -1 || true)
           echo "claude already on PATH: $installed"
-          if [[ -z "${{ inputs.version }}" ]] || echo "$installed" | grep -Fq "${{ inputs.version }}"; then
+          if [[ -z "${INPUTS_VERSION}" ]] || echo "$installed" | grep -Fq "${INPUTS_VERSION}"; then
             exit 0
           fi
-          echo "Version mismatch — reinstalling at ${{ inputs.version }}."
+          echo "Version mismatch — reinstalling at ${INPUTS_VERSION}."
         fi
         target="@anthropic-ai/claude-code"
-        if [[ -n "${{ inputs.version }}" ]]; then
-          target="@anthropic-ai/claude-code@${{ inputs.version }}"
+        if [[ -n "${INPUTS_VERSION}" ]]; then
+          target="@anthropic-ai/claude-code@${INPUTS_VERSION}"
         fi
         npm install -g "$target" --prefer-offline --no-audit --no-fund
         claude --version
