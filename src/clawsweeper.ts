@@ -41,6 +41,7 @@ import {
 } from "./github-retry.js";
 import { parseGhJson, parseGhJsonLines } from "./github-json.js";
 import { stableJson } from "./stable-json.js";
+import { hiddenPayloadSecurityReview } from "./hidden-payload-security.js";
 import { runText } from "./command.js";
 import {
   buildHistorySnippets,
@@ -432,6 +433,7 @@ interface Decision {
 }
 
 interface ItemContext {
+  securityReview?: SecurityReview;
   issue: unknown;
   comments: unknown[];
   timeline: unknown[];
@@ -468,11 +470,53 @@ interface ItemContext {
   relatedItemBodies?: RelatedItemBody[];
 }
 
+export function applyHiddenPayloadSecurityReview(
+  decision: Decision,
+  signal: SecurityReview | undefined,
+): Decision {
+  if (!signal) return decision;
+  const priority = decision.triagePriority === "P0" ? "P0" : "P1";
+  const impactLabels = [
+    "impact:security" as const,
+    ...decision.impactLabels.filter((label) => label !== "impact:security"),
+  ].slice(0, 3);
+  const dropped = new Set<string>(
+    decision.impactLabels.filter((label) => !impactLabels.includes(label)),
+  );
+  return {
+    ...decision,
+    decision: "keep_open",
+    closeReason: "none",
+    closeComment: "",
+    workCandidate: "manual_review",
+    workPrompt: "",
+    workReason: signal.summary,
+    summary: `${signal.summary} ${decision.summary}`,
+    triagePriority: priority,
+    impactLabels,
+    labelJustifications: [
+      ...decision.labelJustifications.filter(
+        (entry) =>
+          !/^P[0-3]$/.test(entry.label) &&
+          entry.label !== "impact:security" &&
+          !dropped.has(entry.label),
+      ),
+      { label: priority, reason: signal.summary },
+      { label: "impact:security", reason: signal.summary },
+    ],
+    securityReview: {
+      ...signal,
+      concerns: [...signal.concerns, ...decision.securityReview.concerns],
+    },
+  };
+}
+
 // Optional evidence fields are derived from the underlying issue/PR/main SHA
 // and not part of the snapshot identity. Stripped before hashing so the
 // review-path context (with evidence) and apply-path context (without
 // evidence) produce the same hash for the same underlying item.
 const EVIDENCE_CONTEXT_FIELDS: ReadonlyArray<keyof ItemContext> = [
+  "securityReview",
   "sourceExcerpts",
   "historySnippets",
   "releaseProvenance",
@@ -3990,6 +4034,13 @@ function collectItemContext(item: Item, opts: CollectItemContextOptions = {}): I
     24,
   );
   const comments = commentsWindow.items;
+  const securityComments = commentsWindow.truncated
+    ? ghPaged<unknown>(`repos/${targetRepo()}/issues/${item.number}/comments`)
+    : comments;
+  const securityReview = hiddenPayloadSecurityReview([
+    truncateText(issueRecord.body, 131_072),
+    ...securityComments.map((comment) => truncateText(asRecord(comment).body, 131_072)),
+  ]);
   // #14: trim our own prior review comments out of the prompt-body copy when the
   // thread is large or bot-dominated. The raw `comments` list still feeds
   // related-item detection below; only the prompt body is trimmed.
@@ -4015,6 +4066,7 @@ function collectItemContext(item: Item, opts: CollectItemContextOptions = {}): I
       timeline: timeline.length,
     },
   };
+  if (securityReview) context.securityReview = securityReview;
   let pullRequest: unknown = null;
   let pullReviewComments: unknown[] | null = null;
   if (item.kind === "issue") {
@@ -4052,6 +4104,17 @@ function collectItemContext(item: Item, opts: CollectItemContextOptions = {}): I
       40,
     );
     pullReviewComments = pullReviewCommentsWindow.items;
+    const securityReviews = [
+      ...(pullReviewCommentsWindow.truncated
+        ? ghPaged<unknown>(`repos/${targetRepo()}/pulls/${item.number}/comments`)
+        : pullReviewComments),
+      ...ghPaged<unknown>(`repos/${targetRepo()}/pulls/${item.number}/reviews`),
+    ];
+    const pullSecurity = hiddenPayloadSecurityReview([
+      truncateText(pullRecord.body, 131_072),
+      ...securityReviews.map((comment) => truncateText(asRecord(comment).body, 131_072)),
+    ]);
+    if (pullSecurity && !context.securityReview) context.securityReview = pullSecurity;
     context.pullRequest = compactPullRequest(pullRequest);
     context.pullFiles = compactMappedWindow(pullFiles, pullFilesWindow.total, 80, compactPullFile);
     context.pullCommits = compactMappedWindow(
@@ -8148,6 +8211,16 @@ export function validateCloseDecision(
       reason: "not a close decision",
     };
   }
+  if (
+    decision.securityReview.status === "needs_attention" ||
+    decision.securityReview.concerns.length > 0
+  ) {
+    return {
+      ok: false,
+      actionTaken: "kept_open",
+      reason: "security review requires human moderation before automatic close",
+    };
+  }
   if (isProtectedItem(item)) {
     return {
       ok: false,
@@ -8662,14 +8735,31 @@ function postReviewStartStatusComment(options: {
   return "posted";
 }
 
+function liveHiddenPayloadSecurityReview(repo: string, number: number, kind: ItemKind) {
+  const source = asRecord(ghJson<unknown>(["api", `repos/${repo}/issues/${number}`]));
+  const comments = ghPaged<unknown>(`repos/${repo}/issues/${number}/comments`);
+  if (kind === "pull_request") {
+    comments.push(
+      ...ghPaged<unknown>(`repos/${repo}/pulls/${number}/comments`),
+      ...ghPaged<unknown>(`repos/${repo}/pulls/${number}/reviews`),
+    );
+  }
+  return hiddenPayloadSecurityReview([
+    truncateText(source.body, 131_072),
+    ...comments.map((comment) => truncateText(asRecord(comment).body, 131_072)),
+  ]);
+}
+
 function closeItem(options: {
   repo: string;
   number: number;
   kind: ItemKind;
   reason: CloseReason;
-}): void {
+}): SecurityReview | undefined {
   const policyBlock = automationPolicyBlockReason(options.repo, "close");
   if (policyBlock) throw new Error(policyBlock);
+  const security = liveHiddenPayloadSecurityReview(options.repo, options.number, options.kind);
+  if (security) return security;
   if (options.kind === "pull_request") {
     ghWithRetry(["pr", "close", String(options.number)]);
   } else {
@@ -9473,6 +9563,7 @@ function reviewCommand(args: Args): void {
       codexElapsedMs = Date.now() - codexStartedAt;
     }
     decision = attachFixedPullRequest(decision, item, context);
+    decision = applyHiddenPayloadSecurityReview(decision, context.securityReview);
     const runtime = {
       provider: reviewProvider,
       model: actualReviewModel(reviewProvider, model),
@@ -9720,6 +9811,18 @@ function applyDecisionsCommand(args: Args): void {
       continue;
     }
     const { item, state } = fetchItem(number);
+    if (state === "open" && isCloseProposal && closeReason && !syncCommentsOnly) {
+      const validation = validateCloseDecision(
+        { repo, kind: item.kind, labels: item.labels },
+        reportDecision(markdown, closeReason),
+      );
+      const security = liveHiddenPayloadSecurityReview(repo, number, item.kind);
+      if (security || (!validation.ok && validation.actionTaken === "kept_open")) {
+        const reason = security?.summary ?? (!validation.ok ? validation.reason : "");
+        if (markApplySkipped("kept_open", reason)) break;
+        continue;
+      }
+    }
     let currentContext: ItemContext | undefined;
     const currentItemContext = (): ItemContext => {
       currentContext ??= collectItemContext(item);
@@ -9962,7 +10065,7 @@ function applyDecisionsCommand(args: Args): void {
       { repo, kind: item.kind, labels: item.labels },
       reportDecision(markdown, closeReason),
     );
-    if (!currentReportValidation.ok && currentReportValidation.actionTaken !== "kept_open") {
+    if (!currentReportValidation.ok) {
       if (markApplySkipped(currentReportValidation.actionTaken, currentReportValidation.reason))
         break;
       continue;
@@ -10009,6 +10112,11 @@ function applyDecisionsCommand(args: Args): void {
     }
     logProgress(`closing #${number}`);
     if (dryRun) {
+      const security = liveHiddenPayloadSecurityReview(repo, number, item.kind);
+      if (security) {
+        if (markApplySkipped("kept_open", security.summary)) break;
+        continue;
+      }
       closedCount += 1;
       processedCount += 1;
       results.push({
@@ -10022,7 +10130,11 @@ function applyDecisionsCommand(args: Args): void {
     }
     // Keep the terminal close guard adjacent to the mutation in case a stale
     // report or future caller bypasses the earlier decision validation.
-    closeItem({ repo, number, kind: item.kind, reason: closeReason });
+    const security = closeItem({ repo, number, kind: item.kind, reason: closeReason });
+    if (security) {
+      if (markApplySkipped("kept_open", security.summary)) break;
+      continue;
+    }
     sleepMs(closeDelayMs);
     markdown = replaceSectionValue(markdown, REVIEW_SECTIONS.closeComment, reviewComment);
     markdown = replaceFrontMatterValue(markdown, "close_comment_sha256", sha256(reviewComment));
