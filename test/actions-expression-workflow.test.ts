@@ -84,13 +84,12 @@ test("composite actions keep untrusted expressions out of scripts", () => {
   assert.deepEqual(offenders, [], "pass these values through env: instead");
 });
 
-// sweep.yml is converted in its own follow-up change; _disabled holds workflows that never run.
-const WORKFLOWS_PENDING_CONVERSION = new Set([".github/workflows/sweep.yml"]);
+// _disabled holds workflows GitHub never runs. Everything else must stay at zero.
 
 test("workflows keep untrusted expressions out of scripts", () => {
   const offenders: string[] = [];
   for (const file of yamlFiles(".github/workflows")) {
-    if (file.includes("/_disabled/") || WORKFLOWS_PENDING_CONVERSION.has(file)) continue;
+    if (file.includes("/_disabled/")) continue;
     for (const block of runScripts(readFileSync(file, "utf8"))) {
       if (UNTRUSTED_EXPRESSION.test(block.text)) offenders.push(`${file}:${block.line}`);
     }
