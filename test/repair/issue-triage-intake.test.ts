@@ -9,6 +9,7 @@ import {
 } from "../../dist/repository-profiles.js";
 import {
   admitIssueTriageActivity,
+  VISIBLE_POLL_DELAYS_MS,
   dispatchIssueTriage,
   eventReviewRunTitle,
   liveIssueTriageBlock,
@@ -516,6 +517,30 @@ test("an unconfirmed dispatch is not repeated once its receipt is in history", (
     assert.equal(dispatchIssueTriage(OPENED_INPUT, deps).status, "skipped");
     assert.equal(state.dispatches.length, 1);
   });
+});
+
+test("a dispatched run that the run listing shows late is still confirmed (#293)", () => {
+  withIntakeEnabled(TARGET, () => {
+    const { deps, state } = fakeDeps({ state: "open", labels: [] });
+    // Runs 40026807584, 40034183676 and 40034204116: the review run existed about
+    // 18s after dispatch, but the listing still hid it when the old 30s window ended.
+    let waitedMs = 0;
+    deps.sleep = (milliseconds: number) => {
+      waitedMs += milliseconds;
+      state.sleeps += 1;
+    };
+    deps.listRecentWorkflowRuns = () => (waitedMs >= 60_000 ? state.recentRuns : []);
+    const result = dispatchIssueTriage(OPENED_INPUT, deps);
+    assert.equal(result.status, "dispatched");
+    assert.equal(state.dispatches.length, 1);
+    assert.ok(waitedMs >= 60_000 && waitedMs < 90_000, `waited ${waitedMs}ms`);
+  });
+});
+
+test("the visibility window covers listing lag but stays bounded", () => {
+  const totalMs = VISIBLE_POLL_DELAYS_MS.reduce((sum, delay) => sum + delay, 0);
+  assert.ok(totalMs >= 90_000, `window ${totalMs}ms is too short for listing lag`);
+  assert.ok(totalMs <= 180_000, `window ${totalMs}ms holds the runner too long`);
 });
 
 test("repository and item matching is exact apart from case", () => {
