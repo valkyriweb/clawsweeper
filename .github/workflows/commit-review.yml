@@ -72,8 +72,10 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Explain skipped commit review
+        env:
+          PAYLOAD_TARGET_REPO: ${{ github.event.client_payload.target_repo }}
         run: |
-          echo "Skipping commit review for ${{ github.event.client_payload.target_repo }}."
+          echo "Skipping commit review for ${PAYLOAD_TARGET_REPO}."
           echo "Set CLAWSWEEPER_ENABLE_CLAWHUB=1 after installing the ClawSweeper GitHub App on openclaw/clawhub."
 
   plan:
@@ -109,9 +111,12 @@ jobs:
 
       - name: Resolve mode
         id: mode
+        env:
+          INPUTS_ENABLED_RESOLVED: ${{ github.event.inputs.enabled || github.event.client_payload.enabled || 'true' }}
+          INPUTS_CREATE_CHECKS_RESOLVED: ${{ github.event.inputs.create_checks || github.event.client_payload.create_checks || vars.CLAWSWEEPER_COMMIT_REVIEW_CREATE_CHECKS || 'false' }}
         run: |
-          enabled="${{ github.event.inputs.enabled || github.event.client_payload.enabled || 'true' }}"
-          create_checks="${{ github.event.inputs.create_checks || github.event.client_payload.create_checks || vars.CLAWSWEEPER_COMMIT_REVIEW_CREATE_CHECKS || 'false' }}"
+          enabled="${INPUTS_ENABLED_RESOLVED}"
+          create_checks="${INPUTS_CREATE_CHECKS_RESOLVED}"
           case "$enabled" in
             false|FALSE|0|no|NO|off|OFF)
               echo "Commit review disabled by input/payload."
@@ -129,8 +134,10 @@ jobs:
 
       - name: Resolve target repository
         id: target
+        env:
+          INPUTS_TARGET_REPO_RESOLVED: ${{ github.event.inputs.target_repo || github.event.client_payload.target_repo }}
         run: |
-          target_repo="${{ github.event.inputs.target_repo || github.event.client_payload.target_repo }}"
+          target_repo="${INPUTS_TARGET_REPO_RESOLVED}"
           if ! printf '%s' "$target_repo" | grep -Eq '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$'; then
             echo "Invalid target_repo: $target_repo" >&2
             exit 1
@@ -539,11 +546,13 @@ jobs:
           REVIEW_PROVIDER: ${{ steps.commit-routing.outputs.review_provider }}
           REVIEW_MODEL: ${{ steps.commit-routing.outputs.review_model }}
           CODEX_EFFORT: ${{ steps.commit-routing.outputs.codex_effort }}
+          NEEDS_PLAN_TARGET_REPO: ${{ needs.plan.outputs.target_repo }}
+          NEEDS_PLAN_TARGET_CHECKOUT_DIR: ${{ needs.plan.outputs.target_checkout_dir }}
         run: |
           set -euo pipefail
           COMMON_ARGS=(
-            --target-repo "${{ needs.plan.outputs.target_repo }}"
-            --target-dir "../${{ needs.plan.outputs.target_checkout_dir }}"
+            --target-repo "${NEEDS_PLAN_TARGET_REPO}"
+            --target-dir "../${NEEDS_PLAN_TARGET_CHECKOUT_DIR}"
             --commit-sha "${{ matrix.sha }}"
             --report-dir ../commit-artifacts
             --artifact-mode
@@ -587,6 +596,7 @@ jobs:
         working-directory: clawsweeper
         env:
           GH_TOKEN: ${{ steps.target-checks-token.outputs.token }}
+          NEEDS_PLAN_TARGET_REPO: ${{ needs.plan.outputs.target_repo }}
         run: |
           set -euo pipefail
           test -n "$GH_TOKEN"
@@ -597,7 +607,7 @@ jobs:
           fi
           relative_path="records/${report_path#../commit-artifacts/}"
           node dist/commit-sweeper.js publish-check \
-            --target-repo "${{ needs.plan.outputs.target_repo }}" \
+            --target-repo "${NEEDS_PLAN_TARGET_REPO}" \
             --commit-sha "${{ matrix.sha }}" \
             --report-path "$report_path" \
             --report-relative-path "$relative_path" \
@@ -729,6 +739,7 @@ jobs:
         if: ${{ needs.plan.outputs.create_checks == 'true' }}
         env:
           GH_TOKEN: ${{ steps.target-checks-token.outputs.token }}
+          NEEDS_PLAN_TARGET_REPO: ${{ needs.plan.outputs.target_repo }}
         run: |
           set -euo pipefail
           test -n "$GH_TOKEN"
@@ -736,7 +747,7 @@ jobs:
             sha="$(basename "$report_path" .md)"
             relative_path="records/${report_path#commit-artifacts/}"
             node dist/commit-sweeper.js publish-check \
-              --target-repo "${{ needs.plan.outputs.target_repo }}" \
+              --target-repo "${NEEDS_PLAN_TARGET_REPO}" \
               --commit-sha "$sha" \
               --report-path "$report_path" \
               --report-relative-path "$relative_path" \

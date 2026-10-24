@@ -86,8 +86,10 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Explain skipped commit finding
+        env:
+          PAYLOAD_TARGET_REPO: ${{ github.event.client_payload.target_repo }}
         run: |
-          echo "Skipping commit finding repair for ${{ github.event.client_payload.target_repo }}."
+          echo "Skipping commit finding repair for ${PAYLOAD_TARGET_REPO}."
           echo "Set CLAWSWEEPER_ENABLE_CLAWHUB=1 after installing the ClawSweeper GitHub App on openclaw/clawhub."
 
   intake:
@@ -195,7 +197,9 @@ jobs:
 
       - name: Review synthetic result
         if: ${{ steps.prepare.outputs.should_repair == 'true' }}
-        run: pnpm run repair:review-results -- "${{ steps.prepare.outputs.result_path }}"
+        env:
+          STEPS_PREPARE_RESULT_PATH: ${{ steps.prepare.outputs.result_path }}
+        run: pnpm run repair:review-results -- "${STEPS_PREPARE_RESULT_PATH}"
 
       - name: Execute credited fix artifact
         id: execute
@@ -206,35 +210,45 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           CLAWROUTER_API_KEY: ${{ vars.CLAWSWEEPER_CODEX_AUTH_MODE == 'clawrouter' && secrets.CLAWROUTER_API_KEY || '' }}
           GH_TOKEN: ${{ steps.app_token.outputs.token }}
-        run: pnpm run repair:execute-fix -- "${{ steps.prepare.outputs.job_path }}" "${{ steps.prepare.outputs.result_path }}"
+          STEPS_PREPARE_JOB_PATH: ${{ steps.prepare.outputs.job_path }}
+          STEPS_PREPARE_RESULT_PATH: ${{ steps.prepare.outputs.result_path }}
+        run: pnpm run repair:execute-fix -- "${STEPS_PREPARE_JOB_PATH}" "${STEPS_PREPARE_RESULT_PATH}"
 
       - name: Post-flight finalize fix PRs
         if: ${{ steps.prepare.outputs.should_repair == 'true' && steps.execute.outcome == 'success' && env.CLAWSWEEPER_ALLOW_EXECUTE == '1' && env.CLAWSWEEPER_ALLOW_FIX_PR == '1' }}
         env:
           GH_TOKEN: ${{ steps.app_token.outputs.token }}
-        run: pnpm run repair:post-flight -- "${{ steps.prepare.outputs.job_path }}" "${{ steps.prepare.outputs.result_path }}"
+          STEPS_PREPARE_JOB_PATH: ${{ steps.prepare.outputs.job_path }}
+          STEPS_PREPARE_RESULT_PATH: ${{ steps.prepare.outputs.result_path }}
+        run: pnpm run repair:post-flight -- "${STEPS_PREPARE_JOB_PATH}" "${STEPS_PREPARE_RESULT_PATH}"
 
       - name: Publish local result ledger
         if: ${{ always() && steps.prepare.outputs.should_repair == 'true' }}
         env:
           GH_TOKEN: ${{ steps.app_token.outputs.token }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          STEPS_PREPARE_RUN_DIR: ${{ steps.prepare.outputs.run_dir }}
+          STEPS_EXECUTE_OUTCOME_RESOLVED: ${{ steps.execute.outcome == 'success' && 'success' || steps.execute.outcome == 'failure' && 'failure' || 'skipped' }}
         run: |
-          pnpm run repair:publish-result -- "${{ steps.prepare.outputs.run_dir }}" \
+          pnpm run repair:publish-result -- "${STEPS_PREPARE_RUN_DIR}" \
             --skip-dashboard \
             --run-id "${{ github.run_id }}" \
             --run-url "$RUN_URL" \
             --head-sha "${{ github.sha }}" \
-            --conclusion "${{ steps.execute.outcome == 'success' && 'success' || steps.execute.outcome == 'failure' && 'failure' || 'skipped' }}"
+            --conclusion "${STEPS_EXECUTE_OUTCOME_RESOLVED}"
 
       - name: Finalize commit finding audit
         if: always()
+        env:
+          STEPS_PREPARE_AUDIT_PATH: ${{ steps.prepare.outputs.audit_path }}
+          STEPS_PREPARE_RUN_DIR: ${{ steps.prepare.outputs.run_dir }}
+          STEPS_PREPARE_SHOULD_REPAIR_RESOLVED: ${{ steps.prepare.outputs.should_repair == 'true' && (steps.execute.outcome || 'skipped') || steps.prepare.outputs.status }}
         run: |
-          if [ -n "${{ steps.prepare.outputs.audit_path }}" ]; then
+          if [ -n "${STEPS_PREPARE_AUDIT_PATH}" ]; then
             pnpm run repair:commit-finding-intake -- finalize \
-              --audit-path "${{ steps.prepare.outputs.audit_path }}" \
-              --run-dir "${{ steps.prepare.outputs.run_dir }}" \
-              --status "${{ steps.prepare.outputs.should_repair == 'true' && (steps.execute.outcome || 'skipped') || steps.prepare.outputs.status }}"
+              --audit-path "${STEPS_PREPARE_AUDIT_PATH}" \
+              --run-dir "${STEPS_PREPARE_RUN_DIR}" \
+              --status "${STEPS_PREPARE_SHOULD_REPAIR_RESOLVED}"
           fi
 
       - name: Commit intake ledger

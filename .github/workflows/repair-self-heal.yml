@@ -88,13 +88,18 @@ jobs:
           CLAWSWEEPER_ALLOW_FIX_PR: ${{ vars.CLAWSWEEPER_ALLOW_FIX_PR || '0' }}
           CLAWSWEEPER_MODEL: internal
           CLAWSWEEPER_SELF_HEAL_MAX_ATTEMPTS_PER_JOB: ${{ vars.CLAWSWEEPER_SELF_HEAL_MAX_ATTEMPTS_PER_JOB || '3' }}
+          INPUTS_MAX_JOBS_RESOLVED: ${{ github.event_name == 'workflow_dispatch' && inputs.max_jobs || vars.CLAWSWEEPER_SELF_HEAL_MAX_JOBS || '5' }}
+          INPUTS_MAX_AGE_HOURS_RESOLVED: ${{ github.event_name == 'workflow_dispatch' && inputs.max_age_hours || vars.CLAWSWEEPER_SELF_HEAL_MAX_AGE_HOURS || '6' }}
+          INPUTS_RUNNER_RESOLVED: ${{ github.event_name == 'workflow_dispatch' && inputs.runner || vars.CLAWSWEEPER_WORKER_RUNNER || '["self-hosted","macOS","ARM64","mac-mini"]' }}
+          INPUTS_EXECUTION_RUNNER_RESOLVED: ${{ github.event_name == 'workflow_dispatch' && inputs.execution_runner || vars.CLAWSWEEPER_EXECUTION_RUNNER || '["self-hosted","macOS","ARM64","mac-mini"]' }}
+          INPUTS_EXECUTE: ${{ inputs.execute }}
         run: |
           execute="false"
-          max_jobs="${{ github.event_name == 'workflow_dispatch' && inputs.max_jobs || vars.CLAWSWEEPER_SELF_HEAL_MAX_JOBS || '5' }}"
-          max_age_hours="${{ github.event_name == 'workflow_dispatch' && inputs.max_age_hours || vars.CLAWSWEEPER_SELF_HEAL_MAX_AGE_HOURS || '6' }}"
-          runner="${{ github.event_name == 'workflow_dispatch' && inputs.runner || vars.CLAWSWEEPER_WORKER_RUNNER || '["self-hosted","macOS","ARM64","mac-mini"]' }}"
-          execution_runner="${{ github.event_name == 'workflow_dispatch' && inputs.execution_runner || vars.CLAWSWEEPER_EXECUTION_RUNNER || '["self-hosted","macOS","ARM64","mac-mini"]' }}"
-          if { [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.execute }}" = "true" ]; } ||
+          max_jobs="${INPUTS_MAX_JOBS_RESOLVED}"
+          max_age_hours="${INPUTS_MAX_AGE_HOURS_RESOLVED}"
+          runner="${INPUTS_RUNNER_RESOLVED}"
+          execution_runner="${INPUTS_EXECUTION_RUNNER_RESOLVED}"
+          if { [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${INPUTS_EXECUTE}" = "true" ]; } ||
              { [ "${{ github.event_name }}" = "schedule" ] && [ "${{ vars.CLAWSWEEPER_SELF_HEAL_EXECUTE || '0' }}" = "1" ]; }; then
             execute="true"
           fi
