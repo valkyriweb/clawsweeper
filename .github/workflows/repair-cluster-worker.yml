@@ -206,20 +206,25 @@ jobs:
 
       - name: Validate job
         if: ${{ steps.check_job.outputs.job_exists == '1' }}
-        run: pnpm run repair:validate-job -- "${{ inputs.job }}"
+        env:
+          INPUTS_JOB: ${{ inputs.job }}
+        run: pnpm run repair:validate-job -- "${INPUTS_JOB}"
 
       - name: Run worker
         if: ${{ steps.check_job.outputs.job_exists == '1' }}
         env:
           GH_TOKEN: ${{ steps.app_token.outputs.token }}
+          INPUTS_MODE: ${{ inputs.mode }}
+          INPUTS_JOB: ${{ inputs.job }}
+          INPUTS_DRY_RUN: ${{ inputs.dry_run }}
         run: |
-          worker_mode="${{ inputs.mode }}"
+          worker_mode="${INPUTS_MODE}"
           if [ "$worker_mode" != "plan" ] && [ "${CLAWSWEEPER_ALLOW_EXECUTE}" != "1" ]; then
             echo "CLAWSWEEPER_ALLOW_EXECUTE is not explicitly 1; rendering plan-only output for requested $worker_mode run"
             worker_mode="plan"
           fi
-          args=("${{ inputs.job }}" --mode "$worker_mode")
-          if [ "${{ inputs.dry_run }}" = "true" ]; then
+          args=("${INPUTS_JOB}" --mode "$worker_mode")
+          if [ "${INPUTS_DRY_RUN}" = "true" ]; then
             args+=(--dry-run)
           fi
           pnpm run repair:worker -- "${args[@]}"
@@ -404,7 +409,9 @@ jobs:
 
       - name: Validate job
         if: ${{ steps.check_job.outputs.job_exists == '1' }}
-        run: pnpm run repair:validate-job -- "${{ inputs.job }}"
+        env:
+          INPUTS_JOB: ${{ inputs.job }}
+        run: pnpm run repair:validate-job -- "${INPUTS_JOB}"
 
       - name: Execute credited fix artifact
         if: ${{ steps.check_job.outputs.job_exists == '1' && env.CLAWSWEEPER_ALLOW_EXECUTE == '1' && env.CLAWSWEEPER_ALLOW_FIX_PR == '1' }}
@@ -421,25 +428,29 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.CLAWSWEEPER_PACKAGES_READ_TOKEN }}
           CLAWSWEEPER_REVIEW_REPO: ${{ github.repository }}
           CLAWSWEEPER_REVIEW_TOKEN: ${{ steps.engine-token.outputs.token }}
-        run: pnpm run repair:execute-fix -- "${{ inputs.job }}" --latest
+          INPUTS_JOB: ${{ inputs.job }}
+        run: pnpm run repair:execute-fix -- "${INPUTS_JOB}" --latest
 
       - name: Apply safe closure actions
         if: ${{ steps.check_job.outputs.job_exists == '1' && env.CLAWSWEEPER_ALLOW_EXECUTE == '1' }}
         env:
           GH_TOKEN: ${{ steps.app_token.outputs.token }}
-        run: pnpm run repair:apply-result -- "${{ inputs.job }}" --latest
+          INPUTS_JOB: ${{ inputs.job }}
+        run: pnpm run repair:apply-result -- "${INPUTS_JOB}" --latest
 
       - name: Post-flight finalize fix PRs
         if: ${{ steps.check_job.outputs.job_exists == '1' && env.CLAWSWEEPER_ALLOW_EXECUTE == '1' && env.CLAWSWEEPER_ALLOW_FIX_PR == '1' }}
         env:
           GH_TOKEN: ${{ steps.app_token.outputs.token }}
-        run: pnpm run repair:post-flight -- "${{ inputs.job }}" --latest
+          INPUTS_JOB: ${{ inputs.job }}
+        run: pnpm run repair:post-flight -- "${INPUTS_JOB}" --latest
 
       - name: Apply post-flight closeouts
         if: ${{ steps.check_job.outputs.job_exists == '1' && env.CLAWSWEEPER_ALLOW_EXECUTE == '1' }}
         env:
           GH_TOKEN: ${{ steps.app_token.outputs.token }}
-        run: pnpm run repair:apply-result -- "${{ inputs.job }}" --latest
+          INPUTS_JOB: ${{ inputs.job }}
+        run: pnpm run repair:apply-result -- "${INPUTS_JOB}" --latest
 
       - name: Tag ClawSweeper targets
         if: ${{ always() && steps.check_job.outputs.job_exists == '1' && env.CLAWSWEEPER_ALLOW_EXECUTE == '1' }}
@@ -461,17 +472,23 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.engine-token.outputs.token }}
           CLAWSWEEPER_MUTATION_TOKEN_SOURCE: clawsweeper-app
+          STEPS_REPAIR_REQUEUE_COUNT: ${{ steps.repair_requeue.outputs.count }}
+          INPUTS_JOB: ${{ inputs.job }}
+          INPUTS_MODE: ${{ inputs.mode }}
+          INPUTS_RUNNER: ${{ inputs.runner }}
+          INPUTS_EXECUTION_RUNNER: ${{ inputs.execution_runner }}
+          INPUTS_MODEL: ${{ inputs.model }}
         run: |
           set -euo pipefail
-          echo "Requeueing ${{ steps.repair_requeue.outputs.count }} source-head race repair result(s) against the latest head."
-          pnpm run repair:requeue -- "${{ inputs.job }}" \
-            --mode "${{ inputs.mode }}" \
+          echo "Requeueing ${STEPS_REPAIR_REQUEUE_COUNT} source-head race repair result(s) against the latest head."
+          pnpm run repair:requeue -- "${INPUTS_JOB}" \
+            --mode "${INPUTS_MODE}" \
             --execute \
             --open-execute-window \
             --wait-for-capacity \
-            --runner "${{ inputs.runner }}" \
-            --execution-runner "${{ inputs.execution_runner }}" \
-            --model "${{ inputs.model }}"
+            --runner "${INPUTS_RUNNER}" \
+            --execution-runner "${INPUTS_EXECUTION_RUNNER}" \
+            --model "${INPUTS_MODEL}"
 
       - name: Collect Codex debug logs
         if: ${{ always() && steps.check_job.outputs.job_exists == '1' }}

@@ -50,11 +50,13 @@ jobs:
 
       - name: Route a Responses call through ClawRouter
         shell: bash
+        env:
+          INPUTS_MODEL: ${{ github.event.inputs.model }}
         run: |
           set -euo pipefail
           out="$RUNNER_TEMP/clawrouter-smoke.txt"
           printf 'Reply with exactly the two characters: ok\n' \
-            | codex exec -m "${{ github.event.inputs.model }}" \
+            | codex exec -m "${INPUTS_MODEL}" \
                 --skip-git-repo-check \
                 --sandbox read-only \
                 --output-last-message "$out" \

@@ -576,6 +576,7 @@ jobs:
           ROUTER_RUNNER: ${{ github.event_name == 'workflow_dispatch' && inputs.runner || vars.CLAWSWEEPER_WORKER_RUNNER || '["self-hosted","macOS","ARM64","mac-mini"]' }}
           ROUTER_EXECUTION_RUNNER: ${{ github.event_name == 'workflow_dispatch' && inputs.execution_runner || vars.CLAWSWEEPER_EXECUTION_RUNNER || '["self-hosted","macOS","ARM64","mac-mini"]' }}
           ROUTER_FORCE_REPROCESS: ${{ github.event_name == 'workflow_dispatch' && inputs.force_reprocess || 'false' }}
+          INPUTS_EXECUTE: ${{ inputs.execute }}
         run: |
           set -euo pipefail
           target_repo="$ROUTER_TARGET_REPO"
@@ -624,7 +625,7 @@ jobs:
           if [ "$force_reprocess" = "true" ]; then
             args+=(--force-reprocess)
           fi
-          if { [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.execute }}" = "true" ]; } ||
+          if { [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${INPUTS_EXECUTE}" = "true" ]; } ||
              { [ "${{ github.event_name }}" = "repository_dispatch" ]; } ||
              { [ "${{ github.event_name }}" = "schedule" ] && [ "${{ vars.CLAWSWEEPER_COMMENT_ROUTER_EXECUTE || '0' }}" = "1" ]; }; then
             args+=(--execute)
@@ -669,6 +670,7 @@ jobs:
           ROUTER_RUNNER: ${{ github.event_name == 'workflow_dispatch' && inputs.runner || vars.CLAWSWEEPER_WORKER_RUNNER || '["self-hosted","macOS","ARM64","mac-mini"]' }}
           ROUTER_EXECUTION_RUNNER: ${{ github.event_name == 'workflow_dispatch' && inputs.execution_runner || vars.CLAWSWEEPER_EXECUTION_RUNNER || '["self-hosted","macOS","ARM64","mac-mini"]' }}
           ROUTER_FORCE_REPROCESS: ${{ github.event_name == 'workflow_dispatch' && inputs.force_reprocess || 'false' }}
+          STEPS_WAITING_REPAIR_DISPATCHES_COUNT: ${{ steps.waiting-repair-dispatches.outputs.count }}
         run: |
           set -euo pipefail
           target_repo="$ROUTER_TARGET_REPO"
@@ -719,7 +721,7 @@ jobs:
           fi
           args+=(--execute)
 
-          echo "Retrying ${{ steps.waiting-repair-dispatches.outputs.count }} waiting repair dispatch(es) after publishing router state."
+          echo "Retrying ${STEPS_WAITING_REPAIR_DISPATCHES_COUNT} waiting repair dispatch(es) after publishing router state."
           pnpm run repair:comment-router -- "${args[@]}"
 
       - name: Commit comment router retry ledger

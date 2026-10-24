@@ -192,6 +192,7 @@ jobs:
           INPUT_MODEL: ${{ github.event.inputs.model || '' }}
           FALLBACK_MODEL: ${{ vars.CLAWSWEEPER_MODEL || 'gpt-5.6-terra' }}
           CLAWSWEEPER_MODELS: ${{ vars.CLAWSWEEPER_MODELS || '' }}
+          STEPS_PREPARE_JOB_PATH: ${{ steps.prepare.outputs.job_path }}
         run: |
           set -euo pipefail
           if [ -n "$INPUT_MODEL" ]; then
@@ -205,7 +206,7 @@ jobs:
           fi
           git pull --rebase
           if [ "${#cap_args[@]}" -gt 0 ]; then
-            pnpm run repair:dispatch -- "${{ steps.prepare.outputs.job_path }}" \
+            pnpm run repair:dispatch -- "${STEPS_PREPARE_JOB_PATH}" \
               --mode autonomous \
               --wait-for-capacity \
               "${cap_args[@]}" \
@@ -214,7 +215,7 @@ jobs:
               --model "$MODEL" \
               --ref main
           else
-            pnpm run repair:dispatch -- "${{ steps.prepare.outputs.job_path }}" \
+            pnpm run repair:dispatch -- "${STEPS_PREPARE_JOB_PATH}" \
               --mode autonomous \
               --wait-for-capacity \
               --runner "$RUNNER" \
