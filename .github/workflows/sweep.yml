@@ -350,6 +350,11 @@ jobs:
           # setup-codex does not export the key; ephemeral ARC pods have no host
           # config, so the review process needs it in its own env.
           CLAWROUTER_API_KEY: ${{ vars.CLAWSWEEPER_CODEX_AUTH_MODE == 'clawrouter' && secrets.CLAWROUTER_API_KEY || '' }}
+          STEPS_REVIEW_ROUTING_REVIEW_MODEL: ${{ steps.review-routing.outputs.review_model }}
+          STEPS_TARGET_TARGET_REPO: ${{ steps.target.outputs.target_repo }}
+          STEPS_TARGET_TARGET_CHECKOUT_DIR: ${{ steps.target.outputs.target_checkout_dir }}
+          STEPS_REVIEW_ROUTING_CODEX_EFFORT: ${{ steps.review-routing.outputs.codex_effort }}
+          STEPS_TARGET_ITEM_NUMBER: ${{ steps.target.outputs.item_number }}
         run: |
           set -euo pipefail
           test -n "$GH_TOKEN"
@@ -357,18 +362,18 @@ jobs:
           if [ -n "$ADDITIONAL_PROMPT" ]; then
             additional_prompt_arg=(--additional-prompt "$ADDITIONAL_PROMPT")
           fi
-          review_model="${{ steps.review-routing.outputs.review_model }}"
+          review_model="${STEPS_REVIEW_ROUTING_REVIEW_MODEL}"
           timeout --kill-after=30s 12m pnpm run review -- \
-            --target-repo "${{ steps.target.outputs.target_repo }}" \
-            --target-dir "${{ steps.target.outputs.target_checkout_dir }}" \
+            --target-repo "${STEPS_TARGET_TARGET_REPO}" \
+            --target-dir "${STEPS_TARGET_TARGET_CHECKOUT_DIR}" \
             --artifact-dir artifacts/event \
             --batch-size 1 \
             --max-pages 1 \
             --codex-model "$review_model" \
-            --codex-reasoning-effort "${{ steps.review-routing.outputs.codex_effort }}" \
+            --codex-reasoning-effort "${STEPS_REVIEW_ROUTING_CODEX_EFFORT}" \
             --codex-sandbox danger-full-access \
             --codex-timeout-ms 600000 \
-            --item-numbers "${{ steps.target.outputs.item_number }}" \
+            --item-numbers "${STEPS_TARGET_ITEM_NUMBER}" \
             --shard-index 0 \
             --shard-count 1 \
             ${additional_prompt_arg[@]+"${additional_prompt_arg[@]}"}
@@ -496,9 +501,10 @@ jobs:
           CLAWSWEEPER_ALLOW_MERGE: ${{ vars.CLAWSWEEPER_ALLOW_MERGE || '0' }}
           CLAWSWEEPER_COMMENT_LOOKBACK_MINUTES: ${{ vars.CLAWSWEEPER_COMMENT_LOOKBACK_MINUTES || '180' }}
           CLAWSWEEPER_COMMENT_MAX_COMMENTS: ${{ vars.CLAWSWEEPER_COMMENT_MAX_COMMENTS || '1000' }}
+          STEPS_WAITING_EVENT_REPAIR_DISPATCHES_COUNT: ${{ steps.waiting-event-repair-dispatches.outputs.count }}
         run: |
           set -euo pipefail
-          echo "Retrying ${{ steps.waiting-event-repair-dispatches.outputs.count }} waiting repair dispatch(es) after publishing router state."
+          echo "Retrying ${STEPS_WAITING_EVENT_REPAIR_DISPATCHES_COUNT} waiting repair dispatch(es) after publishing router state."
           pnpm run repair:comment-router -- \
             --write-report \
             --repo "$TARGET_REPO" \
@@ -591,8 +597,10 @@ jobs:
 
       - name: Resolve target repository
         id: target
+        env:
+          INPUTS_TARGET_REPO_RESOLVED: ${{ github.event.inputs.target_repo || github.event.client_payload.target_repo || '' }}
         run: |
-          target_repo="${{ github.event.inputs.target_repo || github.event.client_payload.target_repo || '' }}"
+          target_repo="${INPUTS_TARGET_REPO_RESOLVED}"
           if [ -z "$target_repo" ]; then
             echo "target_repo is required for manual sweeps" >&2
             exit 1
@@ -667,11 +675,13 @@ jobs:
         if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.apply_existing == 'true') && !(github.event_name == 'workflow_dispatch' && github.event.inputs.hot_intake == 'true' && github.event.inputs.item_number == '' && github.event.inputs.item_numbers == '') }}
         continue-on-error: true
         working-directory: clawsweeper
+        env:
+          STEPS_TARGET_TARGET_REPO: ${{ steps.target.outputs.target_repo }}
         run: |
-          target_slug="${{ steps.target.outputs.target_repo }}"
+          target_slug="${STEPS_TARGET_TARGET_REPO}"
           target_slug="${target_slug//\//-}"
           pnpm run status -- \
-            --target-repo "${{ steps.target.outputs.target_repo }}" \
+            --target-repo "${STEPS_TARGET_TARGET_REPO}" \
             --state "Planning review" \
             --detail "Planner is scanning GitHub for the next review candidates. Candidate counts and shard details will be posted after planning completes." \
             --run-url "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
@@ -683,6 +693,13 @@ jobs:
       - id: mode
         env:
           GH_TOKEN: ${{ github.token }}
+          INPUTS_HOT_INTAKE_RESOLVED: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.hot_intake == 'true') && 'true' || 'false' }}
+          PAYLOAD_ITEM_NUMBER_RESOLVED: ${{ github.event.client_payload.item_number || github.event.inputs.item_number || github.event.inputs.item_numbers || '' }}
+          STEPS_TARGET_TARGET_REPO: ${{ steps.target.outputs.target_repo }}
+          INPUTS_BATCH_SIZE_RESOLVED: ${{ github.event.inputs.batch_size || '3' }}
+          INPUTS_SHARD_COUNT_RESOLVED: ${{ github.event.inputs.shard_count || '' }}
+          INPUTS_CODEX_TIMEOUT_MS_RESOLVED: ${{ github.event.inputs.codex_timeout_ms || '600000' }}
+          STEPS_REVIEW_ROUTING_CODEX_EFFORT: ${{ steps.review-routing.outputs.codex_effort }}
         run: |
           limit() {
             pnpm --dir clawsweeper run --silent workflow -- limit "$1"
@@ -758,9 +775,9 @@ jobs:
           active_background_workers="$(( $(active_run_count "ClawSweeper Commit Review") * commit_page_size + $(active_sweep_background_workers) ))"
           hot_intake_shards="$(worker_limit hot_intake --active-critical "$active_critical_workers" --active-background "$active_background_workers")"
           normal_shards="$(worker_limit normal_review --active-critical "$active_critical_workers" --active-background "$active_background_workers")"
-          hot_intake="${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.hot_intake == 'true') && 'true' || 'false' }}"
-          exact_item="${{ github.event.client_payload.item_number || github.event.inputs.item_number || github.event.inputs.item_numbers || '' }}"
-          target_repo="${{ steps.target.outputs.target_repo }}"
+          hot_intake="${INPUTS_HOT_INTAKE_RESOLVED}"
+          exact_item="${PAYLOAD_ITEM_NUMBER_RESOLVED}"
+          target_repo="${STEPS_TARGET_TARGET_REPO}"
           if [ "$hot_intake" = "true" ] && [ -n "$exact_item" ]; then
             batch_size="1"
             shard_count="$exact_item_shards"
@@ -775,14 +792,14 @@ jobs:
             if [ "${{ github.event_name }}" = "schedule" ]; then
               batch_size="1"
             else
-              batch_size="${{ github.event.inputs.batch_size || '3' }}"
+              batch_size="${INPUTS_BATCH_SIZE_RESOLVED}"
             fi
             if [ "$target_repo" = "bermont-digital/multica" ]; then
               min_active_shards="$normal_active_floor"
             else
               min_active_shards="0"
             fi
-            shard_count="${{ github.event.inputs.shard_count || '' }}"
+            shard_count="${INPUTS_SHARD_COUNT_RESOLVED}"
             if [ -z "$shard_count" ]; then
               shard_count="$normal_shards"
             fi
@@ -814,8 +831,8 @@ jobs:
           fi
           {
             echo "batch_size=$batch_size"
-            echo "codex_timeout_ms=${{ github.event.inputs.codex_timeout_ms || '600000' }}"
-            echo "codex_reasoning_effort=${{ steps.review-routing.outputs.codex_effort }}"
+            echo "codex_timeout_ms=${INPUTS_CODEX_TIMEOUT_MS_RESOLVED}"
+            echo "codex_reasoning_effort=${STEPS_REVIEW_ROUTING_CODEX_EFFORT}"
             echo "hot_intake=$hot_intake"
             echo "max_pages=$max_pages"
             echo "min_active_shards=$min_active_shards"
@@ -837,6 +854,8 @@ jobs:
           MIN_BACKFILL_REVIEW_AGE_MINUTES: ${{ steps.mode.outputs.min_backfill_review_age_minutes }}
           TARGET_REPO: ${{ steps.target.outputs.target_repo }}
           GH_TOKEN: ${{ steps.target-read-token.outputs.token }}
+          STEPS_REVIEW_ROUTING_REVIEW_MODEL: ${{ steps.review-routing.outputs.review_model }}
+          STEPS_MODE_CODEX_REASONING_EFFORT: ${{ steps.mode.outputs.codex_reasoning_effort }}
         run: |
           set -euo pipefail
           item_arg=()
@@ -850,14 +869,14 @@ jobs:
           if [ "$HOT_INTAKE" = "true" ]; then
             hot_intake_arg=(--hot-intake)
           fi
-          review_model="${{ steps.review-routing.outputs.review_model }}"
+          review_model="${STEPS_REVIEW_ROUTING_REVIEW_MODEL}"
           pnpm run --silent plan -- \
             --target-repo "$TARGET_REPO" \
             --batch-size "$BATCH_SIZE" \
             --max-pages "$MAX_PAGES" \
             --shard-count "$SHARD_COUNT" \
             --codex-model "$review_model" \
-            --codex-reasoning-effort "${{ steps.mode.outputs.codex_reasoning_effort }}" \
+            --codex-reasoning-effort "${STEPS_MODE_CODEX_REASONING_EFFORT}" \
             --codex-sandbox danger-full-access \
             --min-active-shards "$MIN_ACTIVE_SHARDS" \
             --min-backfill-review-age-minutes "$MIN_BACKFILL_REVIEW_AGE_MINUTES" \
@@ -876,21 +895,30 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TARGET_REPO: ${{ steps.target.outputs.target_repo }}
+          STEPS_MODE_HOT_INTAKE_RESOLVED: ${{ steps.mode.outputs.hot_intake == 'true' && 'Hot intake in progress' || 'Review in progress' }}
+          STEPS_MODE_HOT_INTAKE_RESOLVED_2: ${{ steps.mode.outputs.hot_intake == 'true' && 'Hot intake planned' || 'Planned' }}
+          STEPS_SELECT_PLANNED_COUNT: ${{ steps.select.outputs.planned_count }}
+          STEPS_SELECT_PLANNED_SHARDS: ${{ steps.select.outputs.planned_shards }}
+          STEPS_SELECT_PLANNED_CAPACITY: ${{ steps.select.outputs.planned_capacity }}
+          STEPS_SELECT_DUE_BACKLOG: ${{ steps.select.outputs.due_backlog }}
+          STEPS_SELECT_CAPACITY_REASON: ${{ steps.select.outputs.capacity_reason }}
+          STEPS_SELECT_ACTIVE_CODEX_TARGET: ${{ steps.select.outputs.active_codex_target }}
+          STEPS_SELECT_OLDEST_UNREVIEWED_AT: ${{ steps.select.outputs.oldest_unreviewed_at }}
         run: |
           target_slug="$TARGET_REPO"
           target_slug="${target_slug//\//-}"
           pnpm run status -- \
             --target-repo "$TARGET_REPO" \
-            --state "${{ steps.mode.outputs.hot_intake == 'true' && 'Hot intake in progress' || 'Review in progress' }}" \
-            --detail "${{ steps.mode.outputs.hot_intake == 'true' && 'Hot intake planned' || 'Planned' }} ${{ steps.select.outputs.planned_count }} items across ${{ steps.select.outputs.planned_shards }} shards. Capacity is ${{ steps.select.outputs.planned_capacity }} items; due backlog scanned is ${{ steps.select.outputs.due_backlog }}. Capacity reason: ${{ steps.select.outputs.capacity_reason }}. Review shards are starting; publish will merge artifacts when they finish." \
+            --state "${STEPS_MODE_HOT_INTAKE_RESOLVED}" \
+            --detail "${STEPS_MODE_HOT_INTAKE_RESOLVED_2} ${STEPS_SELECT_PLANNED_COUNT} items across ${STEPS_SELECT_PLANNED_SHARDS} shards. Capacity is ${STEPS_SELECT_PLANNED_CAPACITY} items; due backlog scanned is ${STEPS_SELECT_DUE_BACKLOG}. Capacity reason: ${STEPS_SELECT_CAPACITY_REASON}. Review shards are starting; publish will merge artifacts when they finish." \
             --run-url "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-            --planned-count "${{ steps.select.outputs.planned_count }}" \
-            --planned-capacity "${{ steps.select.outputs.planned_capacity }}" \
-            --planned-shards "${{ steps.select.outputs.planned_shards }}" \
-            --active-codex "${{ steps.select.outputs.active_codex_target }}" \
-            --due-backlog "${{ steps.select.outputs.due_backlog }}" \
-            --oldest-unreviewed-at "${{ steps.select.outputs.oldest_unreviewed_at }}" \
-            --capacity-reason "${{ steps.select.outputs.capacity_reason }}"
+            --planned-count "${STEPS_SELECT_PLANNED_COUNT}" \
+            --planned-capacity "${STEPS_SELECT_PLANNED_CAPACITY}" \
+            --planned-shards "${STEPS_SELECT_PLANNED_SHARDS}" \
+            --active-codex "${STEPS_SELECT_ACTIVE_CODEX_TARGET}" \
+            --due-backlog "${STEPS_SELECT_DUE_BACKLOG}" \
+            --oldest-unreviewed-at "${STEPS_SELECT_OLDEST_UNREVIEWED_AT}" \
+            --capacity-reason "${STEPS_SELECT_CAPACITY_REASON}"
           timeout 20s pnpm run repair:publish-main -- \
             --message "chore: mark sweep review in progress" \
             --path "results/sweep-status/${target_slug}.json" \
@@ -1030,38 +1058,53 @@ jobs:
           # pass `claude`'s local auth pre-check; the bridge overrides it.
           ANTHROPIC_BASE_URL: http://127.0.0.1:9100
           ANTHROPIC_API_KEY: sk-ant-via-bridge-placeholder
+          NEEDS_PLAN_HOT_INTAKE: ${{ needs.plan.outputs.hot_intake }}
+          NEEDS_PLAN_CODEX_TIMEOUT_MS: ${{ needs.plan.outputs.codex_timeout_ms }}
+          NEEDS_PLAN_BATCH_SIZE: ${{ needs.plan.outputs.batch_size }}
+          NEEDS_PLAN_TARGET_REPO: ${{ needs.plan.outputs.target_repo }}
+          NEEDS_PLAN_TARGET_CHECKOUT_DIR: ${{ needs.plan.outputs.target_checkout_dir }}
+          NEEDS_PLAN_MAX_PAGES: ${{ needs.plan.outputs.max_pages }}
+          NEEDS_PLAN_REVIEW_MODEL: ${{ needs.plan.outputs.review_model }}
+          NEEDS_PLAN_CODEX_REASONING_EFFORT: ${{ needs.plan.outputs.codex_reasoning_effort }}
+          NEEDS_PLAN_PLANNED_SHARDS: ${{ needs.plan.outputs.planned_shards }}
         run: |
           hot_intake_arg=()
-          if [ "${{ needs.plan.outputs.hot_intake }}" = "true" ]; then
+          if [ "${NEEDS_PLAN_HOT_INTAKE}" = "true" ]; then
             hot_intake_arg=(--hot-intake)
           fi
           additional_prompt_arg=()
           if [ -n "$ADDITIONAL_PROMPT" ]; then
             additional_prompt_arg=(--additional-prompt "$ADDITIONAL_PROMPT")
           fi
-          codex_timeout_seconds=$(((${{ needs.plan.outputs.codex_timeout_ms }} + 999) / 1000))
-          review_timeout_seconds=$(((codex_timeout_seconds + 180) * ${{ needs.plan.outputs.batch_size }}))
+          for budget in "${NEEDS_PLAN_CODEX_TIMEOUT_MS}" "${NEEDS_PLAN_BATCH_SIZE}"; do
+            if ! [[ "$budget" =~ ^[0-9]{1,9}$ ]]; then
+              echo "::error::Review budget must be a bounded decimal integer."
+              exit 1
+            fi
+          done
+          codex_timeout_seconds=$(((${NEEDS_PLAN_CODEX_TIMEOUT_MS} + 999) / 1000))
+          review_timeout_seconds=$(((codex_timeout_seconds + 180) * ${NEEDS_PLAN_BATCH_SIZE}))
           if [ "$review_timeout_seconds" -lt 300 ]; then
             review_timeout_seconds=300
           fi
           if [ "$review_timeout_seconds" -gt 4200 ]; then
             review_timeout_seconds=4200
           fi
-          echo "::notice::Review shard timeout is ${review_timeout_seconds}s for batch size ${{ needs.plan.outputs.batch_size }} and per-item Codex timeout ${codex_timeout_seconds}s."
+          echo "::notice::Review shard timeout is ${review_timeout_seconds}s for batch size ${NEEDS_PLAN_BATCH_SIZE} and per-item Codex timeout ${codex_timeout_seconds}s."
           timeout --kill-after=30s "${review_timeout_seconds}s" node dist/clawsweeper.js review \
-            --target-repo "${{ needs.plan.outputs.target_repo }}" \
-            --target-dir "../${{ needs.plan.outputs.target_checkout_dir }}" \
+            --target-repo "${NEEDS_PLAN_TARGET_REPO}" \
+            --target-dir "../${NEEDS_PLAN_TARGET_CHECKOUT_DIR}" \
             --artifact-dir ../review-artifacts/shard-${{ matrix.shard }} \
-            --batch-size ${{ needs.plan.outputs.batch_size }} \
-            --max-pages ${{ needs.plan.outputs.max_pages }} \
-            --codex-model ${{ needs.plan.outputs.review_model }} \
-            --codex-reasoning-effort ${{ needs.plan.outputs.codex_reasoning_effort }} \
+            --batch-size ${NEEDS_PLAN_BATCH_SIZE} \
+            --max-pages ${NEEDS_PLAN_MAX_PAGES} \
+            --codex-model ${NEEDS_PLAN_REVIEW_MODEL} \
+            --codex-reasoning-effort ${NEEDS_PLAN_CODEX_REASONING_EFFORT} \
             --codex-sandbox danger-full-access \
-            --codex-timeout-ms ${{ needs.plan.outputs.codex_timeout_ms }} \
+            --codex-timeout-ms ${NEEDS_PLAN_CODEX_TIMEOUT_MS} \
             --item-numbers "${{ matrix.item_numbers }}" \
             ${hot_intake_arg[@]+"${hot_intake_arg[@]}"} \
             --shard-index ${{ matrix.shard }} \
-            --shard-count ${{ needs.plan.outputs.planned_shards }} \
+            --shard-count ${NEEDS_PLAN_PLANNED_SHARDS} \
             ${additional_prompt_arg[@]+"${additional_prompt_arg[@]}"}
 
       - name: Record shard metrics
@@ -1212,6 +1255,12 @@ jobs:
           HOT_INTAKE: ${{ needs.plan.outputs.hot_intake }}
           MAX_PAGES: ${{ needs.plan.outputs.max_pages }}
           TARGET_REPO: ${{ needs.plan.outputs.target_repo }}
+          NEEDS_PLAN_PLANNED_COUNT: ${{ needs.plan.outputs.planned_count }}
+          NEEDS_PLAN_PLANNED_CAPACITY: ${{ needs.plan.outputs.planned_capacity }}
+          NEEDS_PLAN_PLANNED_SHARDS: ${{ needs.plan.outputs.planned_shards }}
+          NEEDS_PLAN_DUE_BACKLOG: ${{ needs.plan.outputs.due_backlog }}
+          NEEDS_PLAN_OLDEST_UNREVIEWED_AT: ${{ needs.plan.outputs.oldest_unreviewed_at }}
+          NEEDS_PLAN_CAPACITY_REASON: ${{ needs.plan.outputs.capacity_reason }}
         run: |
           apply_artifacts_args=(--target-repo "$TARGET_REPO" --artifact-dir artifacts --skip-dashboard --skip-reconcile)
           publish_state="Review publish complete"
@@ -1230,13 +1279,13 @@ jobs:
             --state "$publish_state" \
             --detail "$publish_detail" \
             --run-url "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-            --planned-count "${{ needs.plan.outputs.planned_count }}" \
-            --planned-capacity "${{ needs.plan.outputs.planned_capacity }}" \
-            --planned-shards "${{ needs.plan.outputs.planned_shards }}" \
+            --planned-count "${NEEDS_PLAN_PLANNED_COUNT}" \
+            --planned-capacity "${NEEDS_PLAN_PLANNED_CAPACITY}" \
+            --planned-shards "${NEEDS_PLAN_PLANNED_SHARDS}" \
             --active-codex "0" \
-            --due-backlog "${{ needs.plan.outputs.due_backlog }}" \
-            --oldest-unreviewed-at "${{ needs.plan.outputs.oldest_unreviewed_at }}" \
-            --capacity-reason "${{ needs.plan.outputs.capacity_reason }}"
+            --due-backlog "${NEEDS_PLAN_DUE_BACKLOG}" \
+            --oldest-unreviewed-at "${NEEDS_PLAN_OLDEST_UNREVIEWED_AT}" \
+            --capacity-reason "${NEEDS_PLAN_CAPACITY_REASON}"
 
       - name: Commit review records
         env:
@@ -1404,6 +1453,12 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.target-write-token.outputs.token }}
           TARGET_REPO: ${{ needs.plan.outputs.target_repo }}
+          NEEDS_PLAN_PLANNED_COUNT: ${{ needs.plan.outputs.planned_count }}
+          NEEDS_PLAN_PLANNED_CAPACITY: ${{ needs.plan.outputs.planned_capacity }}
+          NEEDS_PLAN_PLANNED_SHARDS: ${{ needs.plan.outputs.planned_shards }}
+          NEEDS_PLAN_DUE_BACKLOG: ${{ needs.plan.outputs.due_backlog }}
+          NEEDS_PLAN_OLDEST_UNREVIEWED_AT: ${{ needs.plan.outputs.oldest_unreviewed_at }}
+          NEEDS_PLAN_CAPACITY_REASON: ${{ needs.plan.outputs.capacity_reason }}
         run: |
           set -euo pipefail
           test -n "$GH_TOKEN"
@@ -1432,13 +1487,13 @@ jobs:
             --state "Review comments checked" \
             --detail "Checked selected durable Codex review comments and synced missing or stale comments. Synced: $synced_count. Item numbers: $item_numbers." \
             --run-url "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-            --planned-count "${{ needs.plan.outputs.planned_count }}" \
-            --planned-capacity "${{ needs.plan.outputs.planned_capacity }}" \
-            --planned-shards "${{ needs.plan.outputs.planned_shards }}" \
+            --planned-count "${NEEDS_PLAN_PLANNED_COUNT}" \
+            --planned-capacity "${NEEDS_PLAN_PLANNED_CAPACITY}" \
+            --planned-shards "${NEEDS_PLAN_PLANNED_SHARDS}" \
             --active-codex "0" \
-            --due-backlog "${{ needs.plan.outputs.due_backlog }}" \
-            --oldest-unreviewed-at "${{ needs.plan.outputs.oldest_unreviewed_at }}" \
-            --capacity-reason "${{ needs.plan.outputs.capacity_reason }}"
+            --due-backlog "${NEEDS_PLAN_DUE_BACKLOG}" \
+            --oldest-unreviewed-at "${NEEDS_PLAN_OLDEST_UNREVIEWED_AT}" \
+            --capacity-reason "${NEEDS_PLAN_CAPACITY_REASON}"
           pnpm run repair:publish-main -- \
             --message "chore: sync selected review comments" \
             --path "records/${target_slug}" \
@@ -1452,6 +1507,14 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.target-write-token.outputs.token }}
           TARGET_REPO: ${{ needs.plan.outputs.target_repo }}
+          INPUTS_APPLY_AFTER_REVIEW_CLOSE_REASONS_RESOLVED: ${{ github.event.inputs.apply_after_review_close_reasons || 'implemented_on_main,duplicate_or_superseded' }}
+          INPUTS_APPLY_AFTER_REVIEW_MIN_AGE_MINUTES_RESOLVED: ${{ github.event.inputs.apply_after_review_min_age_minutes || '0' }}
+          NEEDS_PLAN_PLANNED_COUNT: ${{ needs.plan.outputs.planned_count }}
+          NEEDS_PLAN_PLANNED_CAPACITY: ${{ needs.plan.outputs.planned_capacity }}
+          NEEDS_PLAN_PLANNED_SHARDS: ${{ needs.plan.outputs.planned_shards }}
+          NEEDS_PLAN_DUE_BACKLOG: ${{ needs.plan.outputs.due_backlog }}
+          NEEDS_PLAN_OLDEST_UNREVIEWED_AT: ${{ needs.plan.outputs.oldest_unreviewed_at }}
+          NEEDS_PLAN_CAPACITY_REASON: ${{ needs.plan.outputs.capacity_reason }}
         run: |
           set -euo pipefail
           test -n "$GH_TOKEN"
@@ -1463,8 +1526,8 @@ jobs:
             exit 0
           fi
           item_count="$(pnpm run --silent workflow -- count-csv --items "$item_numbers")"
-          close_reasons="${{ github.event.inputs.apply_after_review_close_reasons || 'implemented_on_main,duplicate_or_superseded' }}"
-          min_age_minutes="${{ github.event.inputs.apply_after_review_min_age_minutes || '0' }}"
+          close_reasons="${INPUTS_APPLY_AFTER_REVIEW_CLOSE_REASONS_RESOLVED}"
+          min_age_minutes="${INPUTS_APPLY_AFTER_REVIEW_MIN_AGE_MINUTES_RESOLVED}"
           git pull --rebase
           pnpm run apply-decisions -- \
             --target-repo "$TARGET_REPO" \
@@ -1485,13 +1548,13 @@ jobs:
             --state "Immediate apply checked" \
             --detail "Checked selected safe close proposals right after review publish. Closed: $closed_count/$item_count. Close reasons enabled: $close_reasons. Item numbers: $item_numbers." \
             --run-url "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-            --planned-count "${{ needs.plan.outputs.planned_count }}" \
-            --planned-capacity "${{ needs.plan.outputs.planned_capacity }}" \
-            --planned-shards "${{ needs.plan.outputs.planned_shards }}" \
+            --planned-count "${NEEDS_PLAN_PLANNED_COUNT}" \
+            --planned-capacity "${NEEDS_PLAN_PLANNED_CAPACITY}" \
+            --planned-shards "${NEEDS_PLAN_PLANNED_SHARDS}" \
             --active-codex "0" \
-            --due-backlog "${{ needs.plan.outputs.due_backlog }}" \
-            --oldest-unreviewed-at "${{ needs.plan.outputs.oldest_unreviewed_at }}" \
-            --capacity-reason "${{ needs.plan.outputs.capacity_reason }}"
+            --due-backlog "${NEEDS_PLAN_DUE_BACKLOG}" \
+            --oldest-unreviewed-at "${NEEDS_PLAN_OLDEST_UNREVIEWED_AT}" \
+            --capacity-reason "${NEEDS_PLAN_CAPACITY_REASON}"
           pnpm run repair:publish-main -- \
             --message "chore: apply selected sweep decisions" \
             --path "records/${target_slug}" \
@@ -1503,16 +1566,21 @@ jobs:
         if: ${{ success() && needs.plan.outputs.planned_count == needs.plan.outputs.planned_capacity && (github.event_name != 'workflow_dispatch' || (github.event.inputs.item_number == '' && github.event.inputs.item_numbers == '')) }}
         env:
           GH_TOKEN: ${{ github.token }}
+          NEEDS_PLAN_HOT_INTAKE: ${{ needs.plan.outputs.hot_intake }}
+          NEEDS_PLAN_TARGET_REPO: ${{ needs.plan.outputs.target_repo }}
+          NEEDS_PLAN_BATCH_SIZE: ${{ needs.plan.outputs.batch_size }}
+          NEEDS_PLAN_SHARD_COUNT: ${{ needs.plan.outputs.shard_count }}
+          NEEDS_PLAN_CODEX_TIMEOUT_MS: ${{ needs.plan.outputs.codex_timeout_ms }}
         run: |
           for attempt in 1 2 3; do
             if gh workflow run sweep.yml \
               --ref main \
               -f apply_existing=false \
-              -f hot_intake="${{ needs.plan.outputs.hot_intake }}" \
-              -f target_repo="${{ needs.plan.outputs.target_repo }}" \
-              -f batch_size="${{ needs.plan.outputs.batch_size }}" \
-              -f shard_count="${{ needs.plan.outputs.shard_count }}" \
-              -f codex_timeout_ms="${{ needs.plan.outputs.codex_timeout_ms }}"; then
+              -f hot_intake="${NEEDS_PLAN_HOT_INTAKE}" \
+              -f target_repo="${NEEDS_PLAN_TARGET_REPO}" \
+              -f batch_size="${NEEDS_PLAN_BATCH_SIZE}" \
+              -f shard_count="${NEEDS_PLAN_SHARD_COUNT}" \
+              -f codex_timeout_ms="${NEEDS_PLAN_CODEX_TIMEOUT_MS}"; then
               exit 0
             fi
             sleep "$((attempt * 10))"
@@ -1542,6 +1610,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           ADDITIONAL_PROMPT: ${{ github.event.inputs.additional_prompt || '' }}
           MATRIX_JSON: ${{ needs.plan.outputs.matrix }}
+          NEEDS_PLAN_TARGET_REPO: ${{ needs.plan.outputs.target_repo }}
+          NEEDS_PLAN_BATCH_SIZE: ${{ needs.plan.outputs.batch_size }}
+          NEEDS_PLAN_CODEX_TIMEOUT_MS: ${{ needs.plan.outputs.codex_timeout_ms }}
         run: |
           set -euo pipefail
           recovery_prompt="[clawsweeper-recovery-attempt=1]"
@@ -1603,10 +1674,10 @@ jobs:
             --ref main
             -f apply_existing=false
             -f hot_intake=false
-            -f target_repo="${{ needs.plan.outputs.target_repo }}"
-            -f batch_size="${{ needs.plan.outputs.batch_size }}"
+            -f target_repo="${NEEDS_PLAN_TARGET_REPO}"
+            -f batch_size="${NEEDS_PLAN_BATCH_SIZE}"
             -f shard_count="$recovery_shard_count"
-            -f codex_timeout_ms="${{ needs.plan.outputs.codex_timeout_ms }}"
+            -f codex_timeout_ms="${NEEDS_PLAN_CODEX_TIMEOUT_MS}"
             -f item_numbers="$item_numbers"
             -f additional_prompt="$recovery_prompt"
           )
@@ -1626,8 +1697,10 @@ jobs:
 
       - name: Resolve target repository
         id: target
+        env:
+          INPUTS_TARGET_REPO_RESOLVED: ${{ github.event.inputs.target_repo || github.event.client_payload.target_repo || '' }}
         run: |
-          target_repo="${{ github.event.inputs.target_repo || github.event.client_payload.target_repo || '' }}"
+          target_repo="${INPUTS_TARGET_REPO_RESOLVED}"
           if [ -z "$target_repo" ]; then
             echo "target_repo is required for manual audits" >&2
             exit 1
@@ -1732,8 +1805,10 @@ jobs:
 
       - name: Resolve target repository
         id: target
+        env:
+          INPUTS_TARGET_REPO_RESOLVED: ${{ github.event.inputs.target_repo || '' }}
         run: |
-          target_repo="${{ github.event.inputs.target_repo || '' }}"
+          target_repo="${INPUTS_TARGET_REPO_RESOLVED}"
           if [ -z "$target_repo" ]; then
             echo "target_repo is required for manual apply" >&2
             exit 1
@@ -1787,20 +1862,32 @@ jobs:
           CLAWSWEEPER_RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
           CLAWSWEEPER_THROTTLE_STATUS_MIN_WAIT_MS: "60000"
           CLAWSWEEPER_THROTTLE_STATUS_MIN_INTERVAL_MS: "120000"
+          INPUTS_APPLY_LIMIT_RESOLVED: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.apply_limit || '20' }}
+          INPUTS_APPLY_MIN_AGE_DAYS_RESOLVED: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.apply_min_age_days || '0' }}
+          INPUTS_APPLY_MIN_AGE_MINUTES_RESOLVED: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.apply_min_age_minutes || '' }}
+          INPUTS_APPLY_KIND_RESOLVED: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.apply_kind || 'all' }}
+          INPUTS_APPLY_CLOSE_REASONS_RESOLVED: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.apply_close_reasons || 'all' }}
+          INPUTS_APPLY_STALE_MIN_AGE_DAYS_RESOLVED: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.apply_stale_min_age_days || '60' }}
+          INPUTS_APPLY_CLOSE_DELAY_MS_RESOLVED: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.apply_close_delay_ms || '2000' }}
+          INPUTS_APPLY_PROGRESS_EVERY_RESOLVED: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.apply_progress_every || '10' }}
+          INPUTS_APPLY_CHECKPOINT_SIZE_RESOLVED: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.apply_checkpoint_size || '50' }}
+          INPUTS_APPLY_ITEM_NUMBERS_RESOLVED: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.apply_item_numbers || '' }}
+          INPUTS_APPLY_SYNC_COMMENTS_ONLY_RESOLVED: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.apply_sync_comments_only || 'false' }}
+          INPUTS_APPLY_COMMENT_SYNC_MIN_AGE_DAYS_RESOLVED: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.apply_comment_sync_min_age_days || '7' }}
         run: |
           test -n "$GH_TOKEN"
-          limit="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.apply_limit || '20' }}"
-          min_age_days="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.apply_min_age_days || '0' }}"
-          min_age_minutes="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.apply_min_age_minutes || '' }}"
-          apply_kind="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.apply_kind || 'all' }}"
-          apply_close_reasons="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.apply_close_reasons || 'all' }}"
-          stale_min_age_days="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.apply_stale_min_age_days || '60' }}"
-          close_delay_ms="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.apply_close_delay_ms || '2000' }}"
-          progress_every="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.apply_progress_every || '10' }}"
-          checkpoint_size="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.apply_checkpoint_size || '50' }}"
-          item_numbers="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.apply_item_numbers || '' }}"
-          sync_comments_only="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.apply_sync_comments_only || 'false' }}"
-          comment_sync_min_age_days="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.apply_comment_sync_min_age_days || '7' }}"
+          limit="${INPUTS_APPLY_LIMIT_RESOLVED}"
+          min_age_days="${INPUTS_APPLY_MIN_AGE_DAYS_RESOLVED}"
+          min_age_minutes="${INPUTS_APPLY_MIN_AGE_MINUTES_RESOLVED}"
+          apply_kind="${INPUTS_APPLY_KIND_RESOLVED}"
+          apply_close_reasons="${INPUTS_APPLY_CLOSE_REASONS_RESOLVED}"
+          stale_min_age_days="${INPUTS_APPLY_STALE_MIN_AGE_DAYS_RESOLVED}"
+          close_delay_ms="${INPUTS_APPLY_CLOSE_DELAY_MS_RESOLVED}"
+          progress_every="${INPUTS_APPLY_PROGRESS_EVERY_RESOLVED}"
+          checkpoint_size="${INPUTS_APPLY_CHECKPOINT_SIZE_RESOLVED}"
+          item_numbers="${INPUTS_APPLY_ITEM_NUMBERS_RESOLVED}"
+          sync_comments_only="${INPUTS_APPLY_SYNC_COMMENTS_ONLY_RESOLVED}"
+          comment_sync_min_age_days="${INPUTS_APPLY_COMMENT_SYNC_MIN_AGE_DAYS_RESOLVED}"
           sync_comments_arg=()
           if [ "$sync_comments_only" = "true" ]; then
             sync_comments_arg=(--sync-comments-only)
