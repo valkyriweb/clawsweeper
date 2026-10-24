@@ -95,10 +95,12 @@
   },
   "dependencies": {
     "convex": "^1.41.0",
-    "effect": "3.21.3"
+    "effect": "3.21.3",
+    "markdown-it": "15.0.3"
   },
   "devDependencies": {
     "@oxlint/plugins": "1.62.0",
+    "@types/markdown-it": "^14.2.0",
     "@types/node": "^25.6.0",
     "@typescript/native-preview": "7.0.0-dev.20260503.1",
     "oxfmt": "^0.47.0",
