@@ -11,7 +11,6 @@ export function assertGitHubItemIdentity(
   number: number,
 ): void {
   let url: URL | undefined;
-  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- Parse GitHub's wire identity here; reject non-string URLs before URL coercion.
   if (typeof value.html_url === "string") {
     try {
       url = new URL(value.html_url);
