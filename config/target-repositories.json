@@ -2,10 +2,10 @@
   "schema_version": 2,
   "review_routing": {
     "models": {
-      "codex": "gpt-5.6-terra",
-      "claude-bridge": "clawrouter/claude-opus-5-200k",
-      "claude-code": "clawrouter/claude-opus-5-200k",
-      "pi": "clawrouter/claude-opus-5-200k"
+      "codex": "gpt-6-luna",
+      "claude-bridge": "clawrouter/claude-opus-5-5-200k",
+      "claude-code": "clawrouter/claude-opus-5-5-200k",
+      "pi": "clawrouter/gpt-6-luna-200k"
     }
   },
   "repositories": [
