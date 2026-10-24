@@ -29,6 +29,7 @@ import {
   type ReasoningEffort,
 } from "../model-registry.js";
 import { AUTOMATION_LIMITS, WORKER_CONFIG, workerLimit, type WorkerLane } from "./limits.js";
+import { exactReviewLiveItemState } from "./exact-review-live-item.js";
 
 type ApplyAction = {
   action: string;
@@ -46,6 +47,13 @@ function runCli(): void {
   if (!command) throw new Error("workflow utility command is required");
 
   switch (command) {
+    case "exact-review-live-item":
+      console.log(
+        JSON.stringify(
+          exactReviewLiveItemState(process.env.TARGET_REPO ?? "", Number(process.env.ITEM_NUMBER)),
+        ),
+      );
+      break;
     case "plan-output":
       printPlanOutput();
       break;

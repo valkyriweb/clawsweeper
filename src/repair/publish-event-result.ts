@@ -20,6 +20,7 @@ import {
   syncPublishPaths,
 } from "./git-publish.js";
 import { isJsonObject } from "./json-types.js";
+import { exactReviewLiveItemState } from "./exact-review-live-item.js";
 
 type ApplyAction = {
   action: string;
@@ -40,6 +41,12 @@ await publishEventResult(options);
 async function publishEventResult(options: EventOptions): Promise<void> {
   validateTargetRepo(options.targetRepo);
   validateItemNumber(options.itemNumber);
+  if (
+    exactReviewLiveItemState(options.targetRepo, Number(options.itemNumber)).state === "missing"
+  ) {
+    console.log("Skipping publication: item is no longer in the target repository.");
+    return;
+  }
   const repository = process.env.GITHUB_REPOSITORY;
   const repoToken = process.env.REPO_TOKEN;
   if (!publishRoot() && repository && repoToken) setTokenOrigin(repoToken, repository);

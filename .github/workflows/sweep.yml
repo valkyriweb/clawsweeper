@@ -250,7 +250,19 @@ jobs:
           bermont-digital-client-id: ${{ vars.BERMONT_DIGITAL_CLAWSWEEPER_APP_CLIENT_ID }}
           bermont-digital-private-key: ${{ secrets.BERMONT_DIGITAL_CLAWSWEEPER_APP_PRIVATE_KEY }}
 
+      - name: Check exact event item identity
+        id: event-item
+        env:
+          GH_TOKEN: ${{ steps.target-read-token.outputs.token }}
+          TARGET_REPO: ${{ steps.target.outputs.target_repo }}
+          ITEM_NUMBER: ${{ steps.target.outputs.item_number }}
+        run: |
+          set -euo pipefail
+          live_item="$(pnpm run --silent workflow -- exact-review-live-item)"
+          echo "state=$(jq -r '.state' <<< "$live_item")" >> "$GITHUB_OUTPUT"
+
       - name: React to target item review start
+        if: ${{ steps.event-item.outputs.state != 'missing' }}
         continue-on-error: true
         env:
           GH_TOKEN: ${{ steps.target-write-token.outputs.token }}
@@ -290,6 +302,7 @@ jobs:
           echo "codex_effort=$(pnpm run --silent workflow -- codex-reasoning-effort --action sweep-review)" >> "$GITHUB_OUTPUT"
 
       - name: Mark re-review command in progress
+        if: ${{ steps.event-item.outputs.state != 'missing' }}
         continue-on-error: true
         env:
           GH_TOKEN: ${{ steps.target-write-token.outputs.token }}
@@ -330,6 +343,7 @@ jobs:
           token: ${{ secrets.PI_PACKAGES_TOKEN }}
 
       - name: Check out target repository
+        if: ${{ steps.event-item.outputs.state != 'missing' }}
         timeout-minutes: 10
         uses: actions/checkout@v6
         with:
@@ -342,6 +356,7 @@ jobs:
 
       - name: Review exact event item
         id: review-exact-event-item
+        if: ${{ steps.event-item.outputs.state != 'missing' }}
         continue-on-error: true
         env:
           GH_TOKEN: ${{ steps.target-write-token.outputs.token }}
@@ -411,6 +426,7 @@ jobs:
 
       - name: Publish event result and apply safe close
         id: publish-event-result
+        if: ${{ steps.event-item.outputs.state != 'missing' }}
         env:
           GH_TOKEN: ${{ steps.target-write-token.outputs.token }}
           REPO_TOKEN: ${{ github.token }}
@@ -422,6 +438,7 @@ jobs:
 
       - name: Route synced ClawSweeper verdict
         id: route-synced-verdict
+        if: ${{ steps.event-item.outputs.state != 'missing' }}
         timeout-minutes: 4
         env:
           GH_TOKEN: ${{ steps.target-write-token.outputs.token }}
@@ -434,6 +451,8 @@ jobs:
           CLAWSWEEPER_COMMENT_MAX_COMMENTS: ${{ vars.CLAWSWEEPER_COMMENT_MAX_COMMENTS || '1000' }}
         run: |
           set -euo pipefail
+          live_item="$(pnpm run --silent workflow -- exact-review-live-item)"
+          if [ "$(jq -r '.state' <<< "$live_item")" = "missing" ]; then exit 0; fi
           pnpm run repair:comment-router -- \
             --write-report \
             --repo "$TARGET_REPO" \
@@ -443,7 +462,7 @@ jobs:
             --execute
 
       - name: Mark re-review complete
-        if: ${{ always() && steps.setup-pnpm.outcome == 'success' }}
+        if: ${{ always() && steps.setup-pnpm.outcome == 'success' && steps.event-item.outcome == 'success' && steps.event-item.outputs.state != 'missing' }}
         continue-on-error: true
         env:
           GH_TOKEN: ${{ steps.target-write-token.outputs.token }}
@@ -455,6 +474,8 @@ jobs:
           PUBLISH_OUTCOME: ${{ steps.publish-event-result.outcome }}
           ROUTE_OUTCOME: ${{ steps.route-synced-verdict.outcome }}
         run: |
+          live_item="$(pnpm run --silent workflow -- exact-review-live-item)" || exit 1
+          if [ "$(jq -r '.state' <<< "$live_item")" = "missing" ]; then exit 0; fi
           state="Failed"
           detail="The targeted re-review did not finish cleanly. Check the workflow run for details."
           if [ "$REVIEW_OUTCOME" = "success" ] && [ "$PUBLISH_OUTCOME" = "success" ] && [ "$ROUTE_OUTCOME" = "success" ]; then
@@ -491,7 +512,7 @@ jobs:
           echo "count=$count" >> "$GITHUB_OUTPUT"
 
       - name: Retry waiting event repair dispatches
-        if: ${{ steps.waiting-event-repair-dispatches.outputs.count != '' && steps.waiting-event-repair-dispatches.outputs.count != '0' }}
+        if: ${{ steps.event-item.outputs.state != 'missing' && steps.waiting-event-repair-dispatches.outputs.count != '' && steps.waiting-event-repair-dispatches.outputs.count != '0' }}
         env:
           GH_TOKEN: ${{ steps.target-write-token.outputs.token }}
           CLAWSWEEPER_DISPATCH_TOKEN: ${{ github.token }}
@@ -504,6 +525,8 @@ jobs:
           STEPS_WAITING_EVENT_REPAIR_DISPATCHES_COUNT: ${{ steps.waiting-event-repair-dispatches.outputs.count }}
         run: |
           set -euo pipefail
+          live_item="$(pnpm run --silent workflow -- exact-review-live-item)"
+          if [ "$(jq -r '.state' <<< "$live_item")" = "missing" ]; then exit 0; fi
           echo "Retrying ${STEPS_WAITING_EVENT_REPAIR_DISPATCHES_COUNT} waiting repair dispatch(es) after publishing router state."
           pnpm run repair:comment-router -- \
             --write-report \
@@ -524,7 +547,7 @@ jobs:
             --rebase-strategy theirs
 
       - name: React to target item completion
-        if: ${{ success() }}
+        if: ${{ success() && steps.event-item.outputs.state != 'missing' }}
         continue-on-error: true
         env:
           GH_TOKEN: ${{ steps.target-write-token.outputs.token }}
@@ -533,6 +556,8 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$GH_TOKEN"
+          live_item="$(pnpm run --silent workflow -- exact-review-live-item)"
+          if [ "$(jq -r '.state' <<< "$live_item")" = "missing" ]; then exit 0; fi
           err="$(mktemp)"
           if gh api -X POST \
             -H "Accept: application/vnd.github+json" \
@@ -958,7 +983,7 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 24
+          node-version: 24.22.1
 
       - uses: actions/download-artifact@v8
         with:
