@@ -981,9 +981,11 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - uses: actions/setup-node@v6
+      # The downloaded dist imports runtime packages (for example effect), so
+      # install dependencies before the token action runs dist code.
+      - uses: ./clawsweeper/.github/actions/setup-pnpm
         with:
-          node-version: 24.22.1
+          working-directory: clawsweeper
 
       - uses: actions/download-artifact@v8
         with:
@@ -1708,6 +1710,83 @@ jobs:
           )
           echo "Requeueing failed review shards $failed_shards with item numbers: $item_numbers"
           gh "${args[@]}"
+
+  # Review shards keep continue-on-error so publish and recovery still run, so
+  # this job is what turns a failed shard or a missing exact-item review red.
+  review-gate:
+    name: Check review results
+    needs: [plan, review, publish, recover-review-failures]
+    if: ${{ always() && needs.plan.result == 'success' && github.event_name != 'repository_dispatch' && (needs.plan.outputs.planned_item_numbers != '' || github.event.inputs.item_number != '' || github.event.inputs.item_numbers != '') }}
+    runs-on: ${{ vars.CLAWSWEEPER_RUNNER_LABELS && (startsWith(vars.CLAWSWEEPER_RUNNER_LABELS, '[') && fromJson(vars.CLAWSWEEPER_RUNNER_LABELS) || vars.CLAWSWEEPER_RUNNER_LABELS) || fromJson('["self-hosted", "macOS", "ARM64", "mac-mini"]') }}
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          pattern: review-failed-shard-*
+          path: ${{ runner.temp }}/review-gate/failed-shards
+          merge-multiple: true
+
+      - uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          pattern: review-shard-*
+          path: ${{ runner.temp }}/review-gate/reviews
+          merge-multiple: true
+
+      - name: Fail on failed shards or missing reviews
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLISH_RESULT: ${{ needs.publish.result }}
+          ITEM_NUMBER: ${{ github.event.inputs.item_number || '' }}
+          ITEM_NUMBERS: ${{ github.event.inputs.item_numbers || '' }}
+          GATE_DIR: ${{ runner.temp }}/review-gate
+        run: |
+          set -euo pipefail
+          problems=()
+          recorded_shards=""
+          if [ -d "$GATE_DIR/failed-shards" ]; then
+            recorded_shards="$(find "$GATE_DIR/failed-shards" -type f -name 'shard-*.json' -print0 \
+              | xargs -0 -r jq -r '.shard // empty' \
+              | paste -sd, -)"
+          fi
+          if [ -n "$recorded_shards" ]; then
+            problems+=("Review shards recorded a failure: $recorded_shards.")
+          fi
+          failed_jobs="$(gh run view "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --json jobs --jq '
+            .jobs[]
+            | select((.conclusion == "failure" or .conclusion == "cancelled") and (.name | startswith("Review shard ")))
+            | .name
+          ' | paste -sd, -)"
+          if [ -n "$failed_jobs" ]; then
+            problems+=("Review shard jobs failed: $failed_jobs.")
+          fi
+          if [ "$PUBLISH_RESULT" != "success" ]; then
+            problems+=("Publish review artifacts ended with result '$PUBLISH_RESULT'.")
+          fi
+          requested="$(printf '%s,%s' "$ITEM_NUMBER" "$ITEM_NUMBERS" | { grep -oE '[0-9]+' || true; } | sort -u)"
+          if [ -n "$requested" ]; then
+            reviewed=""
+            if [ -d "$GATE_DIR/reviews" ]; then
+              reviewed="$(find "$GATE_DIR/reviews" -type f -name '*.md' -exec basename {} .md \; \
+                | { grep -oE '[0-9]+$' || true; } | sort -u)"
+            fi
+            missing="$(comm -23 <(printf '%s\n' "$requested") <(printf '%s\n' "$reviewed") | paste -sd, -)"
+            if [ -n "$missing" ]; then
+              problems+=("No review was published for requested items: $missing.")
+            fi
+          fi
+          if [ "${#problems[@]}" -gt 0 ]; then
+            for problem in "${problems[@]}"; do
+              echo "::error::$problem"
+            done
+            echo "::error::Read the review shard and publish job logs of this run for the cause."
+            exit 1
+          fi
+          echo "All review shards succeeded and every requested item has a published review."
 
   audit-dashboard:
     name: Audit state
