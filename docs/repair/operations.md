@@ -2,7 +2,7 @@
 
 For the internal feature map across job creation, PR generation, comment
 commands, finalizers, self-heal, gates, and ledgers, see
-[`docs/INTERNAL_FEATURES.md`](INTERNAL_FEATURES.md).
+[`docs/repair/internal-features.md`](internal-features.md).
 
 For the trusted ClawSweeper-to-ClawSweeper PR repair loop, see
 [`docs/repair/auto-update-prs.md`](auto-update-prs.md).
@@ -39,10 +39,10 @@ Security/privacy/supply-chain and broad findings are audit-only.
 
 ## Manual Fix PR From Issue or PR Refs
 
-Use `scripts/create-job.ts` when ClawSweeper or a maintainer has identified a
-valid issue/PR cluster that should get one implementation PR. It writes one
-idempotent job file and checks for an existing open PR or branch before creating
-another job.
+Use `src/repair/create-job.ts` when ClawSweeper or a maintainer has identified
+a valid issue/PR cluster that should get one implementation PR. It writes one
+idempotent job file and checks for an existing open PR or branch before
+creating another job.
 
 ```bash
 pnpm run repair:create-job -- \
