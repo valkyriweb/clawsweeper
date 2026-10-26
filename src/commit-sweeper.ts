@@ -21,6 +21,7 @@ import {
   type CommitReviewRunResult,
 } from "./commit-review-providers.js";
 import { runText } from "./command.js";
+import { filterUpstreamSyncMerges, gitRunnerFor } from "./commit-review-selection.js";
 import { ghRetryKind, ghRetryWaitMs } from "./github-retry.js";
 import { repositoryProfileFor, requireTargetRepo } from "./repository-profiles.js";
 
@@ -434,6 +435,27 @@ function classifyCommand(args: Args): void {
   console.log(JSON.stringify({ review, skipped }, null, 2));
 }
 
+// Workflow selection step: drop upstream-sync merges (and the upstream commits
+// they bring in) for targets that set `commit_review_skip_merge_subject_pattern`.
+// Prints the kept SHAs one per line; other targets pass through unchanged.
+function filterSyncMergesCommand(args: Args): void {
+  const targetRepo = requireTargetRepo(argString(args, "target_repo", ""));
+  const profile = repositoryProfileFor(targetRepo);
+  const targetDir = resolve(argString(args, "target_dir", profile.checkoutDir));
+  const commits = commitShasArg(argString(args, "commit_shas", ""));
+  const result = filterUpstreamSyncMerges(
+    commits,
+    profile.commitReviewSkipMergeSubjectPattern,
+    gitRunnerFor(targetDir),
+  );
+  if (result.skippedMerges.length > 0) {
+    console.error(
+      `Skipped ${result.skippedMerges.length} upstream-sync merge(s) and ${result.skippedUpstreamCommits.length} upstream commit(s) for ${targetRepo}: ${result.skippedMerges.join(", ")}`,
+    );
+  }
+  if (result.commits.length > 0) console.log(result.commits.join("\n"));
+}
+
 function publishCheckCommand(args: Args): void {
   const targetRepo = requireTargetRepo(argString(args, "target_repo", ""));
   const reportRepo = argString(
@@ -809,6 +831,7 @@ export function main(argv = process.argv.slice(2)): void {
   const command = args._[0] ?? "review";
   if (command === "review") reviewCommand(args);
   else if (command === "classify") classifyCommand(args);
+  else if (command === "filter-sync-merges") filterSyncMergesCommand(args);
   else if (command === "publish-check") publishCheckCommand(args);
   else if (command === "reports") reportsCommand(args);
   else if (command === "copy-artifacts") copyArtifactsCommand(args);
