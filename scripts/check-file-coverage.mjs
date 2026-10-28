@@ -15,7 +15,11 @@ if (!record) {
 }
 const num = (k) => Number(record.match(new RegExp(`^${k}:(\\d+)`, "m"))?.[1] ?? 0);
 let failed = false;
-for (const [name, found, hit] of [["lines", "LF", "LH"], ["branches", "BRF", "BRH"], ["functions", "FNF", "FNH"]]) {
+for (const [name, found, hit] of [
+  ["lines", "LF", "LH"],
+  ["branches", "BRF", "BRH"],
+  ["functions", "FNF", "FNH"],
+]) {
   const pct = num(found) === 0 ? 100 : (num(hit) / num(found)) * 100;
   const ok = pct >= min;
   failed ||= !ok;
