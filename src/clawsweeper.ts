@@ -43,6 +43,7 @@ import { parseGhJson, parseGhJsonLines } from "./github-json.js";
 import { stableJson } from "./stable-json.js";
 import { assertGitHubItemIdentity, GitHubItemMovedError } from "./github-item-identity.js";
 import { hiddenPayloadSecurityReview } from "./hidden-payload-security.js";
+import { shouldPassLowRiskPullRequest } from "./review-verdict-policy.js";
 import { runText } from "./command.js";
 import {
   buildHistorySnippets,
@@ -8373,6 +8374,7 @@ export function reviewAutomationMarkersFromReport(markdown: string): string {
   const decision = frontMatterValue(markdown, "decision");
   const confidence = frontMatterValue(markdown, "confidence") ?? "unknown";
   const headSha = pullHeadShaFromReport(markdown) ?? "unknown";
+  const passAllowedForRepo = passVerdictAllowedForReport(markdown);
   const baseAttrs = [
     `item=${markerAttributeValue(number)}`,
     `sha=${markerAttributeValue(headSha)}`,
@@ -8399,7 +8401,7 @@ export function reviewAutomationMarkersFromReport(markdown: string): string {
     return `<!-- clawsweeper-verdict:needs-human ${baseAttrs} -->`;
   }
   if (decision === "keep_open") {
-    if (repairLoopPassModeFromReport(markdown)) {
+    if (passAllowedForRepo && repairLoopPassModeFromReport(markdown)) {
       return `<!-- clawsweeper-verdict:pass ${baseAttrs} -->`;
     }
     if (repairLoopFindingRepairAllowed(markdown)) {
@@ -8407,6 +8409,9 @@ export function reviewAutomationMarkersFromReport(markdown: string): string {
         `<!-- clawsweeper-verdict:needs-changes ${baseAttrs} -->`,
         `<!-- clawsweeper-action:fix-required ${baseAttrs} finding=review-feedback -->`,
       ].join("\n");
+    }
+    if (passAllowedForRepo && frontMatterValue(markdown, "low_risk_pass_eligible") === "true") {
+      return "<!-- clawsweeper-verdict:pass " + baseAttrs + " -->";
     }
     if (frontMatterValue(markdown, "work_candidate") !== "queue_fix_pr") {
       return `<!-- clawsweeper-verdict:needs-human ${baseAttrs} -->`;
@@ -8420,6 +8425,19 @@ export function reviewAutomationMarkersFromReport(markdown: string): string {
     return `<!-- clawsweeper-verdict:needs-human ${baseAttrs} -->`;
   }
   return `<!-- clawsweeper-verdict:needs-human ${baseAttrs} -->`;
+}
+
+function passVerdictAllowedForReport(markdown: string): boolean {
+  try {
+    const profile = repositoryProfileFor(markdownRepository(markdown));
+    return (
+      pullHeadShaFromReport(markdown) !== null &&
+      profile.automationPolicy === "full" &&
+      profile.sensitiveRepository !== true
+    );
+  } catch {
+    return false;
+  }
 }
 
 function repairLoopPassModeFromReport(markdown: string): "" | "autofix" | "automerge" {
@@ -9055,6 +9073,33 @@ function markdownFor(options: {
 }): string {
   const failureReason = reviewFailureReasonForSummary(options.decision.summary);
   const reviewStatusValue = failureReason === "none" ? "complete" : "failed";
+  const profile = repositoryProfileFor(options.item.repo ?? targetRepo());
+  const pullRequest = asRecord(options.context.pullRequest);
+  const pullFilePaths = (options.context.pullFiles ?? []).flatMap((file) => {
+    const filename = asRecord(file).filename;
+    return typeof filename === "string" ? [filename] : [];
+  });
+  const pullFilesTruncated = options.context.counts?.pullFilesTruncated ?? false;
+  const lowRiskPassEligible =
+    options.item.kind === "pull_request" &&
+    shouldPassLowRiskPullRequest({
+      headSha: pullHeadShaFromContext(options.context) ?? "",
+      reviewComplete: reviewStatusValue === "complete",
+      reviewFindings: options.decision.reviewFindings.length,
+      overallCorrectness: options.decision.overallCorrectness,
+      automationPolicy: profile.automationPolicy,
+      sensitiveRepository: profile.sensitiveRepository === true,
+      filePaths: pullFilePaths,
+      filesTruncated: pullFilesTruncated,
+      additions:
+        typeof pullRequest.additions === "number" && Number.isSafeInteger(pullRequest.additions)
+          ? pullRequest.additions
+          : -1,
+      deletions:
+        typeof pullRequest.deletions === "number" && Number.isSafeInteger(pullRequest.deletions)
+          ? pullRequest.deletions
+          : -1,
+    });
   const timeoutEscalated = nextReviewTimeoutEscalated({
     prior: options.priorReview ?? null,
     ranAtEscalatedCap: Boolean(options.ranAtEscalatedCap),
@@ -9106,6 +9151,7 @@ item_updated_at: ${options.item.updatedAt}
 author: ${options.item.author}
 author_association: ${options.item.authorAssociation}
 labels: ${JSON.stringify(options.item.labels)}
+low_risk_pass_eligible: ${lowRiskPassEligible}
 reviewed_at: ${new Date().toISOString()}
 main_sha: ${options.git.mainSha}
 pull_head_sha: ${pullHeadShaFromContext(options.context) ?? "unknown"}

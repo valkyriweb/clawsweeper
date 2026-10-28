@@ -55,6 +55,15 @@ test("automation policies are explicit and fail closed for protected targets", (
   assert.equal(automationPolicyBlockReason("valkyriweb/clawsweeper", "merge"), null);
 });
 
+test("only the client repositories are held from low-risk auto-pass", () => {
+  assert.deepEqual(
+    REPOSITORY_PROFILES.filter((profile) => profile.sensitiveRepository === true).map(
+      (profile) => profile.targetRepo,
+    ),
+    ["clip-sa/core-ai", "clip-sa/core-wholesale"],
+  );
+});
+
 test("target repository schema rejects missing or unknown automation policies", () => {
   const config = JSON.parse(readFileSync("config/target-repositories.json", "utf8"));
   const missingPolicy = structuredClone(config);
@@ -77,6 +86,13 @@ test("target repository schema rejects missing or unknown automation policies", 
   assert.throws(
     () => validateTargetRepositoryConfig(unknownPolicy),
     /automation_policy.*full.*review_only/,
+  );
+
+  const invalidSensitivity = structuredClone(config);
+  invalidSensitivity.repositories[0].sensitive_repository = "true";
+  assert.throws(
+    () => validateTargetRepositoryConfig(invalidSensitivity),
+    /sensitive_repository must be a boolean/,
   );
 
   const invalidReviewLabel = structuredClone(config);

@@ -37,6 +37,7 @@
     },
     {
       "target_repo": "CLIP-SA/core-ai",
+      "sensitive_repository": true,
       "display_name": "Core AI",
       "checkout_dir": "core-ai",
       "github_app_credential_route": "valkyriweb",
@@ -64,6 +65,7 @@
     },
     {
       "target_repo": "CLIP-SA/core-wholesale",
+      "sensitive_repository": true,
       "display_name": "Core Wholesale",
       "checkout_dir": "core-wholesale",
       "github_app_credential_route": "valkyriweb",

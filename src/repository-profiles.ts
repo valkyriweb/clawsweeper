@@ -79,6 +79,8 @@ export interface RepositoryProfile {
   promptNote: string;
   applyCloseRules: Partial<Record<RepositoryItemKind, readonly RepositoryCloseReason[]>>;
   automationPolicy: AutomationPolicy;
+  /** Blocks automatic pass verdicts for repositories with high-impact changes. */
+  sensitiveRepository?: boolean;
   /** Explicit GitHub App authority for scoped target tokens; never inferred from owner. */
   githubAppCredentialRoute: GithubAppCredentialRoute;
   docsMaintainer: DocsMaintainerConfig;
@@ -137,6 +139,7 @@ interface ConfiguredRepositoryProfile {
   promptNote: string;
   applyCloseRules: Partial<Record<RepositoryItemKind, readonly RepositoryCloseReason[]>>;
   automationPolicy: AutomationPolicy;
+  sensitiveRepository?: boolean;
   githubAppCredentialRoute: GithubAppCredentialRoute;
   docsMaintainer: DocsMaintainerConfig;
   reviewProvider?: ReviewProvider;
@@ -415,6 +418,9 @@ function configuredRepositoryProfile(profile: ConfiguredRepositoryProfile): Repo
     githubAppCredentialRoute: profile.githubAppCredentialRoute,
     docsMaintainer: profile.docsMaintainer,
   };
+  if (profile.sensitiveRepository !== undefined) {
+    result.sensitiveRepository = profile.sensitiveRepository;
+  }
   if (profile.docsUrl) result.docsUrl = profile.docsUrl;
   if (profile.communityUrl) result.communityUrl = profile.communityUrl;
   if (profile.reviewProvider) result.reviewProvider = profile.reviewProvider;
@@ -566,6 +572,12 @@ function validateConfiguredRepositoryProfile(
       `${label}.docs_maintainer`,
     ),
   };
+  if (profile.sensitive_repository !== undefined) {
+    if (typeof profile.sensitive_repository !== "boolean") {
+      throw new Error(`${label}.sensitive_repository must be a boolean`);
+    }
+    result.sensitiveRepository = profile.sensitive_repository;
+  }
   if (profile.docs_url !== undefined) {
     result.docsUrl = stringValue(profile.docs_url, `${label}.docs_url`);
   }
