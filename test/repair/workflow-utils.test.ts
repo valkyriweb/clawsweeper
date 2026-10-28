@@ -930,15 +930,15 @@ test("actionModel resolves registry override, then fallback, then default", () =
   try {
     delete process.env.CLAWSWEEPER_MODELS;
     // No override, explicit fallback wins.
-    assert.equal(actionModel("commit-review", "gpt-5.6-terra"), "gpt-5.6-terra");
+    assert.equal(actionModel("commit-review", "gpt-6-luna"), "gpt-6-luna");
     // No override, empty fallback -> built-in default.
-    assert.equal(actionModel("commit-review", ""), "gpt-5.6-terra");
+    assert.equal(actionModel("commit-review", ""), "gpt-6-luna");
     assert.equal(actionModel("sweep-review", ""), "clawrouter/claude-opus-5-200k");
     // Registry override wins over the fallback.
     process.env.CLAWSWEEPER_MODELS = JSON.stringify({
       "commit-review": { model: "gpt-5.5" },
     });
-    assert.equal(actionModel("commit-review", "gpt-5.6-terra"), "gpt-5.5");
+    assert.equal(actionModel("commit-review", "gpt-6-luna"), "gpt-5.5");
   } finally {
     if (prior === undefined) delete process.env.CLAWSWEEPER_MODELS;
     else process.env.CLAWSWEEPER_MODELS = prior;

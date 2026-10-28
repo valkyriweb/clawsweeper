@@ -861,7 +861,7 @@ const STALE_INSUFFICIENT_INFO_MIN_AGE_DAYS = 60;
 export const STALE_INSUFFICIENT_INFO_MIN_INACTIVE_DAYS = 60;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const RECENT_MISSING_OPEN_MS = DAY_MS;
-const DEFAULT_CODEX_MODEL = "gpt-5.6-terra";
+const DEFAULT_CODEX_MODEL = "gpt-6-luna";
 const DEFAULT_REASONING_EFFORT = "high";
 const DEFAULT_SERVICE_TIER = "";
 const REVIEW_POLICY_VERSION = "2026-07-17-policy-v18";
@@ -4931,7 +4931,7 @@ function supportsAdaptiveThinking(modelId: string): boolean {
 }
 
 // Defensive fallback: if a caller routes a non-Claude model id (e.g. the
-// workflow's `--codex-model gpt-5.6-terra`) through the bridge, swap it for
+// workflow's `--codex-model gpt-6-luna`) through the bridge, swap it for
 // `DEFAULT_CLAUDE_MODEL` instead of forwarding a guaranteed-400 to Anthropic.
 function looksLikeClaudeModel(modelId: string): boolean {
   return /^(?:clawrouter\/)?claude-/.test(modelId);
@@ -5052,7 +5052,7 @@ export function runClaude(options: RunClaudeOptions): Decision {
   const item = options.item;
   const bridgeUrl =
     options.bridgeUrl ?? process.env.CLAWSWEEPER_BRIDGE_URL ?? DEFAULT_CLAUDE_BRIDGE_URL;
-  // Coerce non-Claude model ids (the workflow passes `--codex-model gpt-5.6-terra`
+  // Coerce non-Claude model ids (the workflow passes `--codex-model gpt-6-luna`
   // regardless of provider) to the Claude default. Without this, a bridge
   // flip with the old flag wiring would 400 every request.
   const requestedModel = options.model || DEFAULT_CLAUDE_MODEL;

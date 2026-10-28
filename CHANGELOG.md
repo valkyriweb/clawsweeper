@@ -9,6 +9,7 @@ checkpoint, and status-only commits are intentionally omitted.
 
 ### Changed
 
+- Pinned the default Codex review/repair model explicitly to `gpt-6-luna` instead of the deprecated `gpt-5.6-terra` alias, which ClawRouter already routes to `gpt-6-luna`. No model, effort or cost change; it removes the confusion with `gpt-6.1-terra` (about 10x Luna's price). The `gpt-5.6-*` aliases stay valid but are now flagged deprecated in the model catalog.
 - Enabled `issue_triage_intake` for `leo-labs-ai/my-pi` only, so new or reopened my-pi issues start the existing exact-item review. Every other profile stays off.
 - Retargeted the my-pi profile, repair-label transitions, and repository tests from `valkyriweb/my-pi` to its transferred home at `lue-labs/my-pi`.
 - Added an optional per-target `post_repair_review_label` handoff. After a successful contributor-branch repair push, ClawSweeper adds and verifies the configured native review label before removing `clawsweeper:autofix`; `lue-labs/my-pi` now returns repaired heads to `agentic-review` without converting metadata failures into replacement PRs.

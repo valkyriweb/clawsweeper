@@ -47,7 +47,7 @@ on:
       model:
         description: "Codex model for repair worker"
         required: false
-        default: gpt-5.6-terra
+        default: gpt-6-luna
         type: string
 
 permissions:
@@ -72,7 +72,7 @@ env:
   CLAWSWEEPER_ALLOW_FIX_PR: ${{ vars.CLAWSWEEPER_ALLOW_FIX_PR == '1' && '1' || '0' }}
   CLAWSWEEPER_ALLOW_AUTOMERGE: ${{ vars.CLAWSWEEPER_ALLOW_AUTOMERGE == '1' && '1' || '0' }}
   CLAWSWEEPER_ALLOW_MERGE: "0"
-  CLAWSWEEPER_MODEL: ${{ vars.CLAWSWEEPER_MODEL || 'gpt-5.6-terra' }}
+  CLAWSWEEPER_MODEL: ${{ vars.CLAWSWEEPER_MODEL || 'gpt-6-luna' }}
   CLAWSWEEPER_MODELS: ${{ vars.CLAWSWEEPER_MODELS || '' }}
   CLAWSWEEPER_CODEX_REASONING_EFFORT: ${{ vars.CLAWSWEEPER_CODEX_REASONING_EFFORT || 'high' }}
   CLAWSWEEPER_GIT_USER_NAME: ${{ vars.CLAWSWEEPER_GIT_USER_NAME || 'clawsweeper[bot]' }}
@@ -190,7 +190,7 @@ jobs:
           RUNNER: ${{ github.event.inputs.runner || vars.CLAWSWEEPER_WORKER_RUNNER || '["self-hosted","macOS","ARM64","mac-mini"]' }}
           EXECUTION_RUNNER: ${{ github.event.inputs.execution_runner || vars.CLAWSWEEPER_EXECUTION_RUNNER || '["self-hosted","macOS","ARM64","mac-mini"]' }}
           INPUT_MODEL: ${{ github.event.inputs.model || '' }}
-          FALLBACK_MODEL: ${{ vars.CLAWSWEEPER_MODEL || 'gpt-5.6-terra' }}
+          FALLBACK_MODEL: ${{ vars.CLAWSWEEPER_MODEL || 'gpt-6-luna' }}
           CLAWSWEEPER_MODELS: ${{ vars.CLAWSWEEPER_MODELS || '' }}
           STEPS_PREPARE_JOB_PATH: ${{ steps.prepare.outputs.job_path }}
         run: |

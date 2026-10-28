@@ -164,7 +164,7 @@ export const REVIEW_PROVIDER_SET: ReadonlySet<ReviewProvider> = new Set([
 ]);
 
 const DEFAULT_REVIEW_PROVIDER_MODELS: ReviewProviderModels = {
-  codex: "gpt-5.6-terra",
+  codex: "gpt-6-luna",
   "claude-bridge": "clawrouter/claude-opus-5-200k",
   "claude-code": "clawrouter/claude-opus-5-200k",
   pi: "clawrouter/claude-opus-5-200k",

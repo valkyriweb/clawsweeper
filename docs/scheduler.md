@@ -369,7 +369,7 @@ pnpm run --silent plan -- \
   --batch-size "$BATCH_SIZE" \
   --max-pages "$MAX_PAGES" \
   --shard-count "$SHARD_COUNT" \
-  --codex-model gpt-5.6-terra \
+  --codex-model gpt-6-luna \
   --codex-reasoning-effort high \
   --codex-sandbox danger-full-access \
   --min-active-shards "$MIN_ACTIVE_SHARDS" \
