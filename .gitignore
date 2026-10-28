@@ -22,3 +22,4 @@ triage-dashboard-dev*.log
 
 # pi agent tool-result artifacts
 .pi/
+coverage/
