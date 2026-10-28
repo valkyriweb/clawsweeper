@@ -36,9 +36,6 @@ test("automation policies are explicit and fail closed for protected targets", (
     assert.match(automationPolicyBlockReason(centaur.targetRepo, capability) ?? "", /review_only/);
   }
   assert.equal(repositoryProfileFor("valkyriweb/clawsweeper").automationPolicy, "full");
-  assert.equal(repositoryProfileFor("CLIP-SA/core-ai").sensitiveRepository, true);
-  assert.equal(repositoryProfileFor("valkyriweb/horizon").sensitiveRepository, true);
-  assert.equal(repositoryProfileFor("valkyriweb/clawsweeper").sensitiveRepository, true);
   assert.equal(
     repositoryProfileFor("valkyriweb/clawsweeper").githubAppCredentialRoute,
     "valkyriweb",
@@ -56,6 +53,15 @@ test("automation policies are explicit and fail closed for protected targets", (
     /unsupported/,
   );
   assert.equal(automationPolicyBlockReason("valkyriweb/clawsweeper", "merge"), null);
+});
+
+test("only the client repositories are held from low-risk auto-pass", () => {
+  assert.deepEqual(
+    REPOSITORY_PROFILES.filter((profile) => profile.sensitiveRepository === true).map(
+      (profile) => profile.targetRepo,
+    ),
+    ["clip-sa/core-ai", "clip-sa/core-wholesale"],
+  );
 });
 
 test("target repository schema rejects missing or unknown automation policies", () => {

@@ -245,7 +245,6 @@
     },
     {
       "target_repo": "valkyriweb/horizon",
-      "sensitive_repository": true,
       "display_name": "horizon (product monorepo)",
       "checkout_dir": "horizon",
       "github_app_credential_route": "valkyriweb",
@@ -260,7 +259,6 @@
     },
     {
       "target_repo": "valkyriweb/clawrouter",
-      "sensitive_repository": true,
       "display_name": "ClawRouter (LLM routing gateway)",
       "checkout_dir": "clawrouter",
       "github_app_credential_route": "valkyriweb",
@@ -275,7 +273,6 @@
     },
     {
       "target_repo": "valkyriweb/clawsweeper",
-      "sensitive_repository": true,
       "display_name": "ClawSweeper",
       "checkout_dir": "clawsweeper",
       "github_app_credential_route": "valkyriweb",
@@ -304,7 +301,6 @@
     },
     {
       "target_repo": "valkyriweb/openclaw",
-      "sensitive_repository": true,
       "display_name": "OpenClaw (fork)",
       "checkout_dir": "openclaw",
       "github_app_credential_route": "valkyriweb",
@@ -330,7 +326,6 @@
     },
     {
       "target_repo": "valkyriweb/lue-kube",
-      "sensitive_repository": true,
       "display_name": "lue-kube (work cluster)",
       "checkout_dir": "lue-kube",
       "github_app_credential_route": "valkyriweb",
@@ -356,7 +351,6 @@
     },
     {
       "target_repo": "valkyriweb/openclaw-claude",
-      "sensitive_repository": true,
       "pi_review_lifecycle": true,
       "repair_allowed_paths": ["docs/**/*.md"],
       "post_repair_review_label": "agent:review-requested",
@@ -404,7 +398,6 @@
     },
     {
       "target_repo": "leo-labs-ai/paperclip",
-      "sensitive_repository": true,
       "display_name": "Paperclip (bermont production overlay)",
       "checkout_dir": "paperclip",
       "github_app_credential_route": "valkyriweb",

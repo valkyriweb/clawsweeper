@@ -2658,8 +2658,12 @@ Full review comments:
   assert.doesNotMatch(markers, /clawsweeper-verdict:needs-human/);
 });
 
-test("restricted repositories never receive pass markers", () => {
-  for (const repository of ["bermont-digital/sale-sight-plugin", "valkyriweb/clawsweeper"]) {
+test("sensitive and review-only repositories never receive pass markers", () => {
+  for (const repository of [
+    "bermont-digital/sale-sight-plugin",
+    "CLIP-SA/core-ai",
+    "CLIP-SA/core-wholesale",
+  ]) {
     const report = `${reportFrontMatter({
       repository,
       type: "pull_request",
