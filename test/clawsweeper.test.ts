@@ -2630,6 +2630,64 @@ Full review comments:
   assert.doesNotMatch(comment, /clawsweeper-verdict:needs-human/);
 });
 
+test("clean low-risk pull request reviews emit a head-bound pass verdict", () => {
+  const report = `${reportFrontMatter({
+    type: "pull_request",
+    number: "74454",
+    decision: "keep_open",
+    close_reason: "none",
+    review_status: "complete",
+    pull_head_sha: "abc123def456",
+    low_risk_pass_eligible: "true",
+    work_candidate: "none",
+  })}
+
+## Review Findings
+
+Overall correctness: patch is correct
+
+Overall confidence: 0.9
+
+Full review comments:
+
+- none
+`;
+
+  const markers = reviewAutomationMarkersFromReport(report);
+  assert.match(markers, /clawsweeper-verdict:pass item=74454 sha=abc123def456/);
+  assert.doesNotMatch(markers, /clawsweeper-verdict:needs-human/);
+});
+
+test("restricted repositories never receive pass markers", () => {
+  for (const repository of ["bermont-digital/sale-sight-plugin", "valkyriweb/clawsweeper"]) {
+    const report = `${reportFrontMatter({
+      repository,
+      type: "pull_request",
+      number: "74455",
+      decision: "keep_open",
+      review_status: "complete",
+      confidence: "high",
+      labels: JSON.stringify(["clawsweeper:automerge"]),
+      pull_head_sha: "abc123def456",
+      low_risk_pass_eligible: "true",
+      work_candidate: "none",
+    })}
+
+## Review Findings
+
+Overall correctness: patch is correct
+
+Full review comments:
+
+- none
+`;
+
+    const markers = reviewAutomationMarkersFromReport(report);
+    assert.match(markers, /clawsweeper-verdict:needs-human/);
+    assert.doesNotMatch(markers, /clawsweeper-verdict:pass/);
+  }
+});
+
 test("sufficient real behavior proof allows automerge pass markers", () => {
   const report = `${reportFrontMatter({
     type: "pull_request",
