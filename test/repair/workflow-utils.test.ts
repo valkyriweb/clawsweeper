@@ -440,7 +440,7 @@ test("comment-router schedule skip flag isolates openclaw-claude without droppin
   const repos = config.repositories.map((entry) => entry.target_repo);
   assert.ok(repos.includes("valkyriweb/openclaw-claude"));
   assert.ok(repos.includes("Detoil/centaur"));
-  assert.equal(repos.length, 14);
+  assert.equal(repos.length, 16);
 
   const scheduled = config.repositories
     .filter((entry) => entry.target_repo !== "leo-labs-ai/paperclip")

@@ -435,6 +435,36 @@
         "issue": [],
         "pull_request": []
       }
+    },
+    {
+      "target_repo": "valkyriweb/clawpatch",
+      "display_name": "clawpatch (fork of openclaw/clawpatch)",
+      "checkout_dir": "clawpatch",
+      "github_app_credential_route": "valkyriweb",
+      "automation_policy": "review_only",
+      "issue_close_dry_run": true,
+      "include_maintainer_authored": true,
+      "skip_comment_router_schedule": true,
+      "prompt_note": "clawpatch is Luke's public fork of openclaw/clawpatch, a TypeScript CLI that reviews code by feature and fixes by finding. GitHub repo `valkyriweb/clawpatch`. The fork does not publish: upstream pages, release and stale workflows are removed on sync branches, and only ci, secret-scan, dependency-review, codeql, clawsweeper-dispatch and crabbox-hydrate remain. `sync/upstream-*` PRs bring upstream main into the fork and need deliberate review of fork-specific changes. Validation: `pnpm install --frozen-lockfile && pnpm typecheck && pnpm lint && pnpm test && pnpm build`. Review only: do not auto-close.",
+      "apply_close_rules": {
+        "issue": [],
+        "pull_request": []
+      }
+    },
+    {
+      "target_repo": "valkyriweb/gitcrawl",
+      "display_name": "gitcrawl (fork of openclaw/gitcrawl)",
+      "checkout_dir": "gitcrawl",
+      "github_app_credential_route": "valkyriweb",
+      "automation_policy": "review_only",
+      "issue_close_dry_run": true,
+      "include_maintainer_authored": true,
+      "skip_comment_router_schedule": true,
+      "prompt_note": "gitcrawl is Luke's public fork of openclaw/gitcrawl, a Go CLI and TUI that mirrors GitHub issues and PRs into local SQLite for search and clustering. GitHub repo `valkyriweb/gitcrawl`. The fork does not publish: upstream pages, release-unified and stale workflows are removed on sync branches, and CI's goreleaser step is snapshot-only with `--skip=publish`. `sync/upstream-*` PRs bring upstream main into the fork and need deliberate review of fork-specific changes. Validation: `go test ./...`, `go vet ./...`, and `./scripts/test-release.sh`. Review only: do not auto-close.",
+      "apply_close_rules": {
+        "issue": [],
+        "pull_request": []
+      }
     }
   ]
 }
