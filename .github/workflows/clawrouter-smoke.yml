@@ -10,7 +10,7 @@ on:
     inputs:
       model:
         description: ClawRouter model slug to smoke.
-        default: "clawrouter/gpt-5.6-terra"
+        default: "clawrouter/gpt-6-luna"
       runner:
         description: JSON runner labels.
         default: '["self-hosted","macOS","ARM64","mac-mini"]'

@@ -466,7 +466,7 @@ jobs:
       # Resolve the commit-review provider/model from the registry BEFORE the
       # provider setup steps so setup-pi / setup-claude-code can be conditioned
       # on it. Prod-inert: with CLAWSWEEPER_MODELS unset the resolver returns
-      # provider=codex / model=gpt-5.6-terra and the conditional steps skip.
+      # provider=codex / model=gpt-6-luna and the conditional steps skip.
       # commit-review deliberately does NOT read CLAWSWEEPER_REVIEW_PROVIDER
       # (that var is the sweep-review pi lock) — registry -> codex default only.
       - id: commit-routing
@@ -476,7 +476,7 @@ jobs:
         run: |
           set -euo pipefail
           echo "review_provider=$(pnpm run --silent workflow -- action-provider --action commit-review --fallback codex)" >> "$GITHUB_OUTPUT"
-          echo "review_model=$(pnpm run --silent workflow -- action-model --action commit-review --fallback gpt-5.6-terra)" >> "$GITHUB_OUTPUT"
+          echo "review_model=$(pnpm run --silent workflow -- action-model --action commit-review --fallback gpt-6-luna)" >> "$GITHUB_OUTPUT"
           echo "codex_effort=$(pnpm run --silent workflow -- codex-reasoning-effort --action commit-review)" >> "$GITHUB_OUTPUT"
 
       # Provider setup is fully conditional on the resolved provider: a pi or

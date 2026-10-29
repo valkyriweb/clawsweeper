@@ -31,16 +31,16 @@ test("defaults reflect the intended balance", () => {
     model: "clawrouter/claude-opus-5-200k",
     effort: "none",
   });
-  assert.equal(DEFAULT_ACTION_CONFIG["commit-review"].model, "gpt-5.6-terra");
+  assert.equal(DEFAULT_ACTION_CONFIG["commit-review"].model, "gpt-6-luna");
   assert.equal(DEFAULT_ACTION_CONFIG["commit-review"].effort, "medium");
-  assert.equal(DEFAULT_ACTION_CONFIG["repair-worker"].model, "gpt-5.6-terra");
-  assert.equal(DEFAULT_ACTION_CONFIG["issue-implementation"].model, "gpt-5.6-terra");
+  assert.equal(DEFAULT_ACTION_CONFIG["repair-worker"].model, "gpt-6-luna");
+  assert.equal(DEFAULT_ACTION_CONFIG["issue-implementation"].model, "gpt-6-luna");
 });
 
 test("partial overrides merge field-by-field over defaults", () => {
   const registry = parseModelRegistry(JSON.stringify({ "commit-review": { effort: "medium" } }));
   const resolved = resolveActionConfig("commit-review", registry);
-  assert.deepEqual(resolved, { provider: "codex", model: "gpt-5.6-terra", effort: "medium" });
+  assert.deepEqual(resolved, { provider: "codex", model: "gpt-6-luna", effort: "medium" });
   // Other actions untouched.
   assert.deepEqual(
     resolveActionConfig("sweep-review", registry),
@@ -127,7 +127,7 @@ test("rejects model that does not belong to the chosen provider", () => {
   assert.throws(
     () =>
       parseModelRegistry(
-        JSON.stringify({ "sweep-review": { provider: "pi", model: "gpt-5.6-terra" } }),
+        JSON.stringify({ "sweep-review": { provider: "pi", model: "gpt-6-luna" } }),
       ),
     /not allowed for provider/,
   );
@@ -141,14 +141,14 @@ test("malformed JSON and non-object roots fail closed", () => {
 
 test("applyRegistrySet merges onto existing config and returns canonical JSON", () => {
   const current = JSON.stringify({
-    "commit-review": { provider: "codex", model: "gpt-5.6-terra" },
+    "commit-review": { provider: "codex", model: "gpt-6-luna" },
   });
   const { json, resolved } = applyRegistrySet(current, "commit-review", { effort: "low" });
-  assert.deepEqual(resolved, { provider: "codex", model: "gpt-5.6-terra", effort: "low" });
+  assert.deepEqual(resolved, { provider: "codex", model: "gpt-6-luna", effort: "low" });
   const reparsed = parseModelRegistry(json);
   assert.deepEqual(reparsed["commit-review"], {
     provider: "codex",
-    model: "gpt-5.6-terra",
+    model: "gpt-6-luna",
     effort: "low",
   });
 });
@@ -159,10 +159,10 @@ test("applyRegistrySet on empty registry seeds one action", () => {
 });
 
 test("applyRegistrySet validates the merged entry as a whole", () => {
-  // Existing provider pi + new model gpt-5.6-terra is invalid together.
+  // Existing provider pi + new model gpt-6-luna is invalid together.
   const current = JSON.stringify({ "sweep-review": { provider: "pi" } });
   assert.throws(
-    () => applyRegistrySet(current, "sweep-review", { model: "gpt-5.6-terra" }),
+    () => applyRegistrySet(current, "sweep-review", { model: "gpt-6-luna" }),
     /not allowed for provider/,
   );
 });
@@ -179,13 +179,16 @@ test("serializeRegistry emits canonical action order and field order", () => {
 
 test("catalog lists codex + anthropic models and flags deprecated/effort", () => {
   const rows = modelCatalogRows();
-  const terra = rows.find((row) => row.model === "gpt-5.6-terra");
+  const terra = rows.find((row) => row.model === "gpt-6-luna");
   const legacy = rows.find((row) => row.model === "gpt-5.5");
   const opus = rows.find(
     (row) => row.provider === "pi" && row.model === "clawrouter/claude-opus-5-200k",
   );
   assert.ok(terra && terra.provider === "codex" && terra.supportsEffort && !terra.deprecated);
   assert.ok(legacy && legacy.deprecated);
+  // gpt-5.6-terra is a ClawRouter alias for gpt-6-luna, not gpt-6.1-terra.
+  const terraAlias = rows.find((row) => row.model === "gpt-5.6-terra");
+  assert.ok(terraAlias && terraAlias.deprecated);
   assert.ok(opus && !opus.supportsEffort);
 });
 
@@ -200,19 +203,19 @@ test("managedModel precedence: explicit -> override -> legacyEnv -> default", ()
   try {
     delete process.env.CLAWSWEEPER_MODELS;
     // Default when nothing supplied.
-    assert.equal(managedModel("repair-worker", undefined, undefined), "gpt-5.6-terra");
+    assert.equal(managedModel("repair-worker", undefined, undefined), "gpt-6-luna");
     // Legacy env used when no explicit/override.
     assert.equal(managedModel("repair-worker", undefined, "gpt-5.5"), "gpt-5.5");
     // Explicit wins over legacy env.
-    assert.equal(managedModel("repair-worker", "gpt-5.6-terra", "gpt-5.5"), "gpt-5.6-terra");
+    assert.equal(managedModel("repair-worker", "gpt-6-luna", "gpt-5.5"), "gpt-6-luna");
     // Whitespace-only explicit/env is ignored.
-    assert.equal(managedModel("repair-worker", "  ", "  "), "gpt-5.6-terra");
+    assert.equal(managedModel("repair-worker", "  ", "  "), "gpt-6-luna");
     // Registry override beats legacy env but loses to explicit.
     process.env.CLAWSWEEPER_MODELS = JSON.stringify({
       "repair-worker": { model: "gpt-5.5" },
     });
-    assert.equal(managedModel("repair-worker", undefined, "gpt-5.6-terra"), "gpt-5.5");
-    assert.equal(managedModel("repair-worker", "opus-explicit", "gpt-5.6-terra"), "opus-explicit");
+    assert.equal(managedModel("repair-worker", undefined, "gpt-6-luna"), "gpt-5.5");
+    assert.equal(managedModel("repair-worker", "opus-explicit", "gpt-6-luna"), "opus-explicit");
   } finally {
     if (prior === undefined) delete process.env.CLAWSWEEPER_MODELS;
     else process.env.CLAWSWEEPER_MODELS = prior;
