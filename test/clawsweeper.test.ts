@@ -4521,6 +4521,19 @@ test("github activity workflow coalesces noisy observer runs", () => {
   assert.doesNotMatch(workflow, /github\.event\.client_payload\.activity\.subject\.number/);
 });
 
+test("github activity workflow skips only merged pull request closes", () => {
+  const workflow = readWorkflowFixture("github-activity.yml");
+
+  assert.match(
+    workflow,
+    /!\(github\.event_name == 'pull_request_target' && github\.event\.action == 'closed' && github\.event\.pull_request\.merged == true\)/,
+  );
+  // Closed-without-merge still notifies: the trigger keeps `closed` and nothing else skips it.
+  assert.match(workflow, /pull_request_target:\n    types:[\s\S]*?- closed/);
+  assert.equal(workflow.match(/action == 'closed'/g)?.length, 1);
+  assert.doesNotMatch(workflow, /merged == false/);
+});
+
 test("issue implementation workflow lets job intent choose dispatch capacity", () => {
   const workflow = readWorkflowFixture("repair-issue-implementation-intake.yml");
 
