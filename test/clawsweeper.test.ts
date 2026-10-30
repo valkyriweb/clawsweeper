@@ -838,7 +838,6 @@ test("target-repositories.json opts Luke's personal repos into maintainer-author
   for (const repo of [
     "openclaw/openclaw",
     "bermont-digital/sale-sight-plugin",
-    "CLIP-SA/core-ai",
     "CLIP-SA/core-wholesale",
   ]) {
     const profile = repositoryProfileFor(repo);
@@ -1245,9 +1244,9 @@ test("review-only targets preserve close proposals but reject automated close de
 test("private target policy allows full auto-close on configured reasons", () => {
   const implementedPr = validateCloseDecision(
     item({
-      repo: "CLIP-SA/core-ai",
+      repo: "CLIP-SA/core-wholesale",
       kind: "pull_request",
-      url: "https://github.com/CLIP-SA/core-ai/pull/123",
+      url: "https://github.com/CLIP-SA/core-wholesale/pull/123",
     }),
     closeDecision(),
   );
@@ -2659,11 +2658,7 @@ Full review comments:
 });
 
 test("sensitive and review-only repositories never receive pass markers", () => {
-  for (const repository of [
-    "bermont-digital/sale-sight-plugin",
-    "CLIP-SA/core-ai",
-    "CLIP-SA/core-wholesale",
-  ]) {
+  for (const repository of ["bermont-digital/sale-sight-plugin", "CLIP-SA/core-wholesale"]) {
     const report = `${reportFrontMatter({
       repository,
       type: "pull_request",

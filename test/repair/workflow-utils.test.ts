@@ -73,10 +73,10 @@ test("target auth resolves explicit routes and denies review-only mutation befor
       access_mode: "comment",
     },
   );
-  assert.deepEqual(targetAuthFor({ targetRepo: "CLIP-SA/core-ai", accessMode: "mutate" }), {
-    target_repo: "clip-sa/core-ai",
+  assert.deepEqual(targetAuthFor({ targetRepo: "CLIP-SA/core-wholesale", accessMode: "mutate" }), {
+    target_repo: "clip-sa/core-wholesale",
     target_repo_owner: "clip-sa",
-    target_repo_name: "core-ai",
+    target_repo_name: "core-wholesale",
     credential_route: "valkyriweb",
     automation_policy: "full",
     access_mode: "mutate",
@@ -233,7 +233,7 @@ test("lifecycle opt-in is wired through CLI and all static token branches", () =
 });
 
 test("legacy target auth permits only configured Valkyriweb routes", () => {
-  assert.equal(legacyTargetAuthFor("CLIP-SA/core-ai"), "clip-sa/core-ai");
+  assert.equal(legacyTargetAuthFor("CLIP-SA/core-wholesale"), "clip-sa/core-wholesale");
   for (const targetRepo of ["bermont-digital/sale-sight-plugin", "bermont-digital/smilerite"]) {
     assert.throws(
       () => legacyTargetAuthFor(targetRepo),
@@ -278,10 +278,15 @@ test("target-auth CLI emits the route and policy consumed by the facade", () => 
   assert.equal(
     execFileSync(
       process.execPath,
-      ["dist/repair/workflow-utils.js", "legacy-target-auth", "--target-repo", "CLIP-SA/core-ai"],
+      [
+        "dist/repair/workflow-utils.js",
+        "legacy-target-auth",
+        "--target-repo",
+        "CLIP-SA/core-wholesale",
+      ],
       { cwd: process.cwd(), encoding: "utf8" },
     ),
-    "clip-sa/core-ai",
+    "clip-sa/core-wholesale",
   );
   assert.throws(
     () =>
@@ -403,7 +408,7 @@ test("comment router mints target tokens through the routed facade", () => {
   assert.equal(fanout.match(/uses: actions\/checkout@v5/g)?.length, 1);
   assert.equal(fanout.match(/uses: \.\/\.github\/actions\/setup-pnpm/g)?.length, 1);
   assert.equal(fanout.match(/uses: \.\/\.github\/actions\/setup-state/g)?.length, 1);
-  assert.equal(fanout.match(/uses: \.\/\.github\/actions\/route-scheduled-target/g)?.length, 12);
+  assert.equal(fanout.match(/uses: \.\/\.github\/actions\/route-scheduled-target/g)?.length, 11);
   assert.equal(fanout.match(/gh workflow run/g)?.length, 1);
   assert.match(fanout, /target_repo=valkyriweb\/openclaw-claude/);
   assert.match(fanout, /lifecycle_only=true/);
@@ -421,7 +426,7 @@ test("comment router mints target tokens through the routed facade", () => {
       entry.target_repo !== "leo-labs-ai/paperclip" &&
       (entry.skip_comment_router_schedule !== true || entry.pi_review_lifecycle === true),
   );
-  assert.equal(scheduled.length, 13);
+  assert.equal(scheduled.length, 12);
   for (const entry of scheduled) {
     if (entry.pi_review_lifecycle === true) {
       assert.equal(entry.target_repo, "valkyriweb/openclaw-claude");
@@ -440,19 +445,22 @@ test("comment-router schedule skip flag isolates openclaw-claude without droppin
   const repos = config.repositories.map((entry) => entry.target_repo);
   assert.ok(repos.includes("valkyriweb/openclaw-claude"));
   assert.ok(repos.includes("Detoil/centaur"));
-  assert.equal(repos.length, 14);
+  assert.ok(
+    !repos.includes("CLIP-SA/core-ai"),
+    "core-ai is archived and must stay out of the allowlist",
+  );
+  assert.equal(repos.length, 13);
 
   const scheduled = config.repositories
     .filter((entry) => entry.target_repo !== "leo-labs-ai/paperclip")
     .filter((entry) => entry.skip_comment_router_schedule !== true)
     .map((entry) => entry.target_repo);
-  assert.equal(scheduled.length, 12);
+  assert.equal(scheduled.length, 11);
   assert.ok(!scheduled.includes("valkyriweb/openclaw-claude"));
   assert.ok(!scheduled.includes("leo-labs-ai/paperclip"));
   for (const keep of [
     "bermont-digital/sale-sight-plugin",
     "bermont-digital/smilerite",
-    "CLIP-SA/core-ai",
     "CLIP-SA/core-wholesale",
     "leo-labs-ai/pi-mono",
     "leo-labs-ai/my-pi",
@@ -474,7 +482,7 @@ test("native Pi target receives lifecycle-only recovery, not generic schedule sc
       entry.target_repo !== "leo-labs-ai/paperclip" &&
       (entry.skip_comment_router_schedule !== true || entry.pi_review_lifecycle === true),
   );
-  assert.equal(scheduled.length, 13);
+  assert.equal(scheduled.length, 12);
   const native = scheduled.filter((entry) => entry.pi_review_lifecycle === true);
   assert.deepEqual(
     native.map((entry) => entry.target_repo),

@@ -251,20 +251,6 @@ jobs:
           dispatch-token: ${{ github.token }}
           allow-merge: ${{ vars.CLAWSWEEPER_ALLOW_MERGE || '0' }}
 
-      - name: Route CLIP-SA/core-ai
-        if: ${{ !cancelled() && steps.targets.outcome == 'success' && contains(steps.targets.outputs.repos, ',CLIP-SA/core-ai,') }}
-        uses: ./.github/actions/route-scheduled-target
-        with:
-          target-repo: CLIP-SA/core-ai
-          lifecycle-only: "false"
-          valkyriweb-client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
-          valkyriweb-private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
-          bermont-digital-client-id: ${{ vars.BERMONT_DIGITAL_CLAWSWEEPER_APP_CLIENT_ID }}
-          bermont-digital-private-key: ${{ secrets.BERMONT_DIGITAL_CLAWSWEEPER_APP_PRIVATE_KEY }}
-          clawrouter-api-key: ${{ secrets.CLAWROUTER_API_KEY }}
-          dispatch-token: ${{ github.token }}
-          allow-merge: ${{ vars.CLAWSWEEPER_ALLOW_MERGE || '0' }}
-
       - name: Route CLIP-SA/core-wholesale
         if: ${{ !cancelled() && steps.targets.outcome == 'success' && contains(steps.targets.outputs.repos, ',CLIP-SA/core-wholesale,') }}
         uses: ./.github/actions/route-scheduled-target
