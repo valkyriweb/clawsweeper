@@ -36,34 +36,6 @@
       }
     },
     {
-      "target_repo": "CLIP-SA/core-ai",
-      "sensitive_repository": true,
-      "display_name": "Core AI",
-      "checkout_dir": "core-ai",
-      "github_app_credential_route": "valkyriweb",
-      "automation_policy": "full",
-      "issue_close_dry_run": true,
-      "prompt_note": "Core AI is the backend AI/agent service for CLIP-SA. Service areas: `area:api` (REST/GraphQL endpoints), `area:ai-engine` (model routing, completions, tool dispatch), `area:auth` (authentication, session, permissions), `area:integrations` (OpenClaw, external service connectors), `area:infra` (Docker, CI, env config). Use at most two area tags. When the item spans multiple areas, use `area:cross-cutting`. Validation: use the repo's primary test and lint commands.",
-      "apply_close_rules": {
-        "issue": [
-          "implemented_on_main",
-          "duplicate_or_superseded",
-          "cannot_reproduce",
-          "incoherent",
-          "not_actionable_in_repo",
-          "stale_insufficient_info"
-        ],
-        "pull_request": [
-          "implemented_on_main",
-          "mostly_implemented_on_main",
-          "duplicate_or_superseded",
-          "cannot_reproduce",
-          "incoherent",
-          "not_actionable_in_repo"
-        ]
-      }
-    },
-    {
       "target_repo": "CLIP-SA/core-wholesale",
       "sensitive_repository": true,
       "display_name": "Core Wholesale",

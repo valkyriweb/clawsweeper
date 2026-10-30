@@ -298,9 +298,9 @@ test("comment router default allows one same-head infrastructure retry", () => {
 test("eligibility matches report repository against target repo case-insensitively", () => {
   // Reviewer/renderer lowercases the `repository` frontmatter field, but the
   // workflow input typically keeps GitHub's canonical mixed-case slug.
-  const markdown = report({ repository: "clip-sa/core-ai", number: "29" });
+  const markdown = report({ repository: "clip-sa/core-wholesale", number: "29" });
   const decision = reportOnlyDecision({
-    targetRepo: "CLIP-SA/core-ai",
+    targetRepo: "CLIP-SA/core-wholesale",
     report: parseReviewReport(markdown),
     reportMarkdown: markdown,
   });
