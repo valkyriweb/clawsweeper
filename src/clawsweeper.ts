@@ -31,6 +31,15 @@ import {
 } from "./repository-profiles.js";
 import { codexEnv } from "./codex-env.js";
 import {
+  mergeRiskAdvisoryFromFrontMatter,
+  mergeRiskAdvisoryPublicDetails,
+  parseMergeRiskAdvisory,
+  renderMergeRiskAdvisoryFrontMatter,
+  renderMergeRiskAdvisoryReportSection,
+  type MergeRiskAdvisory,
+  type MergeRiskAdvisoryInput,
+} from "./merge-risk-advisory.js";
+import {
   ghRetryKind,
   ghRetryWaitMs,
   isGitHubNotFoundError,
@@ -402,6 +411,8 @@ interface Decision {
   impactLabels: ImpactLabel[];
   mergeRiskLabels: MergeRiskLabel[];
   mergeRiskOptions: MergeRiskOption[];
+  // Advisory only: never read by verdict, label, automerge, or check logic.
+  mergeRiskAdvisory?: MergeRiskAdvisory | null;
   labelJustifications: LabelJustification[];
   prRating: PrRating;
   mantisRecommendation: MantisRecommendation;
@@ -1013,6 +1024,7 @@ const DECISION_SCHEMA_KEYS = new Set([
   "impactLabels",
   "mergeRiskLabels",
   "mergeRiskOptions",
+  "mergeRiskAdvisory",
   "labelJustifications",
   "prRating",
   "mantisRecommendation",
@@ -1856,6 +1868,10 @@ export function parseDecision(value: unknown, item?: DecisionNormalizationItem):
             maxItems: 3,
           }),
     mergeRiskOptions: parseMergeRiskOptions(record.mergeRiskOptions, "decision.mergeRiskOptions"),
+    mergeRiskAdvisory: parseMergeRiskAdvisory(
+      // SAFETY: parseMergeRiskAdvisory re-checks every field at runtime and returns null on any mismatch.
+      record.mergeRiskAdvisory as MergeRiskAdvisoryInput,
+    ),
     labelJustifications: parseLabelJustifications(
       record.labelJustifications,
       "decision.labelJustifications",
@@ -7591,6 +7607,9 @@ function reportDecision(markdown: string, closeReason: CloseReason): Decision {
       (label): label is MergeRiskLabel => MERGE_RISK_LABELS.has(label as MergeRiskLabel),
     ),
     mergeRiskOptions: [],
+    mergeRiskAdvisory: mergeRiskAdvisoryFromFrontMatter(
+      frontMatterValue(markdown, "merge_risk_advisory_verdicts"),
+    ),
     labelJustifications: [],
     prRating: emptyPrRating(),
     mantisRecommendation: emptyMantisRecommendation(),
@@ -8141,6 +8160,14 @@ function renderKeepOpenCommentFromReport(markdown: string): string {
     (!bestSolutionLine || publicReviewTextDiffers(risks, bestSolutionLine))
   ) {
     details.push("", "Remaining risk / open question:", "", risks);
+  }
+  if (isPullRequest) {
+    details.push(
+      ...mergeRiskAdvisoryPublicDetails(
+        frontMatterValue(markdown, "merge_risk_advisory_band"),
+        frontMatterValue(markdown, "merge_risk_advisory_score"),
+      ),
+    );
   }
   const reviewLine = closeReviewLineFromReport(markdown);
   if (reviewLine) details.push("", reviewLine);
@@ -9206,6 +9233,7 @@ work_likely_files: ${jsonFrontMatterValue(options.decision.workLikelyFiles)}
 triage_priority: ${options.decision.triagePriority}
 impact_labels: ${jsonFrontMatterValue(options.decision.impactLabels)}
 merge_risk_labels: ${jsonFrontMatterValue(options.decision.mergeRiskLabels)}
+${renderMergeRiskAdvisoryFrontMatter(options.decision.mergeRiskAdvisory)}
 pr_rating_overall_tier: ${options.decision.prRating.overallTier}
 review_tier: ${options.decision.reviewTier ?? "not_applicable"}
 mantis_recommendation_status: ${options.decision.mantisRecommendation.status}
@@ -9285,6 +9313,10 @@ ${nextActionsSection}
 ## ${REVIEW_SECTIONS.reviewMetadata}
 
 ${reviewMetadata}
+
+## Merge-risk advisory
+
+${renderMergeRiskAdvisoryReportSection(options.decision.mergeRiskAdvisory)}
 
 ## ${REVIEW_SECTIONS.reviewFindings}
 
