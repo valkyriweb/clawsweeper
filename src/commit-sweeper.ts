@@ -441,6 +441,7 @@ function publishCheckCommand(args: Args): void {
     "report_repo",
     process.env.GITHUB_REPOSITORY ?? "openclaw/clawsweeper",
   );
+  const reportBaseUrl = argString(args, "report_base_url", "");
   const reportPath = argString(args, "report_path", "");
   if (!reportPath) throw new Error("Missing --report-path");
   const markdown = readFileSync(reportPath, "utf8");
@@ -451,6 +452,7 @@ function publishCheckCommand(args: Args): void {
   publishCheckFromReport({
     targetRepo,
     reportRepo,
+    reportBaseUrl,
     reportPath,
     reportRelativePath,
     sha,
