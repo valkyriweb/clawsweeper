@@ -191,9 +191,9 @@ test("repositoryProfileFor carries sale-sight-plugin routing notes", () => {
   assert.deepEqual(profile.applyCloseRules.pull_request, []);
 });
 
-test("leo-labs-ai/paperclip scopes commit-review to its bermont production branch", () => {
+test("leo-labs-ai/paperclip scopes commit-review to its master deploy branch", () => {
   const paperclip = repositoryProfileFor("leo-labs-ai/paperclip");
-  assert.equal(paperclip.commitReviewRef, "refs/heads/bermont");
+  assert.equal(paperclip.commitReviewRef, "refs/heads/master");
 
   // Targets that ship from main leave the field unset; the default applies downstream.
   const piMono = repositoryProfileFor("leo-labs-ai/pi-mono");

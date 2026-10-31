@@ -28,8 +28,8 @@ import {
 import { AUTOMATION_LIMITS, WORKER_CONFIG, workerLimit } from "../../dist/repair/limits.js";
 
 test("commitReviewRefForTarget returns the per-target override or the main default", () => {
-  // paperclip ships from its bermont production overlay, not main.
-  assert.equal(commitReviewRefForTarget("leo-labs-ai/paperclip"), "refs/heads/bermont");
+  // paperclip ships from its default branch, master, not main.
+  assert.equal(commitReviewRefForTarget("leo-labs-ai/paperclip"), "refs/heads/master");
   // A target with no override falls back to the shared main default.
   assert.equal(commitReviewRefForTarget("leo-labs-ai/pi-mono"), "refs/heads/main");
 });
@@ -48,7 +48,7 @@ test("commit-review-ref CLI resolves the target via --target-repo, as the workfl
     ],
     { cwd: process.cwd(), encoding: "utf8" },
   );
-  assert.equal(output, "refs/heads/bermont");
+  assert.equal(output, "refs/heads/master");
 
   assert.throws(
     () =>
