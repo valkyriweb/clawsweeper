@@ -449,7 +449,7 @@ test("comment-router schedule skip flag isolates openclaw-claude without droppin
     !repos.includes("CLIP-SA/core-ai"),
     "core-ai is archived and must stay out of the allowlist",
   );
-  assert.equal(repos.length, 13);
+  assert.equal(repos.length, 15);
 
   const scheduled = config.repositories
     .filter((entry) => entry.target_repo !== "leo-labs-ai/paperclip")
