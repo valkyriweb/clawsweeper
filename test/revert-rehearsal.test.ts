@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  copyFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
@@ -190,6 +199,51 @@ test("names the missing commit when a sha is not in the checkout", () => {
     const result = f.run(["0".repeat(40), "HEAD"]);
     assert.equal(result.status, 2);
     assert.match(result.stderr, /base commit 0{40} is not in this checkout/);
+  } finally {
+    rmSync(f.root, { recursive: true, force: true });
+  }
+});
+
+// The workflow ref is a checkout contract, exercised here against real Git trees.
+test("CI rehearses an old PR head whose helper exists only on the tested base", () => {
+  const f = fixture();
+  try {
+    f.git("checkout", "--quiet", "-b", "feature");
+    writeFileSync(join(f.repo, "README.md"), "base\nfeature line\n");
+    f.git("commit", "--quiet", "-am", "feature predates rehearsal helper");
+    const head = f.git("rev-parse", "HEAD");
+    assert.equal(f.git("ls-tree", "--name-only", head, "scripts/revert-rehearsal.sh"), "");
+
+    f.git("checkout", "--quiet", "main");
+    mkdirSync(join(f.repo, "scripts"));
+    copyFileSync(script, join(f.repo, "scripts/revert-rehearsal.sh"));
+    f.git("add", "scripts/revert-rehearsal.sh");
+    f.git("commit", "--quiet", "-m", "add rehearsal helper on base");
+    const base = f.git("rev-parse", "HEAD");
+    f.git("merge", "--quiet", "--no-ff", "--no-edit", head);
+    const merge = f.git("rev-parse", "HEAD");
+
+    const workflow = readFileSync(resolve(".github/workflows/ci.yml"), "utf8");
+    const jobStart = workflow.indexOf("\n  revert-rehearsal:");
+    assert.notEqual(jobStart, -1);
+    const checkoutRef = workflow.slice(jobStart).match(/^\s+ref:\s*(.+)$/m)?.[1];
+    const eventRefs = new Map([
+      ["${{ github.sha }}", merge],
+      ["${{ github.event.pull_request.head.sha }}", head],
+    ]);
+    const checkout = eventRefs.get(checkoutRef ?? "${{ github.sha }}");
+    assert.ok(checkout, `unsupported rehearsal checkout ref: ${checkoutRef}`);
+    f.git("checkout", "--quiet", "--detach", checkout);
+
+    const result = spawnSync("bash", ["scripts/revert-rehearsal.sh", base, head], {
+      cwd: f.repo,
+      encoding: "utf8",
+      env: { ...process.env, ...isolatedGitEnv },
+    });
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.match(result.stdout, /## revert-rehearsal: PASS/);
+    assert.match(result.stdout, /Revert restored the base tree exactly/);
+    assert.equal(f.git("rev-parse", "HEAD"), checkout);
   } finally {
     rmSync(f.root, { recursive: true, force: true });
   }
