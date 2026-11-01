@@ -110,7 +110,7 @@ import {
   telegramVisibleProofLabelsForTest,
   validateCloseDecision,
 } from "../dist/clawsweeper.js";
-import { checkConclusionForFrontMatter } from "../dist/commit-checks.js";
+import { checkConclusionForFrontMatter, commitReportUrl } from "../dist/commit-checks.js";
 import { skippedNonCodeReport } from "../dist/commit-classifier.js";
 import {
   commitReportRelativePath,
@@ -838,7 +838,6 @@ test("target-repositories.json opts Luke's personal repos into maintainer-author
   for (const repo of [
     "openclaw/openclaw",
     "bermont-digital/sale-sight-plugin",
-    "CLIP-SA/core-ai",
     "CLIP-SA/core-wholesale",
   ]) {
     const profile = repositoryProfileFor(repo);
@@ -950,6 +949,22 @@ test("commit review check conclusions stay conservative", () => {
     "neutral",
   );
   assert.equal(checkConclusionForFrontMatter({ result: "inconclusive" }), "neutral");
+});
+
+test("commit check report links follow the configured report base URL", () => {
+  const reportRelativePath = "records/valkyriweb-clawrouter/commits/abc.md";
+  assert.equal(
+    commitReportUrl({
+      reportRepo: "valkyriweb/clawsweeper-state",
+      reportBaseUrl: "https://github.com/valkyriweb/clawsweeper-state/blob/state/",
+      reportRelativePath,
+    }),
+    "https://github.com/valkyriweb/clawsweeper-state/blob/state/records/valkyriweb-clawrouter/commits/abc.md",
+  );
+  assert.equal(
+    commitReportUrl({ reportRepo: "openclaw/clawsweeper", reportRelativePath }),
+    "https://github.com/openclaw/clawsweeper/blob/main/records/valkyriweb-clawrouter/commits/abc.md",
+  );
 });
 
 test("protected labels block close proposals even for otherwise valid decisions", () => {
@@ -1245,9 +1260,9 @@ test("review-only targets preserve close proposals but reject automated close de
 test("private target policy allows full auto-close on configured reasons", () => {
   const implementedPr = validateCloseDecision(
     item({
-      repo: "CLIP-SA/core-ai",
+      repo: "CLIP-SA/core-wholesale",
       kind: "pull_request",
-      url: "https://github.com/CLIP-SA/core-ai/pull/123",
+      url: "https://github.com/CLIP-SA/core-wholesale/pull/123",
     }),
     closeDecision(),
   );
@@ -2659,11 +2674,7 @@ Full review comments:
 });
 
 test("sensitive and review-only repositories never receive pass markers", () => {
-  for (const repository of [
-    "bermont-digital/sale-sight-plugin",
-    "CLIP-SA/core-ai",
-    "CLIP-SA/core-wholesale",
-  ]) {
+  for (const repository of ["bermont-digital/sale-sight-plugin", "CLIP-SA/core-wholesale"]) {
     const report = `${reportFrontMatter({
       repository,
       type: "pull_request",
@@ -4526,6 +4537,19 @@ test("github activity workflow coalesces noisy observer runs", () => {
   assert.doesNotMatch(workflow, /github\.event\.client_payload\.activity\.subject\.number/);
 });
 
+test("github activity workflow skips only merged pull request closes", () => {
+  const workflow = readWorkflowFixture("github-activity.yml");
+
+  assert.match(
+    workflow,
+    /!\(github\.event_name == 'pull_request_target' && github\.event\.action == 'closed' && github\.event\.pull_request\.merged == true\)/,
+  );
+  // Closed-without-merge still notifies: the trigger keeps `closed` and nothing else skips it.
+  assert.match(workflow, /pull_request_target:\n    types:[\s\S]*?- closed/);
+  assert.equal(workflow.match(/action == 'closed'/g)?.length, 1);
+  assert.doesNotMatch(workflow, /merged == false/);
+});
+
 test("issue implementation workflow lets job intent choose dispatch capacity", () => {
   const workflow = readWorkflowFixture("repair-issue-implementation-intake.yml");
 
@@ -4641,6 +4665,19 @@ test("commit finding intake reads reports from the state repo checkout", () => {
     /--report-base-url https:\/\/github\.com\/valkyriweb\/clawsweeper-state\/blob\/state \\/,
   );
   assert.doesNotMatch(dispatchBlock, /github\.repository/);
+
+  // Commit check links point at the same state branch the reports live on.
+  const publishCalls = commitWorkflow.split("node dist/commit-sweeper.js publish-check").slice(1);
+  assert.equal(publishCalls.length, 2);
+  for (const call of publishCalls) {
+    const args = call.slice(0, call.indexOf("\n\n"));
+    assert.match(args, /--report-repo valkyriweb\/clawsweeper-state \\/);
+    assert.match(
+      args,
+      /--report-base-url https:\/\/github\.com\/valkyriweb\/clawsweeper-state\/blob\/state/,
+    );
+    assert.doesNotMatch(args, /github\.repository/);
+  }
 
   const intakeWorkflow = readWorkflowFixture("repair-commit-finding-intake.yml");
   const prepareStart = intakeWorkflow.indexOf("- name: Prepare commit finding intake");

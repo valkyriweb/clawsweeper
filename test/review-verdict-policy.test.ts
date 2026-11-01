@@ -50,6 +50,33 @@ test("small ordinary code changes pass only within the reversible size limit", (
     }),
     false,
   );
+  for (const change of [
+    {
+      filePaths: ["docs/usage.md", "src/formatting.ts"],
+      additions: 20,
+      deletions: 20,
+      passes: true,
+    },
+    {
+      filePaths: ["docs/usage.md", "src/formatting.ts"],
+      additions: 21,
+      deletions: 20,
+      passes: false,
+    },
+    {
+      filePaths: ["docs/usage.md", "src/a.ts", "src/b.ts", "src/c.ts"],
+      additions: 1,
+      deletions: 0,
+      passes: false,
+    },
+  ]) {
+    const { passes, ...input } = change;
+    assert.equal(
+      shouldPassLowRiskPullRequest({ ...cleanReview, ...input }),
+      passes,
+      JSON.stringify(input),
+    );
+  }
 });
 
 test("findings, incomplete evidence, and restricted repositories never pass", () => {
@@ -82,6 +109,11 @@ test("auth, secrets, infrastructure, and migration paths always require a human"
     "db/migrations/001-add-column.sql",
     ".env.production",
     "certs/service.pem",
+    "src\\AUTH\\login.test.ts",
+    "docs/../private.txt",
+    "/docs/readme.md",
+    ".github/workflows/deploy.yml",
+    "docs/credentials.md",
   ]) {
     assert.equal(
       shouldPassLowRiskPullRequest({

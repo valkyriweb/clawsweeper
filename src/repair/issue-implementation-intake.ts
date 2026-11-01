@@ -38,6 +38,7 @@ function prepare() {
   const enabled = stringArg("enabled", "true");
   const targetRepo = requireTargetRepo(stringArg("target-repo", stringArg("target_repo", "")));
   const reportRepo = stringArg("report-repo", stringArg("report_repo", "openclaw/clawsweeper"));
+  const reportRef = stringArg("report-ref", stringArg("report_ref", "main"));
   const itemNumber = positiveInteger(
     stringArg("item-number", stringArg("item_number", "")),
     "item number",
@@ -48,8 +49,8 @@ function prepare() {
   );
   const reportUrl =
     stringArg("report-url", stringArg("report_url", "")) ||
-    `https://github.com/${reportRepo}/blob/main/${reportPath}`;
-  const reportMarkdown = readReport({ reportRepo, reportPath });
+    reportBlobUrl(`https://github.com/${reportRepo}/blob/${reportRef}`, reportPath);
+  const reportMarkdown = readReport({ reportRepo, reportPath, reportRef });
   const report = parseReviewReport(reportMarkdown);
   const live = truthy(enabled)
     ? liveIssueContext({ repo: targetRepo, number: itemNumber })
@@ -117,6 +118,10 @@ function candidates() {
   );
   const targetRepo = requireTargetRepo(stringArg("target-repo", stringArg("target_repo", "")));
   const reportRepo = stringArg("report-repo", stringArg("report_repo", "openclaw/clawsweeper"));
+  const reportBaseUrl = stringArg(
+    "report-base-url",
+    stringArg("report_base_url", `https://github.com/${reportRepo}/blob/main`),
+  );
   const lane = parseLaneArg(stringArg("lane", "reproduced"));
   const out: LooseRecord[] = [];
   if (truthy(enabled) && fs.existsSync(artifactDir)) {
@@ -126,7 +131,7 @@ function candidates() {
       const number = Number(report.frontmatter.number);
       const repository = report.frontmatter.repository || targetRepo;
       const reportPath = `records/${repoSlug(repository)}/items/${number}.md`;
-      const reportUrl = `https://github.com/${reportRepo}/blob/main/${reportPath}`;
+      const reportUrl = reportBlobUrl(reportBaseUrl, reportPath);
       const decision = reportOnlyDecision({
         targetRepo,
         report,
@@ -611,17 +616,51 @@ export function attachedPrText(live: LooseRecord): boolean {
   return /\/pull\/\d+\b|\b(?:PR|pull request)\s+#?\d+\b/i.test(text);
 }
 
-function readReport({ reportRepo, reportPath }: { reportRepo: string; reportPath: string }) {
+export function reportBlobUrl(reportBaseUrl: string, reportPath: string): string {
+  return `${reportBaseUrl.replace(/\/$/, "")}/${reportPath}`;
+}
+
+// Fallback read through the contents API. The report repo is the private
+// state repo, which the target-scoped GH_TOKEN cannot read, so the workflow
+// hands in a state token via CLAWSWEEPER_REPORT_GH_TOKEN.
+export function reportContentsRequest({
+  reportRepo,
+  reportPath,
+  reportRef,
+  env = process.env,
+}: {
+  reportRepo: string;
+  reportPath: string;
+  reportRef: string;
+  env?: NodeJS.ProcessEnv;
+}) {
+  const token = env.CLAWSWEEPER_REPORT_GH_TOKEN;
+  return {
+    args: [
+      "api",
+      `repos/${reportRepo}/contents/${reportPath}`,
+      "--method",
+      "GET",
+      "-f",
+      `ref=${reportRef}`,
+    ],
+    env: token ? { GH_TOKEN: token } : {},
+  };
+}
+
+function readReport({
+  reportRepo,
+  reportPath,
+  reportRef,
+}: {
+  reportRepo: string;
+  reportPath: string;
+  reportRef: string;
+}) {
   const local = args["report-file"] ?? args.report_file;
   if (typeof local === "string") return fs.readFileSync(path.resolve(local), "utf8");
-  const content = ghJsonWithRetry<{ content?: string }>([
-    "api",
-    `repos/${reportRepo}/contents/${reportPath}`,
-    "--method",
-    "GET",
-    "-f",
-    "ref=main",
-  ]);
+  const request = reportContentsRequest({ reportRepo, reportPath, reportRef });
+  const content = ghJsonWithRetry<{ content?: string }>(request.args, { env: request.env });
   return Buffer.from(String(content.content ?? "").replace(/\s+/g, ""), "base64").toString("utf8");
 }
 

@@ -40,6 +40,7 @@ import {
   summarizeGhArgs,
 } from "./github-retry.js";
 import { parseGhJson, parseGhJsonLines } from "./github-json.js";
+import { resolveMainSha } from "./review-main-sha.js";
 import { stableJson } from "./stable-json.js";
 import { assertGitHubItemIdentity, GitHubItemMovedError } from "./github-item-identity.js";
 import { hiddenPayloadSecurityReview } from "./hidden-payload-security.js";
@@ -4416,8 +4417,7 @@ function firstContainingTag(
 }
 
 function gitInfo(openclawDir: string): GitInfo {
-  run("git", ["fetch", "origin", "main", "--depth=50"], { cwd: openclawDir });
-  const mainSha = run("git", ["rev-parse", "origin/main"], { cwd: openclawDir });
+  const mainSha = resolveMainSha((gitArgs) => run("git", gitArgs, { cwd: openclawDir }));
   let latestRelease: LatestRelease | null = null;
   try {
     latestRelease = ghJson<LatestRelease>([

@@ -60,7 +60,7 @@ test("only the client repositories are held from low-risk auto-pass", () => {
     REPOSITORY_PROFILES.filter((profile) => profile.sensitiveRepository === true).map(
       (profile) => profile.targetRepo,
     ),
-    ["clip-sa/core-ai", "clip-sa/core-wholesale"],
+    ["clip-sa/core-wholesale"],
   );
 });
 

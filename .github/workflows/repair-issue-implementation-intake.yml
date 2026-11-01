@@ -151,6 +151,9 @@ jobs:
           REPORT_REPO: ${{ github.event.inputs.report_repo || github.event.client_payload.report_repo || 'valkyriweb/clawsweeper-state' }}
           REPORT_PATH: ${{ github.event.inputs.report_path || github.event.client_payload.report_path }}
           REPORT_URL: ${{ github.event.inputs.report_url || github.event.client_payload.report_url }}
+          # The report repo is the private state repo; the target token above
+          # cannot read it, so the contents-API fallback uses the state token.
+          CLAWSWEEPER_REPORT_GH_TOKEN: ${{ steps.state-token.outputs.token }}
         run: |
           set -euo pipefail
           args=(
@@ -159,6 +162,7 @@ jobs:
             --target-repo "$TARGET_REPO"
             --item-number "$ITEM_NUMBER"
             --report-repo "$REPORT_REPO"
+            --report-ref state
           )
           if [ -n "${REPORT_PATH:-}" ]; then
             args+=(--report-path "$REPORT_PATH")
