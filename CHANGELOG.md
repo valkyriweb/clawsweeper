@@ -9,6 +9,8 @@ checkpoint, and status-only commits are intentionally omitted.
 
 ### Changed
 
+- Pinned the default Codex review/repair model explicitly to `gpt-6-luna` instead of the deprecated `gpt-5.6-terra` alias, which ClawRouter already routes to `gpt-6-luna`. No model, effort or cost change; it removes the confusion with `gpt-6.1-terra` (about 10x Luna's price). The `gpt-5.6-*` aliases stay valid but are now flagged deprecated in the model catalog.
+- Enabled `issue_triage_intake` for `leo-labs-ai/my-pi` only, so new or reopened my-pi issues start the existing exact-item review. Every other profile stays off.
 - Retargeted the my-pi profile, repair-label transitions, and repository tests from `valkyriweb/my-pi` to its transferred home at `lue-labs/my-pi`.
 - Added an optional per-target `post_repair_review_label` handoff. After a successful contributor-branch repair push, ClawSweeper adds and verifies the configured native review label before removing `clawsweeper:autofix`; `lue-labs/my-pi` now returns repaired heads to `agentic-review` without converting metadata failures into replacement PRs.
 - Enabled the narrow `clawsweeper_repair_item` repository-dispatch receiver for explicitly authorized autofix/re-review work while keeping broad `clawsweeper_item` intake and scheduled sweeps paused. Repair workers now mint a separate engine-scoped dispatch token instead of reusing the target-repository token; targets with a native review handoff skip the duplicate ClawSweeper re-review.
@@ -21,6 +23,7 @@ checkpoint, and status-only commits are intentionally omitted.
 
 ### Added
 
+- Added `factory-failure` issues: a step in the existing 30-minute `repair self-heal failed clusters` job (GitHub-hosted, no new job or self-hosted runner time) files one deduped issue per (repo, workflow) for failed, timed-out or startup-failed ClawSweeper runs and lue-kube Land Queue runs, and comments on the open issue for later failures with run URL, head SHA, failing job and SAST time. Cancelled runs, pull-request checks and the comment router (which keeps its own alert issue) are ignored. Names pass through `redactSecrets`; no log excerpts, and no run titles because this repo is public. lue-kube is read with a separate read-only App token and is reported as skipped if the App cannot read its Actions. No auto-fix.
 - Added an off-by-default `issue_triage_intake` target-profile capability and an `issue triage intake` workflow that connects `github_activity` issue-opened/reopened dispatches to the existing `clawsweeper_repair_item` exact-item review. It skips held, closed, locked, pull-request and already-active items. No shipped profile enables it.
 
 - Added a `clawrouter` auth-mode to the `setup-codex` composite action. It writes
@@ -114,6 +117,7 @@ checkpoint, and status-only commits are intentionally omitted.
 
 ### Fixed
 
+- Hardened Codex debug artifact redaction (ported from upstream openclaw/clawsweeper #521 branch): credential-bearing headers, bearer tokens, JWTs, PEM private keys, YAML multiline secrets, and sensitive JSON fields at any escape depth are now masked, values of sensitive environment variables (including `CLAWROUTER_API_KEY`) are scrubbed, and any file that still looks sensitive after redaction is skipped instead of uploaded.
 - Updated review timeouts in-place on the mutable review status comment, then let recovery or the next eligible sweep retry with the escalated timeout cap instead of posting a separate inbox-noise timeout comment.
 - Replaced the fixed small-prompt Codex cap with streaming Codex diagnostics plus a startup-only watchdog, so local startup stalls fail quickly while valid long model turns run to the normal cap.
 - Added a required final merge polish pass to repair/automerge prompts using code-craft natural-code rules, `engineering/improve-codebase-architecture/SKILL.md` when available, and the local Matt Pocock architecture reference as fallback.

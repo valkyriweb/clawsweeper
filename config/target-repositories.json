@@ -2,10 +2,10 @@
   "schema_version": 2,
   "review_routing": {
     "models": {
-      "codex": "gpt-5.6-terra",
-      "claude-bridge": "clawrouter/claude-opus-5-200k",
-      "claude-code": "clawrouter/claude-opus-5-200k",
-      "pi": "clawrouter/claude-opus-5-200k"
+      "codex": "gpt-6-luna",
+      "claude-bridge": "clawrouter/claude-opus-5-5-200k",
+      "claude-code": "clawrouter/claude-opus-5-5-200k",
+      "pi": "clawrouter/gpt-6-luna-200k"
     }
   },
   "repositories": [
@@ -36,34 +36,8 @@
       }
     },
     {
-      "target_repo": "CLIP-SA/core-ai",
-      "display_name": "Core AI",
-      "checkout_dir": "core-ai",
-      "github_app_credential_route": "valkyriweb",
-      "automation_policy": "full",
-      "issue_close_dry_run": true,
-      "prompt_note": "Core AI is the backend AI/agent service for CLIP-SA. Service areas: `area:api` (REST/GraphQL endpoints), `area:ai-engine` (model routing, completions, tool dispatch), `area:auth` (authentication, session, permissions), `area:integrations` (OpenClaw, external service connectors), `area:infra` (Docker, CI, env config). Use at most two area tags. When the item spans multiple areas, use `area:cross-cutting`. Validation: use the repo's primary test and lint commands.",
-      "apply_close_rules": {
-        "issue": [
-          "implemented_on_main",
-          "duplicate_or_superseded",
-          "cannot_reproduce",
-          "incoherent",
-          "not_actionable_in_repo",
-          "stale_insufficient_info"
-        ],
-        "pull_request": [
-          "implemented_on_main",
-          "mostly_implemented_on_main",
-          "duplicate_or_superseded",
-          "cannot_reproduce",
-          "incoherent",
-          "not_actionable_in_repo"
-        ]
-      }
-    },
-    {
       "target_repo": "CLIP-SA/core-wholesale",
+      "sensitive_repository": true,
       "display_name": "Core Wholesale",
       "checkout_dir": "core-wholesale",
       "github_app_credential_route": "valkyriweb",
@@ -190,6 +164,7 @@
       "github_app_credential_route": "valkyriweb",
       "automation_policy": "full",
       "issue_close_dry_run": true,
+      "issue_triage_intake": true,
       "include_maintainer_authored": true,
       "review_provider": "pi",
       "post_repair_review_label": "agentic-review",

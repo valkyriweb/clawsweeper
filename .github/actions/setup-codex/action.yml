@@ -44,6 +44,9 @@ runs:
 
     - name: Install Codex CLI
       shell: bash
+      env:
+        INPUTS_VERSION: ${{ inputs.version }}
+        INPUTS_AUTH_MODE: ${{ inputs['auth-mode'] }}
       run: |
         set -euo pipefail
         npm config set prefix "$HOME/.clawsweeper-repair/codex"
@@ -51,11 +54,11 @@ runs:
         echo "$HOME/.clawsweeper-repair/codex/bin" >> "$GITHUB_PATH"
         export PATH="$HOME/.clawsweeper-repair/codex/bin:$PATH"
 
-        if ! command -v codex >/dev/null 2>&1 || ! codex --version | grep -Fq "${{ inputs.version }}"; then
-          npm install -g "@openai/codex@${{ inputs.version }}" --prefer-offline --no-audit --no-fund
+        if ! command -v codex >/dev/null 2>&1 || ! codex --version | grep -Fq "${INPUTS_VERSION}"; then
+          npm install -g "@openai/codex@${INPUTS_VERSION}" --prefer-offline --no-audit --no-fund
         fi
-        if [[ "${{ inputs['auth-mode'] }}" == "proxy" ]] && ! npm list -g --depth=0 "@openai/codex-responses-api-proxy@${{ inputs.version }}" >/dev/null 2>&1; then
-          npm install -g "@openai/codex-responses-api-proxy@${{ inputs.version }}" --prefer-offline --no-audit --no-fund
+        if [[ "${INPUTS_AUTH_MODE}" == "proxy" ]] && ! npm list -g --depth=0 "@openai/codex-responses-api-proxy@${INPUTS_VERSION}" >/dev/null 2>&1; then
+          npm install -g "@openai/codex-responses-api-proxy@${INPUTS_VERSION}" --prefer-offline --no-audit --no-fund
         fi
         # subscription and clawrouter modes need no extra install — subscription uses
         # the runner's existing auth.json; clawrouter talks to a remote Responses proxy.
@@ -75,10 +78,12 @@ runs:
 
     - name: Resolve Codex home
       shell: bash
+      env:
+        INPUTS_CODEX_HOME: ${{ inputs['codex-home'] }}
       run: |
         set -euo pipefail
-        if [[ -n "${{ inputs['codex-home'] }}" ]]; then
-          codex_home="${{ inputs['codex-home'] }}"
+        if [[ -n "${INPUTS_CODEX_HOME}" ]]; then
+          codex_home="${INPUTS_CODEX_HOME}"
         else
           # Include the runner identity so concurrent jobs from the same run
           # (e.g. parallel review shards) on a shared self-hosted host do not
@@ -137,18 +142,22 @@ runs:
     - name: Authenticate Codex with login
       if: ${{ inputs['auth-mode'] == 'login' }}
       shell: bash
+      env:
+        INPUTS_LOGIN_STATUS: ${{ inputs['login-status'] }}
       run: |
         set -euo pipefail
         export CODEX_HOME="${CODEX_HOME:?}"
         test -n "${OPENAI_API_KEY:-}"
         printenv OPENAI_API_KEY | codex login --with-api-key >/dev/null
-        if [[ "${{ inputs['login-status'] }}" == "true" ]]; then
+        if [[ "${INPUTS_LOGIN_STATUS}" == "true" ]]; then
           codex login status
         fi
 
     - name: Authenticate Codex with ChatGPT subscription
       if: ${{ inputs['auth-mode'] == 'subscription' }}
       shell: bash
+      env:
+        INPUTS_LOGIN_STATUS: ${{ inputs['login-status'] }}
       run: |
         set -euo pipefail
         export CODEX_HOME="${CODEX_HOME:?}"
@@ -173,17 +182,19 @@ runs:
         status=$(codex login status 2>&1 || true)
         echo "$status"
         echo "$status" | grep -Fq "Logged in using ChatGPT" || { echo "::error::codex not in ChatGPT mode: $status" >&2; exit 1; }
-        if [[ "${{ inputs['login-status'] }}" == "true" ]]; then
+        if [[ "${INPUTS_LOGIN_STATUS}" == "true" ]]; then
           codex login status
         fi
 
     - name: Authenticate Codex through ClawRouter
       if: ${{ inputs['auth-mode'] == 'clawrouter' }}
       shell: bash
+      env:
+        INPUTS_CLAWROUTER_BASE_URL: ${{ inputs['clawrouter-base-url'] }}
       run: |
         set -euo pipefail
         export CODEX_HOME="${CODEX_HOME:?}"
-        base_url="${{ inputs['clawrouter-base-url'] }}"
+        base_url="${INPUTS_CLAWROUTER_BASE_URL}"
         if [[ "$base_url" != */v1 ]]; then
           echo "::error::clawrouter-base-url must end in /v1 (got: $base_url)" >&2
           exit 1
@@ -210,6 +221,8 @@ runs:
     - name: Reject unknown Codex auth mode
       if: ${{ inputs['auth-mode'] != 'proxy' && inputs['auth-mode'] != 'login' && inputs['auth-mode'] != 'subscription' && inputs['auth-mode'] != 'clawrouter' }}
       shell: bash
+      env:
+        INPUTS_AUTH_MODE: ${{ inputs['auth-mode'] }}
       run: |
-        echo "Unsupported setup-codex auth-mode: ${{ inputs['auth-mode'] }}" >&2
+        echo "Unsupported setup-codex auth-mode: ${INPUTS_AUTH_MODE}" >&2
         exit 1

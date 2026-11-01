@@ -8,6 +8,11 @@ The global worker budget comes from `config/automation-limits.json`; see
 [Automation Limits](limits.md) for the derived lane limits and GitHub variable
 overrides.
 
+Exact review and publication bind the live GitHub item URL and number to the
+requested repository and number. Transferred issues complete as missing under
+their former identity, without destination context reads or mutations. Normal
+intake in the destination repository owns any later review.
+
 Repair and automerge jobs also carry the canonical `job_intent` frontmatter
 described in [ClawSweeper Orchestration](orchestration.md). Workflow inputs can
 still override live-worker caps, but when they do not, `repair:dispatch` derives
@@ -364,7 +369,7 @@ pnpm run --silent plan -- \
   --batch-size "$BATCH_SIZE" \
   --max-pages "$MAX_PAGES" \
   --shard-count "$SHARD_COUNT" \
-  --codex-model gpt-5.6-terra \
+  --codex-model gpt-6-luna \
   --codex-reasoning-effort high \
   --codex-sandbox danger-full-access \
   --min-active-shards "$MIN_ACTIVE_SHARDS" \

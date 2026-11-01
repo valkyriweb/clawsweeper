@@ -60,3 +60,30 @@ jobs:
 
       - name: Run check
         run: pnpm run check
+
+  revert-rehearsal:
+    name: revert-rehearsal
+    if: github.event_name == 'pull_request'
+    # Same hosted runner as pnpm check. Advisory: no secrets, tokens or model calls.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      # Full commit history (blobs on demand) so git can find the merge base of
+      # the tested base and the head.
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          filter: blob:none
+          persist-credentials: false
+
+      - name: Disable git hooks
+        run: git config core.hooksPath /dev/null
+
+      - name: Rehearse squash merge and revert
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: bash scripts/revert-rehearsal.sh "$BASE_SHA" "$HEAD_SHA"

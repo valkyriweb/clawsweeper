@@ -97,6 +97,12 @@ export const PROVIDER_MODELS: Readonly<Record<ReviewProvider, readonly string[]>
 /** Models that are retired: still valid to parse, surfaced as deprecated. */
 export const DEPRECATED_MODELS: ReadonlySet<string> = new Set([
   "gpt-5.5",
+  // GPT-5.6 tier aliases: ClawRouter routes these to gpt-6-luna. Pin gpt-6-luna
+  // explicitly; `gpt-5.6-terra` is NOT gpt-6.1-terra (10x Luna's price).
+  "gpt-5.6-terra",
+  "gpt-5.6-terra-200k",
+  "gpt-5.6-luna",
+  "gpt-5.6-sol",
   "claude-opus-4-8",
   "claude-sonnet-4-6",
 ]);
@@ -135,9 +141,9 @@ export type ModelRegistry = Partial<Record<ModelAction, ActionConfigPatch>>;
  * `sweep-review` reflects the `CLAWSWEEPER_REVIEW_PROVIDER=pi` lock (opus). */
 export const DEFAULT_ACTION_CONFIG: Readonly<Record<ModelAction, ResolvedActionConfig>> = {
   "sweep-review": { provider: "pi", model: "clawrouter/claude-opus-5-200k", effort: "none" },
-  "commit-review": { provider: "codex", model: "gpt-5.6-terra", effort: "medium" },
-  "repair-worker": { provider: "codex", model: "gpt-5.6-terra", effort: "medium" },
-  "issue-implementation": { provider: "codex", model: "gpt-5.6-terra", effort: "medium" },
+  "commit-review": { provider: "codex", model: "gpt-6-luna", effort: "medium" },
+  "repair-worker": { provider: "codex", model: "gpt-6-luna", effort: "medium" },
+  "issue-implementation": { provider: "codex", model: "gpt-6-luna", effort: "medium" },
 };
 
 export function isModelAction(value: unknown): value is ModelAction {

@@ -11,7 +11,7 @@ resolves `registry → codex default`; it does **not** read
 `CLAWSWEEPER_REVIEW_PROVIDER` (that variable is the sweep-review pi lock).
 
 > **Balance note.** The steady-state balance keeps commit-review on
-> `codex / gpt-5.6-terra`. A pi/opus canary temporarily consumes opus quota and
+> `codex / gpt-6-luna`. A pi/opus canary temporarily consumes opus quota and
 > deviates from that balance — run it in a low-traffic window and revert
 > promptly. Use `--model claude-sonnet-4-6` instead of opus if cost-sensitive.
 
@@ -25,7 +25,7 @@ against `valkyriweb/clawsweeper`. `models set` / `models get` default to
 # Full current registry (all actions) — save for the revert diff.
 gh variable get CLAWSWEEPER_MODELS --repo valkyriweb/clawsweeper > /tmp/cw-models.before.json || echo "(unset)"
 
-# Resolved commit-review config today (expect provider=codex, model=gpt-5.6-terra).
+# Resolved commit-review config today (expect provider=codex, model=gpt-6-luna).
 pnpm run --silent workflow -- models get --action commit-review
 
 # Confirm the sweep-review pi lock and repair/issue lanes are what you expect
@@ -94,7 +94,7 @@ Collect all of these before reverting:
 
 ```bash
 pnpm run --silent workflow -- models set \
-  --action commit-review --provider codex --model gpt-5.6-terra
+  --action commit-review --provider codex --model gpt-6-luna
 
 pnpm run --silent workflow -- models get --action commit-review   # provider=codex
 ```

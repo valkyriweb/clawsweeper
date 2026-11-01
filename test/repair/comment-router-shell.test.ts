@@ -218,13 +218,13 @@ for (const name of ["Route ClawSweeper comments", "Retry waiting repair dispatch
         ROUTER_RUNNER: '["self-hosted","macOS"]',
         ROUTER_EXECUTION_RUNNER: '["self-hosted","macOS"]',
         ROUTER_FORCE_REPROCESS: "true",
+        INPUTS_EXECUTE: "true",
+        STEPS_WAITING_REPAIR_DISPATCHES_COUNT: "1",
         ...Object.fromEntries(Object.keys(bindings).map((key) => [key, payload])),
       };
       for (const event of ["repository_dispatch", "workflow_dispatch"]) {
         const rendered = script.replace(/\$\{\{\s*(.*?)\s*\}\}/g, (_, expression: string) => {
           if (expression === "github.event_name") return event;
-          if (expression === "inputs.execute") return "true";
-          if (expression === "steps.waiting-repair-dispatches.outputs.count") return "1";
           if (expression === "vars.CLAWSWEEPER_COMMENT_ROUTER_EXECUTE || '0'") return "0";
           throw new Error(`Unexpected shell interpolation: ${expression}`);
         });

@@ -19,3 +19,29 @@ export function codexEnv(options: CodexEnvOptions = {}): NodeJS.ProcessEnv {
   env.GIT_OPTIONAL_LOCKS = "0";
   return env;
 }
+
+// Env names whose values must never appear in retained Codex debug artifacts.
+const CODEX_SENSITIVE_ENV_NAME =
+  /(?:^|_)(?:TOKEN|KEY|SECRET|PASSWORD|CREDENTIALS?|PRIVATE)(?:_|$)/i;
+const CODEX_EXPLICIT_SENSITIVE_ENV = new Set([
+  "ACTIONS_CACHE_URL",
+  "ACTIONS_ID_TOKEN_REQUEST_TOKEN",
+  "ACTIONS_ID_TOKEN_REQUEST_URL",
+  "ACTIONS_RESULTS_URL",
+  "ACTIONS_RUNTIME_TOKEN",
+  "ACTIONS_RUNTIME_URL",
+  "GITHUB_ACTIONS_RUNTIME_TOKEN",
+]);
+
+export function codexSensitiveEnvValues(env: NodeJS.ProcessEnv = process.env): string[] {
+  return [
+    ...new Set(
+      Object.entries(env)
+        .filter(
+          ([name]) => CODEX_EXPLICIT_SENSITIVE_ENV.has(name) || CODEX_SENSITIVE_ENV_NAME.test(name),
+        )
+        .map(([, value]) => String(value ?? "").trim())
+        .filter((value) => value.length >= 6),
+    ),
+  ].sort((left, right) => right.length - left.length);
+}

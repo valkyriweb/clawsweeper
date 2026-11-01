@@ -70,6 +70,8 @@ jobs:
       - name: Create sync branch and attempt merge
         if: steps.check.outputs.skip != 'true'
         id: merge
+        env:
+          STEPS_APP_TOKEN_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           DATE=$(date -u +%Y-%m-%d)
           BRANCH="sync/upstream-${DATE}"
@@ -99,7 +101,7 @@ jobs:
             exit 0
           fi
 
-          git push "https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/valkyriweb/clawsweeper.git" "${BRANCH}" --force-with-lease
+          git push "https://x-access-token:${STEPS_APP_TOKEN_TOKEN}@github.com/valkyriweb/clawsweeper.git" "${BRANCH}" --force-with-lease
 
       - name: Open or update PR
         if: steps.check.outputs.skip != 'true' && steps.merge.outputs.skip != 'true'

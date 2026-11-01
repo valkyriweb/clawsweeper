@@ -55,6 +55,15 @@ test("automation policies are explicit and fail closed for protected targets", (
   assert.equal(automationPolicyBlockReason("valkyriweb/clawsweeper", "merge"), null);
 });
 
+test("only the client repositories are held from low-risk auto-pass", () => {
+  assert.deepEqual(
+    REPOSITORY_PROFILES.filter((profile) => profile.sensitiveRepository === true).map(
+      (profile) => profile.targetRepo,
+    ),
+    ["clip-sa/core-wholesale"],
+  );
+});
+
 test("target repository schema rejects missing or unknown automation policies", () => {
   const config = JSON.parse(readFileSync("config/target-repositories.json", "utf8"));
   const missingPolicy = structuredClone(config);
@@ -77,6 +86,13 @@ test("target repository schema rejects missing or unknown automation policies", 
   assert.throws(
     () => validateTargetRepositoryConfig(unknownPolicy),
     /automation_policy.*full.*review_only/,
+  );
+
+  const invalidSensitivity = structuredClone(config);
+  invalidSensitivity.repositories[0].sensitive_repository = "true";
+  assert.throws(
+    () => validateTargetRepositoryConfig(invalidSensitivity),
+    /sensitive_repository must be a boolean/,
   );
 
   const invalidReviewLabel = structuredClone(config);
@@ -126,11 +142,12 @@ test("native lifecycle opt-in and repair paths are decoded without coercion", ()
   }
 });
 
-test("issue triage intake is an explicit boolean opt-in that no profile enables yet", () => {
+test("issue triage intake is an explicit boolean opt-in enabled only for leo-labs-ai/my-pi", () => {
   const config = JSON.parse(readFileSync("config/target-repositories.json", "utf8"));
-  for (const entry of config.repositories) {
-    assert.notEqual(entry.issue_triage_intake, true, entry.target_repo);
-  }
+  const enabledRepos = config.repositories
+    .filter((entry: { issue_triage_intake?: unknown }) => entry.issue_triage_intake === true)
+    .map((entry: { target_repo: string }) => entry.target_repo);
+  assert.deepEqual(enabledRepos, ["leo-labs-ai/my-pi"]);
   const enabled = structuredClone(config);
   enabled.repositories[0].issue_triage_intake = true;
   assert.equal(validateTargetRepositoryConfig(enabled).repositories[0].issueTriageIntake, true);
@@ -142,7 +159,8 @@ test("issue triage intake is an explicit boolean opt-in that no profile enables 
       /issue_triage_intake must be a boolean/,
     );
   }
-  assert.match(issueTriageIntakeBlockReason("leo-labs-ai/my-pi") ?? "", /not enabled/);
+  assert.equal(issueTriageIntakeBlockReason("leo-labs-ai/my-pi"), null);
+  assert.match(issueTriageIntakeBlockReason("valkyriweb/horizon") ?? "", /not enabled/);
   assert.match(issueTriageIntakeBlockReason("unknown/repo") ?? "", /no configured profile/);
   assert.match(issueTriageIntakeBlockReason("") ?? "", /missing or invalid/);
 });
@@ -241,10 +259,11 @@ test("openclaw-claude profile uses pi for the narrow review canary", () => {
   assert.match(profile.promptNote, /ops\/release triage/);
 });
 
-test("review routing maps codex to gpt-5.6-terra and Claude providers to opus 5 200k", () => {
-  assert.equal(reviewModelForProvider("codex"), "gpt-5.6-terra");
-  assert.equal(reviewModelForProvider("pi"), "clawrouter/claude-opus-5-200k");
-  assert.equal(reviewModelForProvider("claude-bridge"), "clawrouter/claude-opus-5-200k");
+test("review routing matches the live CLAWSWEEPER_MODELS models and current Claude pin", () => {
+  assert.equal(reviewModelForProvider("codex"), "gpt-6-luna");
+  assert.equal(reviewModelForProvider("pi"), "clawrouter/gpt-6-luna-200k");
+  assert.equal(reviewModelForProvider("claude-bridge"), "clawrouter/claude-opus-5-5-200k");
+  assert.equal(reviewModelForProvider("claude-code"), "clawrouter/claude-opus-5-5-200k");
 });
 
 test("review provider resolution keeps per-target config ahead of env override", () => {

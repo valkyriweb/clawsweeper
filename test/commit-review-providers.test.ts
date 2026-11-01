@@ -52,7 +52,7 @@ const baseCodexOptions = (workDir: string) => ({
   cwd: "/repo/checkout",
   targetRepo: "owner/repo",
   sha: SHA,
-  model: "gpt-5.6-terra",
+  model: "gpt-6-luna",
   reasoningEffort: "high",
   sandboxMode: "danger-full-access",
   serviceTier: "",
@@ -98,7 +98,7 @@ test("codex runner spawns the exact command, args, and stdin (parity guard)", ()
       [
         "exec",
         "-m",
-        "gpt-5.6-terra",
+        "gpt-6-luna",
         "-c",
         'model_reasoning_effort="high"',
         "-c",

@@ -23,8 +23,12 @@ import { sleepMs } from "./timing.js";
 
 export const ISSUE_TRIAGE_ACTIONS: ReadonlySet<string> = new Set(["opened", "reopened"]);
 export const TRIAGE_WORKFLOW = "sweep.yml";
-const VISIBLE_POLL_ATTEMPTS = 6;
-const VISIBLE_POLL_MS = 5000;
+// GitHub's workflow-run listing can lag a just-created run by 30s or more (runs
+// 40026807584, 40034183676 and 40034204116 gave up after 30s while the review run
+// already existed). Poll quickly first, then back off, for about two minutes.
+export const VISIBLE_POLL_DELAYS_MS: readonly number[] = [
+  5000, 5000, 5000, 10000, 10000, 15000, 15000, 20000, 20000, 20000,
+];
 // Never triage events that ClawSweeper's own bot caused; that would loop.
 const OWN_AUTOMATION_ACTOR = /clawsweeper(\[bot\])?$/i;
 
@@ -172,11 +176,11 @@ export function dispatchIssueTriage(
   // Confirm only against the newest page. The full-history scan above is needed
   // for old receipts; repeating it during polling would multiply API cost.
   const sleep = deps.sleep ?? sleepMs;
-  for (let attempt = 0; attempt < VISIBLE_POLL_ATTEMPTS; attempt += 1) {
+  for (const delayMs of VISIBLE_POLL_DELAYS_MS) {
+    sleep(delayMs);
     if (matchingEventReview(deps.listRecentWorkflowRuns(), targetRepo, itemNumber, receiptId)) {
       return { status: "dispatched", reason: "exact-item receipt dispatched and observed" };
     }
-    sleep(VISIBLE_POLL_MS);
   }
   return {
     status: "unconfirmed",

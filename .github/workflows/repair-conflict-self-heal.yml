@@ -90,13 +90,18 @@ jobs:
           GH_TOKEN: ${{ steps.app_token.outputs.token }}
           CLAWSWEEPER_ALLOW_EXECUTE: ${{ vars.CLAWSWEEPER_ALLOW_EXECUTE || '0' }}
           CLAWSWEEPER_ALLOW_FIX_PR: ${{ vars.CLAWSWEEPER_ALLOW_FIX_PR || '0' }}
+          INPUTS_TARGET_REPO_RESOLVED: ${{ github.event_name == 'workflow_dispatch' && inputs.target_repo || vars.CLAWSWEEPER_TARGET_REPO || 'openclaw/openclaw' }}
+          INPUTS_MAX_PRS_RESOLVED: ${{ github.event_name == 'workflow_dispatch' && inputs.max_prs || vars.CLAWSWEEPER_CONFLICT_SELF_HEAL_MAX_PRS || '5' }}
+          INPUTS_RUNNER_RESOLVED: ${{ github.event_name == 'workflow_dispatch' && inputs.runner || vars.CLAWSWEEPER_WORKER_RUNNER || '["self-hosted","macOS","ARM64","mac-mini"]' }}
+          INPUTS_EXECUTION_RUNNER_RESOLVED: ${{ github.event_name == 'workflow_dispatch' && inputs.execution_runner || vars.CLAWSWEEPER_EXECUTION_RUNNER || '["self-hosted","macOS","ARM64","mac-mini"]' }}
+          INPUTS_EXECUTE: ${{ inputs.execute }}
         run: |
           execute="false"
-          target_repo="${{ github.event_name == 'workflow_dispatch' && inputs.target_repo || vars.CLAWSWEEPER_TARGET_REPO || 'openclaw/openclaw' }}"
-          max_prs="${{ github.event_name == 'workflow_dispatch' && inputs.max_prs || vars.CLAWSWEEPER_CONFLICT_SELF_HEAL_MAX_PRS || '5' }}"
-          runner="${{ github.event_name == 'workflow_dispatch' && inputs.runner || vars.CLAWSWEEPER_WORKER_RUNNER || '["self-hosted","macOS","ARM64","mac-mini"]' }}"
-          execution_runner="${{ github.event_name == 'workflow_dispatch' && inputs.execution_runner || vars.CLAWSWEEPER_EXECUTION_RUNNER || '["self-hosted","macOS","ARM64","mac-mini"]' }}"
-          if { [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.execute }}" = "true" ]; } ||
+          target_repo="${INPUTS_TARGET_REPO_RESOLVED}"
+          max_prs="${INPUTS_MAX_PRS_RESOLVED}"
+          runner="${INPUTS_RUNNER_RESOLVED}"
+          execution_runner="${INPUTS_EXECUTION_RUNNER_RESOLVED}"
+          if { [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${INPUTS_EXECUTE}" = "true" ]; } ||
              { [ "${{ github.event_name }}" = "schedule" ] && [ "${{ vars.CLAWSWEEPER_CONFLICT_SELF_HEAL_EXECUTE || '0' }}" = "1" ]; }; then
             execute="true"
           fi

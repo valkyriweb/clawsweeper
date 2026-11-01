@@ -12,6 +12,8 @@ import {
   issueReferenceTextMatches,
   parseReviewReport,
   readVerifyReproductionAudit,
+  reportBlobUrl,
+  reportContentsRequest,
   reportOnlyDecision,
   securitySensitiveText,
 } from "../../dist/repair/issue-implementation-intake.js";
@@ -298,9 +300,9 @@ test("comment router default allows one same-head infrastructure retry", () => {
 test("eligibility matches report repository against target repo case-insensitively", () => {
   // Reviewer/renderer lowercases the `repository` frontmatter field, but the
   // workflow input typically keeps GitHub's canonical mixed-case slug.
-  const markdown = report({ repository: "clip-sa/core-ai", number: "29" });
+  const markdown = report({ repository: "clip-sa/core-wholesale", number: "29" });
   const decision = reportOnlyDecision({
-    targetRepo: "CLIP-SA/core-ai",
+    targetRepo: "CLIP-SA/core-wholesale",
     report: parseReviewReport(markdown),
     reportMarkdown: markdown,
   });
@@ -480,4 +482,64 @@ test("reportOnlyDecision still falls back to source status when audit absent", (
 
   assert.equal(decision.shouldRepair, false);
   assert.match(decision.blockers.join("\n"), /reproduction status is source_reproducible/);
+});
+
+test("issue intake report links use the configured report base URL", () => {
+  assert.equal(
+    reportBlobUrl(
+      "https://github.com/valkyriweb/clawsweeper-state/blob/state/",
+      "records/leo-labs-ai-my-pi/items/12.md",
+    ),
+    "https://github.com/valkyriweb/clawsweeper-state/blob/state/records/leo-labs-ai-my-pi/items/12.md",
+  );
+});
+
+test("issue intake contents fallback reads the report ref with the state token", () => {
+  const request = reportContentsRequest({
+    reportRepo: "valkyriweb/clawsweeper-state",
+    reportPath: "records/leo-labs-ai-my-pi/items/12.md",
+    reportRef: "state",
+    env: { GH_TOKEN: "target-token", CLAWSWEEPER_REPORT_GH_TOKEN: "state-token" },
+  });
+  assert.deepEqual(request.args, [
+    "api",
+    "repos/valkyriweb/clawsweeper-state/contents/records/leo-labs-ai-my-pi/items/12.md",
+    "--method",
+    "GET",
+    "-f",
+    "ref=state",
+  ]);
+  assert.deepEqual(request.env, { GH_TOKEN: "state-token" });
+
+  const withoutStateToken = reportContentsRequest({
+    reportRepo: "openclaw/clawsweeper",
+    reportPath: "records/openclaw-openclaw/items/1.md",
+    reportRef: "main",
+    env: { GH_TOKEN: "target-token" },
+  });
+  assert.ok(withoutStateToken.args.includes("ref=main"));
+  assert.deepEqual(withoutStateToken.env, {});
+});
+
+test("issue intake workflows point reports at the state repo and branch", () => {
+  const intake = readFileSync(".github/workflows/repair-issue-implementation-intake.yml", "utf8");
+  assert.match(intake, /--report-ref state/);
+  assert.match(
+    intake,
+    /CLAWSWEEPER_REPORT_GH_TOKEN: \$\{\{ steps\.state-token\.outputs\.token \}\}/,
+  );
+
+  const sweep = readFileSync(".github/workflows/sweep.yml", "utf8");
+  const candidateCalls = sweep
+    .split("repair:issue-implementation-intake -- candidates")
+    .slice(1)
+    .map((call) => call.slice(0, call.indexOf(')"')));
+  assert.equal(candidateCalls.length, 2);
+  for (const call of candidateCalls) {
+    assert.match(call, /--report-repo valkyriweb\/clawsweeper-state/);
+    assert.match(
+      call,
+      /--report-base-url https:\/\/github\.com\/valkyriweb\/clawsweeper-state\/blob\/state/,
+    );
+  }
 });

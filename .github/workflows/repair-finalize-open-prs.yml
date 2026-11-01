@@ -80,17 +80,21 @@ jobs:
           GH_TOKEN: ${{ steps.app_token.outputs.token }}
           CLAWSWEEPER_ALLOW_EXECUTE: ${{ inputs.execute && vars.CLAWSWEEPER_ALLOW_EXECUTE == '1' && '1' || '0' }}
           CLAWSWEEPER_ALLOW_FIX_PR: ${{ inputs.execute && vars.CLAWSWEEPER_ALLOW_FIX_PR == '1' && '1' || '0' }}
+          INPUTS_MAX_PRS: ${{ inputs.max_prs }}
+          INPUTS_RUNNER: ${{ inputs.runner }}
+          INPUTS_EXECUTION_RUNNER: ${{ inputs.execution_runner }}
+          INPUTS_EXECUTE: ${{ inputs.execute }}
         run: |
           args=(
             --write-report
             --dispatch-repairs
-            --max-prs "${{ inputs.max_prs }}"
-            --runner "${{ inputs.runner }}"
-            --execution-runner "${{ inputs.execution_runner }}"
+            --max-prs "${INPUTS_MAX_PRS}"
+            --runner "${INPUTS_RUNNER}"
+            --execution-runner "${INPUTS_EXECUTION_RUNNER}"
           )
-          if [ "${{ inputs.execute }}" = "true" ] && [ "${CLAWSWEEPER_ALLOW_EXECUTE}" = "1" ] && [ "${CLAWSWEEPER_ALLOW_FIX_PR}" = "1" ]; then
+          if [ "${INPUTS_EXECUTE}" = "true" ] && [ "${CLAWSWEEPER_ALLOW_EXECUTE}" = "1" ] && [ "${CLAWSWEEPER_ALLOW_FIX_PR}" = "1" ]; then
             args+=(--execute)
-          elif [ "${{ inputs.execute }}" = "true" ]; then
+          elif [ "${INPUTS_EXECUTE}" = "true" ]; then
             echo "execution requested, but ClawSweeper execute/fix gates are not explicitly 1; writing report without dispatching repairs"
           fi
           pnpm run repair:finalize-open-prs -- "${args[@]}"

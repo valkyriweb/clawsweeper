@@ -1,0 +1,1 @@
+- Stop reviewing transferred issues under their former repository and number, without reading destination context or publishing there.
