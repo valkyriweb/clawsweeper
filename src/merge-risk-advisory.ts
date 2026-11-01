@@ -77,10 +77,12 @@ function isVerdict(value: string | undefined): value is MergeRiskAdvisoryVerdict
 function parseDimension(
   input: MergeRiskAdvisoryDimensionInput | null | undefined,
 ): DimensionResult | null {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return null;
   const verdict = input?.verdict;
   if (!isVerdict(verdict)) return null;
   const reason = input?.reason;
-  return { verdict, reason: reason ? String(reason).trim() : "" };
+  if (reason !== undefined && typeof reason !== "string") return null;
+  return { verdict, reason: reason?.trim() ?? "" };
 }
 
 /**
@@ -155,7 +157,7 @@ const VERDICT_ICON: Record<MergeRiskAdvisoryVerdict, string> = {
 function dimensionLines(advisory: MergeRiskAdvisory): string[] {
   return MERGE_RISK_ADVISORY_DIMENSIONS.map(({ key, label }) => {
     const { verdict, reason } = advisory.dimensions[key];
-    const why = reason ? ` ${reason}` : "";
+    const why = reason ? ` ${reason.replace(/\s+/g, " ")}` : "";
     return `- **${label}:** ${VERDICT_ICON[verdict]} ${verdict.replace("_", " ")}.${why}`;
   });
 }

@@ -51,6 +51,14 @@ test("merge-risk advisory parsing never throws on bad input", () => {
     [],
     {},
     { ...advisory("low", "low", "low", "low", "low"), impact: { verdict: "huge" } },
+    ...[null, 1, [], {}, { toString: null }].map((reason) =>
+      JSON.parse(
+        JSON.stringify({
+          ...advisory("low", "low", "low", "low", "low"),
+          impact: { verdict: "low", reason },
+        }),
+      ),
+    ),
     advisory(
       "not_applicable",
       "not_applicable",
