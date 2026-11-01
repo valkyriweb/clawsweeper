@@ -350,7 +350,8 @@ jobs:
           repository: ${{ steps.target.outputs.target_repo }}
           token: ${{ steps.target-read-token.outputs.token }}
           path: ${{ steps.target.outputs.target_checkout_dir }}
-          # No ref: check out the target's default branch (main or master).
+          # An empty ref on this repository would use the dispatch branch.
+          ref: ${{ steps.target.outputs.target_repo == github.repository && github.event.repository.default_branch || '' }}
           filter: blob:none
           fetch-depth: 0
 
@@ -1033,7 +1034,8 @@ jobs:
           repository: ${{ needs.plan.outputs.target_repo }}
           token: ${{ steps.target-read-token.outputs.token }}
           path: ${{ needs.plan.outputs.target_checkout_dir }}
-          # No ref: check out the target's default branch (main or master).
+          # An empty ref on this repository would use the dispatch branch.
+          ref: ${{ needs.plan.outputs.target_repo == github.repository && github.event.repository.default_branch || '' }}
           filter: blob:none
           fetch-depth: 0
           persist-credentials: false

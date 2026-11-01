@@ -1,7 +1,26 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { resolveDefaultBranch, resolveMainSha, type GitRunner } from "../src/review-main-sha.ts";
+
+test("self-targeted reviews pin the default branch instead of inheriting the dispatch branch", () => {
+  const workflow = readFileSync(".github/workflows/sweep.yml", "utf8");
+  const checkouts = [
+    ...workflow.matchAll(/- name: Check out target repository\n([\s\S]*?)(?=\n      -|\n      #)/g),
+  ];
+  assert.equal(checkouts.length, 2);
+  for (const [, checkout] of checkouts) {
+    const target = checkout.match(/repository: \$\{\{ (\S+) \}\}/)?.[1];
+    assert.ok(target);
+    assert.ok(
+      checkout.includes(
+        `ref: \${{ ${target} == github.repository && github.event.repository.default_branch || '' }}`,
+      ),
+      "self-checkouts must use the default branch; other repositories delegate discovery to checkout",
+    );
+  }
+});
 
 type Responses = Record<string, string | Error>;
 

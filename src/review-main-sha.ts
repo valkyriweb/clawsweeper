@@ -8,8 +8,8 @@ const defaultWarn: Warn = (message) => console.error(message);
  * Find the target repository's default branch name.
  *
  * Order: origin/HEAD (set by git clone), then the branch the checkout is on
- * when origin has a matching ref (actions/checkout without a ref checks out
- * the default branch), then "main".
+ * when origin has a matching ref (the review workflow checks out the target's
+ * default branch), then "main".
  */
 export function resolveDefaultBranch(git: GitRunner): string {
   try {
