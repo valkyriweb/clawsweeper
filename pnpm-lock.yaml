@@ -30,6 +30,9 @@ importers:
       '@typescript/native-preview':
         specifier: 7.0.0-dev.20260503.1
         version: 7.0.0-dev.20260503.1
+      emulate:
+        specifier: 0.12.3
+        version: 0.12.3
       oxfmt:
         specifier: ^0.47.0
         version: 0.47.0
@@ -541,6 +544,10 @@ packages:
   argparse@3.0.4:
     resolution: {integrity: sha512-fwWK3Zq22l4XJJjx5mcBHGikIk+hJqO+32dPm0Jur7+rtG5x1scOjSfdT9ZKeWHPpsya/l0HHK4tDImBkTrtvA==}
 
+  commander@14.0.3:
+    resolution: {integrity: sha512-H+y0Jo/T1RZ9qPP4Eh1pkcQcLRglraJaSLoyOtHxu6AapkjWVCy2Sit1QQ4x3Dng8qDlSsZEet7g5Pq06MvTgw==}
+    engines: {node: '>=20'}
+
   convex@1.41.0:
     resolution: {integrity: sha512-euxVf6yfpB7/VGKOobkLgjpbJidsUgW+b0ezonEyCUPqlpHFwR4/yIiI1hjjErzraiw91GxrtxpXQClMLNqU+w==}
     engines: {node: '>=18.0.0', npm: '>=7.0.0'}
@@ -562,6 +569,10 @@ packages:
 
   effect@3.21.3:
     resolution: {integrity: sha512-RqwU7WnJ6CqYhyjpOVJA5vh1Sgkn6eVECO6mnD0EjlbWcC2M3LJaPglXXr13Rdo/Y+B+wTEPzGRYFNL2xKxNeQ==}
+
+  emulate@0.12.3:
+    resolution: {integrity: sha512-kYESyCh3jTvcLAk7Do4g38AHZu7YyWvlRzDq8/V9o8DPGCHealCt5AmNHgntAI8yZSYm/JVJI+JZyr8zP7J6IQ==}
+    hasBin: true
 
   entities@8.1.0:
     resolution: {integrity: sha512-kxL7msIffSuh9aaFAMD7rxAIuTRMAHMeBtgHW2yUdWw732ZNh4MehkF2gdjvtdmikkaIP9bFDDJOPlsvm7avrA==}
@@ -585,7 +596,6 @@ packages:
 
   mdurl@2.1.0:
     resolution: {integrity: sha512-1+HBaOx0zi/dQWht8rNv9MYf9qqpqL/kxI0hXImU6Y547zM6Sni8BQibt7ifgMcYtQg41ao3Ivd6cnSM86inpg==}
-
   oxfmt@0.47.0:
     resolution: {integrity: sha512-OFbkbzxKCpooQEnRmpTDnuwTX8KHXzZTQ4Df/hz85fpS67Pl+lxPEFvUtin56HIIS0B1k4X8oIzTXRZPufA2CA==}
     engines: {node: ^20.19.0 || >=22.12.0}
@@ -604,6 +614,9 @@ packages:
     peerDependenciesMeta:
       oxlint-tsgolint:
         optional: true
+
+  picocolors@1.1.1:
+    resolution: {integrity: sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA==}
 
   prettier@3.8.4:
     resolution: {integrity: sha512-N2MylSdi48+5N/6S5j+maeHbUSIzzZ5uOcX5Hm4QpV8Dkb1HFjfAKTKX6yNPJQD9AhcT3ifHNB66tWTTJDi11Q==}
@@ -638,6 +651,11 @@ packages:
         optional: true
       utf-8-validate:
         optional: true
+
+  yaml@2.9.1:
+    resolution: {integrity: sha512-3NxN8+78OdzbT7C/WjGsyfPAtJaN3FNDsWxv7Y7mcDsT/oOmgW8BpyQQFFBnvZE3j9Y2Sdz1ULFLezL7Eb2yFw==}
+    engines: {node: '>= 14.6'}
+    hasBin: true
 
 snapshots:
 
@@ -901,6 +919,8 @@ snapshots:
 
   argparse@3.0.4: {}
 
+  commander@14.0.3: {}
+
   convex@1.41.0:
     dependencies:
       esbuild: 0.27.0
@@ -914,6 +934,12 @@ snapshots:
     dependencies:
       '@standard-schema/spec': 1.1.0
       fast-check: 3.23.2
+
+  emulate@0.12.3:
+    dependencies:
+      commander: 14.0.3
+      picocolors: 1.1.1
+      yaml: 2.9.1
 
   entities@8.1.0: {}
 
@@ -964,7 +990,6 @@ snapshots:
       uc.micro: 3.0.0
 
   mdurl@2.1.0: {}
-
   oxfmt@0.47.0:
     dependencies:
       tinypool: 2.1.0
@@ -1021,6 +1046,8 @@ snapshots:
       '@oxlint/binding-win32-x64-msvc': 1.62.0
       oxlint-tsgolint: 0.22.1
 
+  picocolors@1.1.1: {}
+
   prettier@3.8.4: {}
 
   punycode.js@2.3.1: {}
@@ -1034,3 +1061,5 @@ snapshots:
   undici-types@7.19.2: {}
 
   ws@8.20.1: {}
+
+  yaml@2.9.1: {}
