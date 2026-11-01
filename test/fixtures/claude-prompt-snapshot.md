@@ -117,6 +117,18 @@ Always treat a PR as **critical** when it touches a security/authz/secrets/crypt
 - When both arrays are empty and `prRating.nextSteps` is also empty, the review renders as "No action required" — use this only when the PR is genuinely ready or a non-PR item needs no follow-up.
 - Do not duplicate items between `requiredActions`, `suggestions`, and `nextSteps`; prefer the categorised fields for new reviews.
 
+## Merge-risk advisory (advisory only)
+
+For pull requests, also fill `mergeRiskAdvisory`. This is an advisory rubric only: it must not influence `decision`, `closeReason`, labels, `reviewFindings`, `prRating`, or any other field, and ClawSweeper computes the score itself. Give each dimension a verdict (`low`, `medium`, `high` risk) and one short reason naming the gap:
+
+- `alignment`: the code matches the description and linked issue; drive-bys and behaviour assumptions are documented.
+- `impact`: blast radius. Auth, permissions, payments, PII, secrets, data migrations, dependency bumps, and infra or config changes carry outsized risk regardless of diff size.
+- `verification`: the changed behaviour is proven (end-to-end proof for UX, profiling for performance); edge cases are tested or documented.
+- `rollback`: one-way doors (destructive or hard-to-reverse changes) are `high`; cheap reverts are `low`.
+- `errorDetection`: if this breaks in production, someone finds out before users do. Use `not_applicable` when there is no runtime flow.
+
+For non-PR items, set every verdict to `not_applicable`. Rubric adapted from warpdotdev/common-skills `merge-risk` (MIT); see `prompts/third-party/merge-risk-LICENSE.md`.
+
 ## Close comment format
 
 Format as readable Markdown: short opening sentence, blank line, then concise evidence bullets. Do not write one long paragraph. Mention that this was a ClawSweeper review and include concrete evidence (file paths, commit SHA, release version, or fix timestamp) drawn from the pre-collected context.
