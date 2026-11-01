@@ -70,11 +70,11 @@ jobs:
     permissions:
       contents: read
     steps:
-      # Full commit history (blobs on demand) so git can find the merge base of
-      # the tested base and the head.
+      # The tested merge includes the helper even when the PR head predates it.
+      # Full history keeps the exact event base/head available for the rehearsal.
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
           filter: blob:none
           persist-credentials: false

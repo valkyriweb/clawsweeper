@@ -34,15 +34,13 @@ rgit() {
 
 scratch="$(mktemp -d "${TMPDIR:-/tmp}/revert-rehearsal.XXXXXX")"
 worktree="$scratch/tree"
-branch="revert-rehearsal/$$"
 cleanup() {
   git worktree remove --force "$worktree" >/dev/null 2>&1 || true
-  git branch -D "$branch" >/dev/null 2>&1 || true
   rm -rf "$scratch"
 }
 trap cleanup EXIT
 
-git worktree add --quiet -b "$branch" "$worktree" "$base_sha"
+git worktree add --quiet --detach "$worktree" "$base_sha"
 
 squash_sha="none"
 revert_sha="none"
@@ -89,7 +87,7 @@ summary="$(
 
 $detail
 
-Commands: \`git merge --squash $head_sha\` on a branch at \`$base_sha\`, then \`git revert --no-edit <squash sha>\`, then compare \`<revert sha>^{tree}\` with \`$base_sha^{tree}\`.
+Commands: \`git merge --squash $head_sha\` in a detached worktree at \`$base_sha\`, then \`git revert --no-edit <squash sha>\`, then compare \`<revert sha>^{tree}\` with \`$base_sha^{tree}\`.
 
 To undo the real squash merge after it lands: \`git revert <merge sha>\`.
 EOF
