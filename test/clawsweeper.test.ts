@@ -6701,3 +6701,104 @@ test("next-actions: legacy prRating without requiredActions/suggestions is backw
   assert.equal(decision.prRating.requiredActions, undefined);
   assert.equal(decision.prRating.suggestions, undefined);
 });
+
+test("maintainer low-risk PR with missing proof keeps marker and headline in agreement", () => {
+  const report = `${reportFrontMatter({
+    type: "pull_request",
+    number: "173",
+    decision: "keep_open",
+    review_status: "complete",
+    author: "valkyriweb",
+    author_association: "OWNER",
+    pull_head_sha: "4af8c889042d93db870d4885b0a69fecab76b353",
+    main_sha: "b862666e21666df4a3fd38f3f07f7456d333bb65",
+    low_risk_pass_eligible: "true",
+    work_candidate: "none",
+  })}
+
+## Summary
+
+Workflow owner rename.
+
+${realBehaviorProofReportSection({
+  status: "missing",
+  evidenceKind: "none",
+  needsContributorAction: false,
+  summary: "The PR body has no after-change workflow run.",
+})}
+
+## Review Findings
+
+Overall correctness: patch is correct
+
+Overall confidence: 0.9
+
+Full review comments:
+
+- none
+`;
+
+  const comment = renderReviewCommentFromReport(report, "none");
+  assert.match(comment, /Needs real behavior proof before merge/);
+  assert.match(comment, /clawsweeper-verdict:needs-human item=173/);
+  assert.doesNotMatch(comment, /clawsweeper-verdict:pass/);
+  assert.doesNotMatch(comment, /Codex review: passed\./);
+});
+
+test("clean low-risk pass headline agrees with its pass marker", () => {
+  const report = `${reportFrontMatter({
+    type: "pull_request",
+    number: "74460",
+    decision: "keep_open",
+    review_status: "complete",
+    pull_head_sha: "abc123def456",
+    low_risk_pass_eligible: "true",
+    work_candidate: "none",
+  })}
+
+## Review Findings
+
+Overall correctness: patch is correct
+
+Overall confidence: 0.9
+
+Full review comments:
+
+- none
+`;
+
+  const comment = renderReviewCommentFromReport(report, "none");
+  assert.match(comment, /clawsweeper-verdict:pass item=74460 sha=abc123def456/);
+  assert.match(comment, /Codex review: passed\./);
+  assert.doesNotMatch(comment, /needs maintainer review before merge/);
+});
+
+test("pull request review notes name the reviewed PR head, not only the base checkout", () => {
+  const head = "4af8c889042d93db870d4885b0a69fecab76b353";
+  const base = "b862666e21666df4a3fd38f3f07f7456d333bb65";
+  const report = `${reportFrontMatter({
+    type: "pull_request",
+    number: "173",
+    decision: "keep_open",
+    review_status: "complete",
+    pull_head_sha: head,
+    main_sha: base,
+    work_candidate: "none",
+  })}
+
+## Review Findings
+
+Overall correctness: patch is correct
+
+Full review comments:
+
+- none
+`;
+
+  const comment = renderReviewCommentFromReport(report, "none");
+  const marker = /clawsweeper-verdict:\S+ item=173 sha=(\w+)/.exec(comment);
+  assert.equal(marker?.[1], head);
+  assert.match(comment, new RegExp(`reviewed PR head \\[${head.slice(0, 12)}\\]`));
+  assert.match(comment, new RegExp(`base checkout \\[${base.slice(0, 12)}\\]`));
+  assert.doesNotMatch(comment, new RegExp(`reviewed against \\[${base.slice(0, 12)}`));
+});

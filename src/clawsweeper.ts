@@ -7434,6 +7434,17 @@ function isExternalPullRequestReport(markdown: string): boolean {
   return !isAutomationReportAuthor(frontMatterValue(markdown, "author"));
 }
 
+// The public comment prints "Needs ... real behavior proof before merge" for
+// every pull request, so a pass verdict must never coexist with that line.
+function visibleRealBehaviorProofBlocksMerge(markdown: string): boolean {
+  if (frontMatterValue(markdown, "type") !== "pull_request") return false;
+  if (frontMatterStringArray(markdown, "labels").includes(PROOF_OVERRIDE_LABEL)) return false;
+  const proof = reportRealBehaviorProof(markdown);
+  return (
+    proof.status === "missing" || proof.status === "mock_only" || proof.status === "insufficient"
+  );
+}
+
 function realBehaviorProofBlocksMerge(markdown: string): boolean {
   if (!isExternalPullRequestReport(markdown)) return false;
   if (frontMatterStringArray(markdown, "labels").includes(PROOF_OVERRIDE_LABEL)) return false;
@@ -7832,7 +7843,11 @@ function closeReviewLineFromReport(markdown: string): string {
   const fixed = fixedInReportText(markdown);
   const provider = frontMatterValue(markdown, "review_provider") as ReviewProvider | undefined;
   const parts: string[] = [runtimeReviewTextFromReport(markdown)].filter(Boolean);
-  if (mainSha && mainSha !== "unknown") parts.push(`reviewed against ${linkedSha(mainSha)}`);
+  const headSha = pullHeadShaFromReport(markdown);
+  if (headSha) parts.push(`reviewed PR head ${linkedSha(headSha)}`);
+  if (mainSha && mainSha !== "unknown") {
+    parts.push(`${headSha ? "base checkout" : "reviewed against"} ${linkedSha(mainSha)}`);
+  }
   if (fixed !== "not determined") parts.push(`fix evidence: ${fixed}`);
   return parts.length ? `${reviewProviderLabel(provider)} review notes: ${parts.join("; ")}.` : "";
 }
@@ -8040,8 +8055,13 @@ function renderKeepOpenCommentFromReport(markdown: string): string {
     .map((step) => `- ${step}`);
   const isPullRequest = frontMatterValue(markdown, "type") === "pull_request";
   const isRepairCandidate = workCandidate === "queue_fix_pr";
-  const isRepairLoopPass = isPullRequest && Boolean(repairLoopPassModeFromReport(markdown));
-  const hasRealBehaviorProofBlocker = isPullRequest && realBehaviorProofBlocksMerge(markdown);
+  const hasRealBehaviorProofBlocker =
+    isPullRequest &&
+    (realBehaviorProofBlocksMerge(markdown) || visibleRealBehaviorProofBlocksMerge(markdown));
+  // The headline and the hidden verdict marker share one source of truth.
+  const markerVerdict = isPullRequest
+    ? /clawsweeper-verdict:([\w-]+)/.exec(reviewAutomationMarkersFromReport(markdown))?.[1]
+    : undefined;
   const summaryLine = sentence(summary) || "_No summary provided._";
   const changeSummaryLine = sentence(changeSummary || summary) || "_No change summary provided._";
   const fallbackNextStep =
@@ -8053,7 +8073,7 @@ function renderKeepOpenCommentFromReport(markdown: string): string {
   const lines = [
     hasRealBehaviorProofBlocker
       ? "Codex review: needs real behavior proof before merge."
-      : isRepairLoopPass
+      : markerVerdict === "pass"
         ? "Codex review: passed."
         : isPullRequest && isRepairCandidate
           ? "Codex review: needs changes before merge."
@@ -8384,7 +8404,8 @@ export function reviewAutomationMarkersFromReport(markdown: string): string {
   if (frontMatterValue(markdown, "review_status") === "failed") {
     return `<!-- clawsweeper-verdict:needs-human ${baseAttrs} -->`;
   }
-  const hasRealBehaviorProofBlocker = realBehaviorProofBlocksMerge(markdown);
+  const hasRealBehaviorProofBlocker =
+    realBehaviorProofBlocksMerge(markdown) || visibleRealBehaviorProofBlocksMerge(markdown);
   if (reportSecurityReview(markdown).status === "needs_attention") {
     const markers = [`<!-- clawsweeper-security:security-sensitive ${baseAttrs} -->`];
     if (!hasRealBehaviorProofBlocker && securitySensitiveRepairAllowed(markdown)) {
