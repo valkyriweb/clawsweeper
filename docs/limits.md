@@ -137,3 +137,28 @@ commit review `1`, repair `4`, and hard caps `10`.
   `issue_implementation.dispatches_per_sweep_default`.
 - Manual `sweep.yml` dispatch `shard_count` overrides
   `review_shards.normal_default`, then clamps to `review_shards.hard_cap`.
+
+## Review Output Cap
+
+A structured review is only complete when the model stopped on its own. A
+fixed output cap is a guillotine, not a budget: output is billed per emitted
+token, so the cap only decides whether the verdict finishes.
+
+- `claude-bridge`: first request uses `CLAWSWEEPER_CLAUDE_REVIEW_MAX_TOKENS`
+  (default 16384). On `stop_reason=max_tokens` the item is retried once at
+  `CLAWSWEEPER_CLAUDE_REVIEW_RETRY_MAX_TOKENS` (default 32768, always above the
+  first rung). The log line `claude-truncated #N max_tokens=... output_tokens=...`
+  marks the retry.
+- `pi`: the model registry owns the cap. A final assistant message with
+  `stopReason=length` fails the item as `output truncation`.
+- Every review report records the receipt in its front matter:
+  `review_output_truncated` (`true`/`false`/`unknown`),
+  `review_output_stop_reason`, `review_output_tokens`,
+  `review_output_max_tokens`, `review_output_attempts`. The shard log line
+  `done #N ... truncated=false output_tokens=5405` carries the same two
+  values. `truncated=true` means the wrapper capped the model; the failure
+  decision is `keep_open` / `confidence=low` with failure reason
+  `output truncation`, never a silently weak verdict.
+- Replay the saved scar payload: `node scripts/replay-claude-review-fixture.mjs after|exhausted|before`
+  (fixtures under `test/fixtures/claude-review-*.json`; scar:
+  `agent-scripts/SCARS/issue-08-llm-output-token-cap-structured-review.md`).

@@ -23,3 +23,6 @@ triage-dashboard-dev*.log
 # pi agent tool-result artifacts
 .pi/
 coverage/
+
+# crabbox run captures (secret-bearing)
+.crabbox/
