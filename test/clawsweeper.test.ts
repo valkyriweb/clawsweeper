@@ -65,6 +65,9 @@ import {
   runPi,
   runReview,
   type ClaudeBridgePostFn,
+  type ReviewOutputReceipt,
+  parsePiFinalStopReason,
+  reviewRuntimeFromOutputReceipt,
   type SpawnFn,
   renderEvidenceEntry,
   reviewFailureReasonForSummary,
@@ -6470,6 +6473,392 @@ test("runPi tolerates ```json fenced``` payloads in the final assistant text", (
   const stubSpawn: SpawnFn = () => ({ status: 0, stdout: stream, stderr: "" });
   const decision = runPi(piOptionsForTest({ spawnFn: stubSpawn }));
   assert.equal(decision.decision, expected.decision);
+});
+
+function withClaudeMaxTokenEnv<T>(
+  caps: { first?: string; retry?: string } | undefined,
+  run: () => T,
+): T {
+  const oldFirstCap = process.env.CLAWSWEEPER_CLAUDE_REVIEW_MAX_TOKENS;
+  const oldRetryCap = process.env.CLAWSWEEPER_CLAUDE_REVIEW_RETRY_MAX_TOKENS;
+  if (caps?.first === undefined) delete process.env.CLAWSWEEPER_CLAUDE_REVIEW_MAX_TOKENS;
+  else process.env.CLAWSWEEPER_CLAUDE_REVIEW_MAX_TOKENS = caps.first;
+  if (caps?.retry === undefined) delete process.env.CLAWSWEEPER_CLAUDE_REVIEW_RETRY_MAX_TOKENS;
+  else process.env.CLAWSWEEPER_CLAUDE_REVIEW_RETRY_MAX_TOKENS = caps.retry;
+  try {
+    return run();
+  } finally {
+    if (oldFirstCap === undefined) delete process.env.CLAWSWEEPER_CLAUDE_REVIEW_MAX_TOKENS;
+    else process.env.CLAWSWEEPER_CLAUDE_REVIEW_MAX_TOKENS = oldFirstCap;
+    if (oldRetryCap === undefined) delete process.env.CLAWSWEEPER_CLAUDE_REVIEW_RETRY_MAX_TOKENS;
+    else process.env.CLAWSWEEPER_CLAUDE_REVIEW_RETRY_MAX_TOKENS = oldRetryCap;
+  }
+}
+
+// Scar issue-08 replay: the saved truncated payload (stop_reason=max_tokens,
+// output_tokens=8191) needs ~9.9K output tokens to finish. The stub bridge
+// returns the truncated fixture for any cap below that and the complete retry
+// fixture otherwise, so the same fixture pair exercises both the old 8192
+// hardcode ("before") and the shipped ladder ("after").
+function scarFixturePost(requests: number[], neededOverride?: number): ClaudeBridgePostFn {
+  const truncatedBody = readFileSync(
+    join("test", "fixtures", "claude-review-truncated-max-tokens.json"),
+    "utf8",
+  );
+  const completeBody = readFileSync(
+    join("test", "fixtures", "claude-review-complete-retry.json"),
+    "utf8",
+  );
+  // SAFETY: the fixture is a checked-in Anthropic Messages response with usage.output_tokens.
+  const fixture = JSON.parse(completeBody) as { usage: { output_tokens: number } };
+  const needed = neededOverride ?? fixture.usage.output_tokens;
+  return ({ body }) => {
+    // SAFETY: runClaude always sends a Messages request body with numeric max_tokens.
+    const request = body as { max_tokens: number };
+    const maxTokens = request.max_tokens;
+    requests.push(maxTokens);
+    return { status: 200, body: maxTokens < needed ? truncatedBody : completeBody };
+  };
+}
+
+test("scar issue-08 replay: an exhausted cap ladder yields an explicit truncated=true receipt, not a silent low-confidence verdict", () => {
+  const requests: number[] = [];
+  let receipt: ReviewOutputReceipt | undefined;
+  const options = claudeOptionsForTest({
+    // SAFETY: runClaude reads only item.number from the item on these paths.
+    item: { number: 12 } as never,
+    // The model needs more output than any rung of the pinned 8192 ladder
+    // (the retry rung is forced above the first, so 8192 -> 16384).
+    postFn: scarFixturePost(requests, Number.MAX_SAFE_INTEGER),
+    onOutputReceipt: (value) => {
+      receipt = value;
+    },
+  });
+  let failure = "";
+  withClaudeMaxTokenEnv({ first: "8192", retry: "8192" }, () => {
+    try {
+      runClaude(options);
+    } catch (error) {
+      failure = error instanceof Error ? error.message : String(error);
+    }
+  });
+  assert.match(failure, /output truncated after max_tokens=16384 \(stop_reason=max_tokens\)/);
+  assert.deepEqual(requests, [8192, 16_384]);
+  assert.deepEqual(receipt, {
+    truncated: true,
+    stopReason: "max_tokens",
+    maxTokens: 16_384,
+    attempts: 2,
+    outputTokens: 8191,
+  });
+  const decision = codexFailureDecision("claude-bridge", null, failure);
+  assert.equal(decision.decision, "keep_open");
+  assert.equal(decision.confidence, "low");
+  assert.equal(decision.summary, "Claude review failed: output truncation.");
+  assert.deepEqual(reviewRuntimeFromOutputReceipt(receipt), {
+    outputTruncated: true,
+    outputStopReason: "max_tokens",
+    outputTokens: 8191,
+    outputMaxTokens: 16_384,
+    outputAttempts: 2,
+  });
+});
+
+test("scar issue-08 replay: the default ladder retries past the cap and returns a complete verdict with truncated=false", () => {
+  const requests: number[] = [];
+  let receipt: ReviewOutputReceipt | undefined;
+  const options = claudeOptionsForTest({
+    // SAFETY: runClaude reads only item.number from the item on these paths.
+    item: { number: 12 } as never,
+    postFn: scarFixturePost(requests),
+    onOutputReceipt: (value) => {
+      receipt = value;
+    },
+  });
+  // The scar's PR needed ~9.9K output tokens: the shipped 16K first rung
+  // already fits, so no retry is spent.
+  const decision = withClaudeMaxTokenEnv(undefined, () => runClaude(options));
+  assert.deepEqual(requests, [16_384]);
+  assert.equal(decision.decision, "keep_open");
+  assert.equal(decision.confidence, "high");
+  assert.match(decision.summary, /lab release gate/);
+  assert.deepEqual(receipt, {
+    truncated: false,
+    stopReason: "tool_use",
+    maxTokens: 16_384,
+    attempts: 1,
+    outputTokens: 9874,
+  });
+  assert.equal(
+    JSON.parse(readFileSync(join(options.workDir, "12.claude-response.json"), "utf8")).id,
+    "msg_01ScarIssue08Retry",
+  );
+});
+
+test("scar issue-08 replay: a PR needing more than 16K output tokens completes on the 32K retry rung", () => {
+  const requests: number[] = [];
+  let receipt: ReviewOutputReceipt | undefined;
+  const options = claudeOptionsForTest({
+    // SAFETY: runClaude reads only item.number from the item on these paths.
+    item: { number: 12 } as never,
+    postFn: scarFixturePost(requests, 20_000),
+    onOutputReceipt: (value) => {
+      receipt = value;
+    },
+  });
+  const decision = withClaudeMaxTokenEnv(undefined, () => runClaude(options));
+  assert.deepEqual(requests, [16_384, 32_768]);
+  assert.equal(decision.confidence, "high");
+  assert.deepEqual(receipt, {
+    truncated: false,
+    stopReason: "tool_use",
+    maxTokens: 32_768,
+    attempts: 2,
+    outputTokens: 9874,
+  });
+});
+
+test("runClaude receipt describes the final response, not an earlier capped attempt", () => {
+  const cases: Array<{
+    name: string;
+    second: { status: number; body: string };
+    expected: ReviewOutputReceipt;
+  }> = [
+    {
+      name: "retry ends normally without the tool call",
+      second: {
+        status: 200,
+        body: JSON.stringify({
+          stop_reason: "end_turn",
+          usage: { input_tokens: 1, output_tokens: 700 },
+          content: [{ type: "text", text: "no tool" }],
+        }),
+      },
+      expected: {
+        truncated: false,
+        stopReason: "end_turn",
+        maxTokens: 32_768,
+        attempts: 2,
+        outputTokens: 700,
+      },
+    },
+    {
+      name: "retry response has no stop_reason",
+      second: {
+        status: 200,
+        body: JSON.stringify({
+          usage: { input_tokens: 1, output_tokens: 50 },
+          content: [{ type: "text", text: "no tool" }],
+        }),
+      },
+      expected: { maxTokens: 32_768, attempts: 2, outputTokens: 50 },
+    },
+    {
+      name: "retry fails at the bridge",
+      second: { status: 502, body: "bad gateway" },
+      expected: { maxTokens: 32_768, attempts: 2 },
+    },
+    {
+      name: "retry returns malformed JSON",
+      second: { status: 200, body: "{not json" },
+      expected: { maxTokens: 32_768, attempts: 2 },
+    },
+  ];
+  for (const testCase of cases) {
+    let calls = 0;
+    let receipt: ReviewOutputReceipt | undefined;
+    const stubPost: ClaudeBridgePostFn = () => {
+      calls += 1;
+      if (calls === 1) {
+        return {
+          status: 200,
+          body: JSON.stringify({
+            stop_reason: "max_tokens",
+            usage: { input_tokens: 1, output_tokens: 16_384 },
+            content: [{ type: "text", text: "partial" }],
+          }),
+        };
+      }
+      return testCase.second;
+    };
+    const options = claudeOptionsForTest({
+      // SAFETY: runClaude reads only item.number from the item on these paths.
+      item: { number: 31 } as never,
+      postFn: stubPost,
+      onOutputReceipt: (value) => {
+        receipt = value;
+      },
+    });
+    withClaudeMaxTokenEnv(undefined, () => {
+      assert.throws(() => runClaude(options), /Claude review failed for #31/, testCase.name);
+    });
+    assert.deepEqual(receipt, testCase.expected, testCase.name);
+  }
+});
+
+test("runClaude receipt is unknown-truncation when stop_reason is absent on a success", () => {
+  let receipt: ReviewOutputReceipt | undefined;
+  const stubPost: ClaudeBridgePostFn = () => ({
+    status: 200,
+    body: JSON.stringify({
+      usage: { input_tokens: 1, output_tokens: 10 },
+      content: [{ type: "tool_use", name: "submit_decision", input: closeDecision() }],
+    }),
+  });
+  const options = claudeOptionsForTest({
+    postFn: stubPost,
+    onOutputReceipt: (value) => {
+      receipt = value;
+    },
+  });
+  withClaudeMaxTokenEnv(undefined, () => runClaude(options));
+  assert.deepEqual(receipt, { maxTokens: 16_384, attempts: 1, outputTokens: 10 });
+});
+
+interface PiAssistantMessageFixture {
+  role: "assistant";
+  content: never[];
+  stopReason?: string;
+}
+
+test("parsePiFinalStopReason only trusts the last assistant message", () => {
+  const start = JSON.stringify({ type: "message_start", message: { role: "assistant" } });
+  const end = (stopReason?: string) => {
+    const message: PiAssistantMessageFixture = {
+      role: "assistant",
+      content: [],
+    };
+    if (stopReason) message.stopReason = stopReason;
+    return JSON.stringify({ type: "message_end", message });
+  };
+  const toolResult = JSON.stringify({
+    type: "message_end",
+    message: { role: "toolResult", content: [] },
+  });
+  // Tool-using session that finished normally.
+  assert.equal(
+    parsePiFinalStopReason([start, end("toolUse"), toolResult, start, end("stop")].join("\n")),
+    "stop",
+  );
+  // Session cut while the next assistant message was streaming.
+  assert.equal(
+    parsePiFinalStopReason([start, end("toolUse"), toolResult, start].join("\n")),
+    undefined,
+  );
+  // Later assistant message without a stop reason does not inherit the earlier one.
+  assert.equal(parsePiFinalStopReason([end("length"), end()].join("\n")), undefined);
+  // Final message capped after earlier tool calls.
+  assert.equal(
+    parsePiFinalStopReason([start, end("toolUse"), toolResult, start, end("length")].join("\n")),
+    "length",
+  );
+});
+
+test("runClaude reports truncated=false and output_tokens on a first-attempt success", () => {
+  let receipt: ReviewOutputReceipt | undefined;
+  const stubPost: ClaudeBridgePostFn = () => ({
+    status: 200,
+    body: JSON.stringify({
+      id: "msg_ok",
+      type: "message",
+      stop_reason: "tool_use",
+      usage: { input_tokens: 10, output_tokens: 5405, total_tokens: 5415 },
+      content: [{ type: "tool_use", name: "submit_decision", input: closeDecision() }],
+    }),
+  });
+  const options = claudeOptionsForTest({
+    // SAFETY: runClaude reads only item.number from the item on these paths.
+    item: { number: 3 } as never,
+    postFn: stubPost,
+    onOutputReceipt: (value) => {
+      receipt = value;
+    },
+  });
+  withClaudeMaxTokenEnv(undefined, () => runClaude(options));
+  assert.deepEqual(receipt, {
+    truncated: false,
+    stopReason: "tool_use",
+    maxTokens: 16_384,
+    attempts: 1,
+    outputTokens: 5405,
+  });
+});
+
+test("reviewRuntimeFromOutputReceipt leaves fields unknown when the provider gave no receipt", () => {
+  assert.deepEqual(reviewRuntimeFromOutputReceipt(undefined), {});
+  assert.deepEqual(reviewRuntimeFromOutputReceipt({ outputTokens: 42 }), { outputTokens: 42 });
+});
+
+test("runPi surfaces stopReason=length as explicit output truncation", () => {
+  const stream =
+    JSON.stringify({
+      type: "message_end",
+      message: {
+        role: "assistant",
+        stopReason: "length",
+        usage: { input: 100, output: 32_000, cacheRead: 0, cacheWrite: 0 },
+        content: [{ type: "text", text: '{"decision":"keep_open","closeReason":"none"' }],
+      },
+    }) + "\n";
+  const stubSpawn: SpawnFn = () => ({ status: 0, stdout: stream, stderr: "" });
+  let receipt: ReviewOutputReceipt | undefined;
+  const options = piOptionsForTest({
+    spawnFn: stubSpawn,
+    onOutputReceipt: (value) => {
+      receipt = value;
+    },
+  });
+  assert.throws(
+    () => runPi(options),
+    /Pi review failed for #13: output truncated by the model output cap \(stop_reason=length; output_tokens=32000\)/,
+  );
+  assert.deepEqual(receipt, {
+    truncated: true,
+    stopReason: "length",
+    outputTokens: 32_000,
+    attempts: 1,
+  });
+  const usageEvents = readFileSync(join(options.workDir, "usage-events.jsonl"), "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  assert.equal(usageEvents.length, 1);
+  assert.equal(usageEvents[0].status, "output_truncated");
+});
+
+test("runPi reports truncated=false on a completed message_end", () => {
+  const expected = closeDecision();
+  const stream = JSON.stringify({
+    type: "message_end",
+    message: {
+      role: "assistant",
+      stopReason: "stop",
+      usage: { input: 100, output: 4_321, cacheRead: 0, cacheWrite: 0 },
+      content: [{ type: "text", text: JSON.stringify(expected) }],
+    },
+  });
+  const stubSpawn: SpawnFn = () => ({ status: 0, stdout: stream, stderr: "" });
+  let receipt: ReviewOutputReceipt | undefined;
+  const decision = runPi(
+    piOptionsForTest({
+      spawnFn: stubSpawn,
+      onOutputReceipt: (value) => {
+        receipt = value;
+      },
+    }),
+  );
+  assert.equal(decision.decision, expected.decision);
+  assert.deepEqual(receipt, {
+    truncated: false,
+    stopReason: "stop",
+    outputTokens: 4321,
+    attempts: 1,
+  });
+  assert.equal(parsePiFinalStopReason(stream), "stop");
+  assert.equal(
+    parsePiFinalStopReason(JSON.stringify({ type: "assistant", text: "{}" })),
+    undefined,
+  );
 });
 
 test("runPi maps ETIMEDOUT to the stable 'timed out after Nms' marker", () => {

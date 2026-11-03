@@ -70,6 +70,7 @@ import {
   stringArg,
   type Args,
 } from "./clawsweeper-args.js";
+import { Option, Schema } from "effect";
 import { escapeRegExp, safeOutputTail, trimMiddle, truncateText } from "./clawsweeper-text.js";
 import { redactSecrets } from "./repair/collect-codex-debug.js";
 import {
@@ -566,6 +567,27 @@ interface ReviewRuntime {
   additionalPromptChars?: number;
   contextElapsedMs?: number;
   codexElapsedMs?: number;
+  // Output-completion receipt (scar issue-08). `outputTruncated` is the
+  // explicit flag that replaces the old silent confidence=low downgrade:
+  // true when the provider stopped on its output cap, false when the model
+  // finished on its own, undefined when the provider exposes no stop reason.
+  outputTruncated?: boolean;
+  outputStopReason?: string;
+  outputTokens?: number;
+  outputMaxTokens?: number;
+  outputAttempts?: number;
+}
+
+// Per-call output-completion receipt a review provider hands back through
+// `onOutputReceipt` (success or failure). Keeps stop_reason / output_tokens
+// out of the Decision schema while still letting the report front matter and
+// the shard log line carry them.
+export interface ReviewOutputReceipt {
+  truncated?: boolean;
+  stopReason?: string;
+  outputTokens?: number;
+  maxTokens?: number;
+  attempts?: number;
 }
 
 interface ReviewPromptTelemetry {
@@ -4877,6 +4899,9 @@ export interface RunReviewOptions {
   // claude-code / pi only. Ignored for codex and claude-bridge. Lets tests
   // inject a fake spawnSync without touching real CLIs.
   spawnFn?: SpawnFn;
+  // Receives the output-completion receipt (stop reason, output tokens,
+  // truncation flag) for the final provider call, on success and on failure.
+  onOutputReceipt?: (receipt: ReviewOutputReceipt) => void;
 }
 
 // Dispatcher: routes a per-item review call to the configured provider. Both
@@ -4983,6 +5008,7 @@ interface RunClaudeOptions {
   prompt?: string;
   bridgeUrl?: string;
   postFn?: ClaudeBridgePostFn;
+  onOutputReceipt?: (receipt: ReviewOutputReceipt) => void;
 }
 
 // Synchronous HTTP POST via curl. Matches runCodex's spawnSync architecture
@@ -5155,14 +5181,25 @@ export function runClaude(options: RunClaudeOptions): Decision {
   const maxTokenAttempts = claudeReviewMaxTokenAttempts();
   const startedAt = Date.now();
   let retriedAfterMaxTokens = false;
+  const reportReceipt = (receipt: ReviewOutputReceipt): void => {
+    try {
+      options.onOutputReceipt?.(receipt);
+    } catch {
+      // The receipt is telemetry; it must never change the review outcome.
+    }
+  };
   for (let attemptIndex = 0; attemptIndex < maxTokenAttempts.length; attemptIndex += 1) {
     const maxTokens = maxTokenAttempts[attemptIndex] ?? DEFAULT_CLAUDE_REVIEW_MAX_TOKENS;
     const body: Record<string, unknown> = { ...baseBody, max_tokens: maxTokens };
 
     let response: ClaudeBridgePostResult;
+    // Receipt for paths that fail before a response exposes a stop reason:
+    // the requested cap and attempt count are known, completion is not.
+    const transportReceipt = (): void => reportReceipt({ maxTokens, attempts: attemptIndex + 1 });
     try {
       response = postFn({ url, body, timeoutMs: options.timeoutMs });
     } catch (error) {
+      transportReceipt();
       const message = error instanceof Error ? error.message : String(error);
       // Stable timeout marker across providers so isCodexTimeoutError fires
       // and codexFailureReason classifies as "timeout" — keeps slice B's
@@ -5183,6 +5220,7 @@ export function runClaude(options: RunClaudeOptions): Decision {
     }
 
     if (response.status < 200 || response.status >= 300) {
+      transportReceipt();
       throw new Error(
         `Claude review failed for #${item.number}: bridge HTTP ${response.status} ${
           safeOutputTail(response.body) || "(no body)"
@@ -5194,6 +5232,7 @@ export function runClaude(options: RunClaudeOptions): Decision {
     try {
       payload = JSON.parse(response.body);
     } catch (error) {
+      transportReceipt();
       throw new Error(
         `Claude review failed for #${item.number}: invalid JSON body (${
           error instanceof Error ? error.message : String(error)
@@ -5201,13 +5240,33 @@ export function runClaude(options: RunClaudeOptions): Decision {
       );
     }
 
-    const stopReason = (payload as { stop_reason?: string })?.stop_reason ?? "unknown";
+    const knownStopReason = Option.getOrUndefined(
+      decodeClaudeStopReasonFields(payload),
+    )?.stop_reason;
+    const stopReason = knownStopReason ?? "unknown";
     const elapsedMs = Date.now() - startedAt;
+    const outputTokens = parseClaudeTokenUsageFromMessage(payload)?.output;
+    // The flag describes the final response only: cap -> true, any other
+    // known stop -> false, no stop reason -> unknown. A prior capped attempt
+    // shows as attempts > 1 (the ladder retries only after a cap hit).
+    const receipt = (): ReviewOutputReceipt => {
+      const value: ReviewOutputReceipt = { maxTokens, attempts: attemptIndex + 1 };
+      if (knownStopReason !== undefined) {
+        value.truncated = knownStopReason === "max_tokens";
+        value.stopReason = knownStopReason;
+      }
+      if (outputTokens !== undefined) value.outputTokens = outputTokens;
+      return value;
+    };
     if (stopReason === "max_tokens") {
       if (attemptIndex < maxTokenAttempts.length - 1) {
         retriedAfterMaxTokens = true;
+        console.error(
+          `[review] ${new Date().toISOString()} claude-truncated #${item.number} max_tokens=${maxTokens} output_tokens=${outputTokens ?? "unknown"} retry_max_tokens=${maxTokenAttempts[attemptIndex + 1]}`,
+        );
         continue;
       }
+      reportReceipt(receipt());
       emitUsage("output_truncated", payload, elapsedMs);
       throw new Error(
         `Claude review failed for #${item.number}: output truncated after max_tokens=${maxTokens} (stop_reason=max_tokens)`,
@@ -5222,11 +5281,13 @@ export function runClaude(options: RunClaudeOptions): Decision {
       : undefined;
     if (!toolUse) {
       if (retriedAfterMaxTokens) {
+        reportReceipt(receipt());
         emitUsage("output_truncated", payload, elapsedMs);
         throw new Error(
           `Claude review failed for #${item.number}: output truncated after retry max_tokens=${maxTokens} (previous stop_reason=max_tokens; retry stop_reason=${stopReason}; no submit_decision tool_use)`,
         );
       }
+      reportReceipt(receipt());
       emitUsage("failed", payload, elapsedMs);
       throw new Error(
         `Claude review failed for #${item.number}: no submit_decision tool_use in response (stop_reason=${stopReason})`,
@@ -5235,10 +5296,12 @@ export function runClaude(options: RunClaudeOptions): Decision {
 
     try {
       const decision = parseDecision(toolUse.input, item);
+      reportReceipt(receipt());
       emitUsage("success", payload, elapsedMs);
       return decision;
     } catch (error) {
       if (retriedAfterMaxTokens) {
+        reportReceipt(receipt());
         emitUsage("output_truncated", payload, elapsedMs);
         throw new Error(
           `Claude review failed for #${item.number}: output truncated after retry max_tokens=${maxTokens} (previous stop_reason=max_tokens; invalid submit_decision payload: ${
@@ -5246,6 +5309,7 @@ export function runClaude(options: RunClaudeOptions): Decision {
           })`,
         );
       }
+      reportReceipt(receipt());
       emitUsage("schema_invalid", payload, elapsedMs);
       throw new Error(
         `Claude review failed for #${item.number}: invalid structured output (${
@@ -5328,6 +5392,7 @@ interface RunCliReviewOptions {
   proofScratchDir?: string;
   prompt?: string;
   spawnFn?: SpawnFn;
+  onOutputReceipt?: (receipt: ReviewOutputReceipt) => void;
 }
 
 export type RunClaudeCodeOptions = RunCliReviewOptions;
@@ -5663,6 +5728,22 @@ export function runPi(options: RunPiOptions): Decision {
   const stdout = result.stdout ?? "";
   piTokens = parsePiTokenUsageFromJsonl(stdout);
   const stderr = result.stderr ?? "";
+  const piStopReason = parsePiFinalStopReason(stdout);
+  // Pi reports `stopReason: "length"` when the provider cut the final
+  // assistant message on its output cap — the Pi-side twin of Anthropic's
+  // `stop_reason: "max_tokens"` (scar issue-08).
+  const piTruncated = piStopReason === "length";
+  const piReceipt: ReviewOutputReceipt = { attempts: 1 };
+  if (piStopReason !== undefined) {
+    piReceipt.truncated = piTruncated;
+    piReceipt.stopReason = piStopReason;
+  }
+  if (piTokens?.output !== undefined) piReceipt.outputTokens = piTokens.output;
+  try {
+    options.onOutputReceipt?.(piReceipt);
+  } catch {
+    // Telemetry must never change the review outcome.
+  }
 
   try {
     writeFileSync(responsePath, stdout, "utf8");
@@ -5701,6 +5782,13 @@ export function runPi(options: RunPiOptions): Decision {
     );
   }
 
+  if (piTruncated) {
+    emitUsage("output_truncated", elapsedMs);
+    throw new Error(
+      `Pi review failed for #${item.number}: output truncated by the model output cap (stop_reason=length; output_tokens=${piTokens?.output ?? "unknown"})`,
+    );
+  }
+
   let payload: unknown;
   try {
     payload = extractPiJsonPayload(stdout);
@@ -5736,6 +5824,39 @@ export function runPi(options: RunPiOptions): Decision {
     );
   }
 }
+
+// Stop reason of the last assistant `message_end` in Pi's `--mode json`
+// stream. `"length"` means the provider cut the message on its output cap.
+// Pi `--mode json` assistant message boundary events. Other events and
+// non-assistant messages fail to decode and are skipped.
+const PiAssistantMessageEvent = Schema.parseJson(
+  Schema.Struct({
+    type: Schema.Literal("message_start", "message_end"),
+    message: Schema.Struct({
+      role: Schema.Literal("assistant"),
+      stopReason: Schema.optional(Schema.String),
+    }),
+  }),
+);
+const decodePiAssistantMessageEvent = Schema.decodeUnknownOption(PiAssistantMessageEvent);
+
+export function parsePiFinalStopReason(stdout: string): string | undefined {
+  let last: string | undefined;
+  for (const line of stdout.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const event = Option.getOrUndefined(decodePiAssistantMessageEvent(trimmed));
+    if (event === undefined) continue;
+    // A new assistant message invalidates the previous one's stop reason, so
+    // a session cut mid-message never reports an earlier tool-call stop.
+    last = event.type === "message_start" ? undefined : event.message.stopReason;
+  }
+  return last;
+}
+
+// Anthropic Messages response stop reason; absent or non-string -> undefined.
+const ClaudeStopReasonFields = Schema.Struct({ stop_reason: Schema.optional(Schema.String) });
+const decodeClaudeStopReasonFields = Schema.decodeUnknownOption(ClaudeStopReasonFields);
 
 // Redact before slicing so a cut cannot leave an unmatched token fragment.
 export function piStderrHead(stderr: string, maxLength = 300): string {
@@ -7765,6 +7886,11 @@ function reviewTelemetryNumber(value: number | undefined): string {
   return String(Math.max(0, Math.round(value)));
 }
 
+function reviewTelemetryFlag(value: boolean | undefined): string {
+  if (value === undefined) return "unknown";
+  return value ? "true" : "false";
+}
+
 function contextCountText(
   total: number | undefined,
   fallback: number,
@@ -9201,6 +9327,11 @@ review_schema_chars: ${reviewTelemetryNumber(options.runtime.schemaChars)}
 review_additional_prompt_chars: ${reviewTelemetryNumber(options.runtime.additionalPromptChars)}
 review_context_elapsed_ms: ${reviewTelemetryNumber(options.runtime.contextElapsedMs)}
 review_codex_elapsed_ms: ${reviewTelemetryNumber(options.runtime.codexElapsedMs)}
+review_output_truncated: ${reviewTelemetryFlag(options.runtime.outputTruncated)}
+review_output_stop_reason: ${options.runtime.outputStopReason ?? "unknown"}
+review_output_tokens: ${reviewTelemetryNumber(options.runtime.outputTokens)}
+review_output_max_tokens: ${reviewTelemetryNumber(options.runtime.outputMaxTokens)}
+review_output_attempts: ${reviewTelemetryNumber(options.runtime.outputAttempts)}
 review_mode: ${options.reviewMode}
 review_status: ${reviewStatusValue}
 review_failure_reason: ${failureReason}
@@ -9381,6 +9512,11 @@ ${options.action.closeComment ? options.action.closeComment : "_No close comment
 - additional prompt chars: ${reviewTelemetryNumber(options.runtime.additionalPromptChars)}
 - context collection ms: ${reviewTelemetryNumber(options.runtime.contextElapsedMs)}
 - model review ms: ${reviewTelemetryNumber(options.runtime.codexElapsedMs)}
+- output tokens: ${reviewTelemetryNumber(options.runtime.outputTokens)}
+- output truncated: ${reviewTelemetryFlag(options.runtime.outputTruncated)}
+- output stop reason: ${options.runtime.outputStopReason ?? "unknown"}
+- output max tokens: ${reviewTelemetryNumber(options.runtime.outputMaxTokens)}
+- output attempts: ${reviewTelemetryNumber(options.runtime.outputAttempts)}
   `;
 }
 
@@ -9580,9 +9716,13 @@ function reviewCommand(args: Args): void {
     }
     let decision: Decision;
     let codexElapsedMs = 0;
+    let outputReceipt: ReviewOutputReceipt | undefined;
     const codexStartedAt = Date.now();
     try {
       decision = runReview({
+        onOutputReceipt: (receipt) => {
+          outputReceipt = receipt;
+        },
         provider: reviewProvider,
         item,
         context,
@@ -9651,6 +9791,7 @@ function reviewCommand(args: Args): void {
       ...prompt.telemetry,
       contextElapsedMs,
       codexElapsedMs,
+      ...reviewRuntimeFromOutputReceipt(outputReceipt),
     };
     const action = reviewActionForDecision({ item, decision, git, runtime });
     writeFileSync(
@@ -9672,7 +9813,7 @@ function reviewCommand(args: Args): void {
     );
     completed += 1;
     console.error(
-      `[review] ${new Date().toISOString()} shard=${shardIndex}/${shardCount} done #${item.number} (${completed}/${candidates.length}) decision=${decision.decision} confidence=${decision.confidence} action=${action.actionTaken}`,
+      `[review] ${new Date().toISOString()} shard=${shardIndex}/${shardCount} done #${item.number} (${completed}/${candidates.length}) decision=${decision.decision} confidence=${decision.confidence} action=${action.actionTaken} truncated=${reviewTelemetryFlag(runtime.outputTruncated)} output_tokens=${reviewTelemetryNumber(runtime.outputTokens)}`,
     );
   }
   console.error(
@@ -9688,6 +9829,25 @@ function reviewCommand(args: Args): void {
       `${reviewProvider} review failed for ${codexFailures} item${codexFailures === 1 ? "" : "s"}; review artifacts were written and the workflow recovery lane can requeue the planned set.`,
     );
   }
+}
+
+export function reviewRuntimeFromOutputReceipt(
+  receipt: ReviewOutputReceipt | undefined,
+): Pick<
+  ReviewRuntime,
+  "outputTruncated" | "outputStopReason" | "outputTokens" | "outputMaxTokens" | "outputAttempts"
+> {
+  const runtime: Pick<
+    ReviewRuntime,
+    "outputTruncated" | "outputStopReason" | "outputTokens" | "outputMaxTokens" | "outputAttempts"
+  > = {};
+  if (!receipt) return runtime;
+  if (receipt.truncated !== undefined) runtime.outputTruncated = receipt.truncated;
+  if (receipt.stopReason !== undefined) runtime.outputStopReason = receipt.stopReason;
+  if (receipt.outputTokens !== undefined) runtime.outputTokens = receipt.outputTokens;
+  if (receipt.maxTokens !== undefined) runtime.outputMaxTokens = receipt.maxTokens;
+  if (receipt.attempts !== undefined) runtime.outputAttempts = receipt.attempts;
+  return runtime;
 }
 
 function patchCommentBody(comment: Record<string, unknown>, number: number, body: string): boolean {

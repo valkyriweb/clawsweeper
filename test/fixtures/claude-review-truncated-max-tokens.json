@@ -1,0 +1,25 @@
+{
+  "id": "msg_01ScarIssue08Truncated",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-sonnet-4-5-20250929",
+  "stop_reason": "max_tokens",
+  "stop_sequence": null,
+  "usage": {
+    "input_tokens": 61234,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 48210,
+    "output_tokens": 8191
+  },
+  "content": [
+    {
+      "type": "thinking",
+      "thinking": "This is a 29-commit owner PR wiring the OpenClaw lab release gate. I need to walk the commit list, the CI status and the review comments before I call submit_decision...",
+      "signature": "fixture"
+    },
+    {
+      "type": "text",
+      "text": "{\"decision\":\"keep_open\",\"closeReason\":\"none\",\"confidence\":\"high\",\"summary\":\"Owner PR adds the OpenClaw lab release gate; three minor findings, none blocking.\",\"changeSummary\":\"29-commit owner PR wiring a lab release gate for OpenClaw.\",\"evidence\":[{\"label\":\"release gate\",\"detail\":\"scripts/release-gate.sh enforces the lab checklist before tagging.\",\"file\":\"scripts/release-gate.sh\",\"line\":1},{\"label\":\"ci\",\"detail\":\"All 14 checks green on head sha.\"},{\"label\":\"finding 1\",\"detail\":\"Gate skips the smoke test when LAB_SKIP_SMOKE is set; no audit log line is"
+    }
+  ]
+}
