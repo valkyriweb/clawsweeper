@@ -126,3 +126,21 @@ test("env-driven timeout helpers default to the shared constants and honor overr
     }
   }
 });
+
+test("a child that exits before reading a large prompt keeps its exit status and stderr", () => {
+  const result = runCliWithActivityWatchdog({
+    command: "node",
+    args: ["-e", "process.stderr.write('boom-early'); process.exit(3)"],
+    cwd: process.cwd(),
+    env: watchdogEnv,
+    // Larger than any OS pipe buffer so the helper is still writing when the child exits.
+    input: "x".repeat(4 * 1024 * 1024),
+    startupTimeoutMs: 5000,
+    inactivityMs: 5000,
+    maxTotalMs: 10000,
+  });
+  assert.equal(result.status, 3);
+  assert.equal(result.error, undefined);
+  assert.match(result.stderr, /boom-early/);
+  assert.doesNotMatch(result.stderr, /EPIPE|Unhandled 'error' event/);
+});
