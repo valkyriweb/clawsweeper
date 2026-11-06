@@ -106,6 +106,12 @@ export interface RepositoryProfile {
   // set this so commit-review runs on the branch that actually ships instead of
   // being rejected at the branch gate. Full ref form: `refs/heads/<branch>`.
   commitReviewRef?: string;
+  // Optional regex (JavaScript source) matched against merge-commit subjects.
+  // When set, commit-review drops any merge on the review ref whose subject
+  // matches, plus the commits that merge brought in from its non-first parents
+  // (e.g. a fork's upstream-sync merge pulling in hundreds of upstream commits).
+  // Fork commits and ordinary PR merges are still reviewed. Absent = off.
+  commitReviewSkipMergeSubjectPattern?: string;
   // Optional label applied after a successful contributor-branch repair push.
   // Targets use this to hand the new head back to their native review lane.
   postRepairReviewLabel?: string;
@@ -146,6 +152,7 @@ interface ConfiguredRepositoryProfile {
   includeMaintainerAuthored?: boolean;
   issueCloseDryRun?: boolean;
   commitReviewRef?: string;
+  commitReviewSkipMergeSubjectPattern?: string;
   postRepairReviewLabel?: string;
   repairAllowedPaths?: readonly string[];
   piReviewLifecycle?: boolean;
@@ -431,6 +438,9 @@ function configuredRepositoryProfile(profile: ConfiguredRepositoryProfile): Repo
     result.issueCloseDryRun = profile.issueCloseDryRun;
   }
   if (profile.commitReviewRef) result.commitReviewRef = profile.commitReviewRef;
+  if (profile.commitReviewSkipMergeSubjectPattern) {
+    result.commitReviewSkipMergeSubjectPattern = profile.commitReviewSkipMergeSubjectPattern;
+  }
   if (profile.postRepairReviewLabel) result.postRepairReviewLabel = profile.postRepairReviewLabel;
   if (profile.repairAllowedPaths) result.repairAllowedPaths = profile.repairAllowedPaths;
   if (profile.piReviewLifecycle !== undefined) result.piReviewLifecycle = profile.piReviewLifecycle;
@@ -609,6 +619,13 @@ function validateConfiguredRepositoryProfile(
     result.commitReviewRef = branchRefValue(
       profile.commit_review_ref,
       `${label}.commit_review_ref`,
+    );
+  }
+  if (profile.commit_review_skip_merge_subject_pattern !== undefined) {
+    const patternLabel = `${label}.commit_review_skip_merge_subject_pattern`;
+    result.commitReviewSkipMergeSubjectPattern = regexSourceValue(
+      stringValue(profile.commit_review_skip_merge_subject_pattern, patternLabel),
+      patternLabel,
     );
   }
   if (profile.pi_review_lifecycle !== undefined) {
@@ -832,6 +849,15 @@ function pathSegmentValue(value: unknown, label: string): string {
   const segment = stringValue(value, label);
   if (!/^[A-Za-z0-9_.-]+$/.test(segment)) throw new Error(`${label} must be a safe path segment`);
   return segment;
+}
+
+function regexSourceValue(source: string, label: string): string {
+  try {
+    new RegExp(source);
+  } catch (cause) {
+    throw new Error(`${label} must be a valid regular expression`, { cause });
+  }
+  return source;
 }
 
 function stringValue(value: unknown, label: string): string {

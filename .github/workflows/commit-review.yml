@@ -360,6 +360,12 @@ jobs:
           if [ -z "$commits" ]; then
             commits="$COMMIT_SHA"
           fi
+          # Targets with commit_review_skip_merge_subject_pattern drop upstream-sync
+          # merges and the upstream commits they bring in; others pass through.
+          commits="$(node clawsweeper/dist/commit-sweeper.js filter-sync-merges \
+            --target-repo "$TARGET_REPO" \
+            --target-dir "$TARGET_NAME" \
+            --commit-shas "$commits")"
           total_count="$(printf '%s\n' "$commits" | sed '/^$/d' | wc -l | tr -d ' ')"
           page_size="$PAGE_SIZE"
           start_line=$((COMMIT_OFFSET + 1))
