@@ -7,6 +7,11 @@ turns narrow trusted findings into guarded repair or automerge work.
 The current production targets are `openclaw/openclaw`, `openclaw/clawhub`, and
 self-review for `openclaw/clawsweeper`.
 
+This Valkyriweb fork defines its target allowlist in
+[`config/target-repositories.json`](config/target-repositories.json).
+`bermont-digital/bermont-kube` runs in `review_only` mode through the Bermont App:
+reviews and proposal comments only, with no autofix, fix PRs, auto-merge, or auto-close.
+
 The OpenClaw-hosted ClawSweeper instance is not a public review service and does
 not provide free reviews for third-party repositories. If you want ClawSweeper
 for your own project, fork this repository, deploy it in your own organization,

@@ -99,6 +99,23 @@ test("target auth resolves explicit routes and denies review-only mutation befor
   );
 });
 
+test("Bermont Kube target tokens use the Bermont route without mutation access", () => {
+  for (const accessMode of ["read", "comment"] as const) {
+    const auth = targetAuthFor({ targetRepo: "bermont-digital/bermont-kube", accessMode });
+    assert.equal(auth.credential_route, "bermont-digital");
+    assert.equal(auth.automation_policy, "review_only");
+    assert.equal(auth.access_mode, accessMode);
+  }
+  assert.throws(
+    () => targetAuthFor({ targetRepo: "bermont-digital/bermont-kube", accessMode: "mutate" }),
+    /review_only.*denies target token access-mode=mutate/,
+  );
+  assert.throws(
+    () => legacyTargetAuthFor("bermont-digital/bermont-kube"),
+    /github_app_credential_route=bermont-digital.*legacy Valkyriweb target token/,
+  );
+});
+
 test("event review token mode is accepted for review_only and full targets", () => {
   const workflow = fs.readFileSync(".github/workflows/sweep.yml", "utf8");
   assert.match(workflow, /automation-policy == 'review_only' && 'comment' \|\| 'mutate'/);
@@ -408,7 +425,7 @@ test("comment router mints target tokens through the routed facade", () => {
   assert.equal(fanout.match(/uses: actions\/checkout@v5/g)?.length, 1);
   assert.equal(fanout.match(/uses: \.\/\.github\/actions\/setup-pnpm/g)?.length, 1);
   assert.equal(fanout.match(/uses: \.\/\.github\/actions\/setup-state/g)?.length, 1);
-  assert.equal(fanout.match(/uses: \.\/\.github\/actions\/route-scheduled-target/g)?.length, 11);
+  assert.equal(fanout.match(/uses: \.\/\.github\/actions\/route-scheduled-target/g)?.length, 12);
   assert.equal(fanout.match(/gh workflow run/g)?.length, 1);
   assert.match(fanout, /target_repo=valkyriweb\/openclaw-claude/);
   assert.match(fanout, /lifecycle_only=true/);
@@ -426,7 +443,7 @@ test("comment router mints target tokens through the routed facade", () => {
       entry.target_repo !== "leo-labs-ai/paperclip" &&
       (entry.skip_comment_router_schedule !== true || entry.pi_review_lifecycle === true),
   );
-  assert.equal(scheduled.length, 12);
+  assert.equal(scheduled.length, 13);
   for (const entry of scheduled) {
     if (entry.pi_review_lifecycle === true) {
       assert.equal(entry.target_repo, "valkyriweb/openclaw-claude");
@@ -449,16 +466,17 @@ test("comment-router schedule skip flag isolates openclaw-claude without droppin
     !repos.includes("CLIP-SA/core-ai"),
     "core-ai is archived and must stay out of the allowlist",
   );
-  assert.equal(repos.length, 15);
+  assert.equal(repos.length, 16);
 
   const scheduled = config.repositories
     .filter((entry) => entry.target_repo !== "leo-labs-ai/paperclip")
     .filter((entry) => entry.skip_comment_router_schedule !== true)
     .map((entry) => entry.target_repo);
-  assert.equal(scheduled.length, 11);
+  assert.equal(scheduled.length, 12);
   assert.ok(!scheduled.includes("valkyriweb/openclaw-claude"));
   assert.ok(!scheduled.includes("leo-labs-ai/paperclip"));
   for (const keep of [
+    "bermont-digital/bermont-kube",
     "bermont-digital/sale-sight-plugin",
     "bermont-digital/smilerite",
     "CLIP-SA/core-wholesale",
@@ -482,7 +500,7 @@ test("native Pi target receives lifecycle-only recovery, not generic schedule sc
       entry.target_repo !== "leo-labs-ai/paperclip" &&
       (entry.skip_comment_router_schedule !== true || entry.pi_review_lifecycle === true),
   );
-  assert.equal(scheduled.length, 12);
+  assert.equal(scheduled.length, 13);
   const native = scheduled.filter((entry) => entry.pi_review_lifecycle === true);
   assert.deepEqual(
     native.map((entry) => entry.target_repo),

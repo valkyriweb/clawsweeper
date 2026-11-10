@@ -55,6 +55,36 @@ test("automation policies are explicit and fail closed for protected targets", (
   assert.equal(automationPolicyBlockReason("valkyriweb/clawsweeper", "merge"), null);
 });
 
+test("Bermont Kube permits review but blocks every mutation capability", () => {
+  const profile = repositoryProfileFor("bermont-digital/bermont-kube");
+  assert.equal(profile.automationPolicy, "review_only");
+  assert.equal(profile.githubAppCredentialRoute, "bermont-digital");
+  assert.equal(profile.checkoutDir, "bermont-kube");
+  assert.equal(profile.issueCloseDryRun, true);
+  assert.deepEqual(profile.applyCloseRules, { issue: [], pull_request: [] });
+  assert.equal(profile.docsMaintainer.enabled, false);
+  assert.deepEqual(resolveAutomationCapabilities(profile.automationPolicy), {
+    review: true,
+    proposals: true,
+    repair: false,
+    branchPush: false,
+    pullRequest: false,
+    merge: false,
+    close: false,
+    labels: false,
+  });
+  for (const capability of [
+    "repair",
+    "branch_push",
+    "pull_request",
+    "merge",
+    "close",
+    "label",
+  ] as const) {
+    assert.match(automationPolicyBlockReason(profile.targetRepo, capability) ?? "", /review_only/);
+  }
+});
+
 test("only the client repositories are held from low-risk auto-pass", () => {
   assert.deepEqual(
     REPOSITORY_PROFILES.filter((profile) => profile.sensitiveRepository === true).map(

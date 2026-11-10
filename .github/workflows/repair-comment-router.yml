@@ -223,6 +223,20 @@ jobs:
           done <<< "$listed"
           [ "$missing" -eq 0 ]
 
+      - name: Route bermont-digital/bermont-kube
+        if: ${{ !cancelled() && steps.targets.outcome == 'success' && contains(steps.targets.outputs.repos, ',bermont-digital/bermont-kube,') }}
+        uses: ./.github/actions/route-scheduled-target
+        with:
+          target-repo: bermont-digital/bermont-kube
+          lifecycle-only: "false"
+          valkyriweb-client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
+          valkyriweb-private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
+          bermont-digital-client-id: ${{ vars.BERMONT_DIGITAL_CLAWSWEEPER_APP_CLIENT_ID }}
+          bermont-digital-private-key: ${{ secrets.BERMONT_DIGITAL_CLAWSWEEPER_APP_PRIVATE_KEY }}
+          clawrouter-api-key: ${{ secrets.CLAWROUTER_API_KEY }}
+          dispatch-token: ${{ github.token }}
+          allow-merge: ${{ vars.CLAWSWEEPER_ALLOW_MERGE || '0' }}
+
       - name: Route bermont-digital/sale-sight-plugin
         if: ${{ !cancelled() && steps.targets.outcome == 'success' && contains(steps.targets.outputs.repos, ',bermont-digital/sale-sight-plugin,') }}
         uses: ./.github/actions/route-scheduled-target

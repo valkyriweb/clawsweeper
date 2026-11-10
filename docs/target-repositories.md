@@ -85,6 +85,16 @@ auto-close policy. Other configured targets default to safer repo-local rules:
 issues are review/comment-only, and PRs may auto-close only when the same
 change is certainly already implemented on `main`.
 
+## Bermont Kube
+
+`bermont-digital/bermont-kube` is a private client infrastructure target with
+`automation_policy: "review_only"` and `github_app_credential_route: "bermont-digital"`.
+It participates in the scheduled engine review/comment route, including weekly
+cluster-health issues. Both close-rule lists are empty and issue closure stays
+dry-run. No autofix, fix PR creation, auto-merge, or auto-close is permitted.
+All remediation and cluster changes remain human-owned. No target-side changes
+or credentials are required.
+
 ## Generic OpenClaw Fallback
 
 The fallback lets a newly installed OpenClaw repo dispatch to ClawSweeper
