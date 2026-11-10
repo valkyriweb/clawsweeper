@@ -10,6 +10,19 @@
   },
   "repositories": [
     {
+      "target_repo": "bermont-digital/bermont-kube",
+      "display_name": "Bermont Kube",
+      "checkout_dir": "bermont-kube",
+      "github_app_credential_route": "bermont-digital",
+      "automation_policy": "review_only",
+      "issue_close_dry_run": true,
+      "prompt_note": "Bermont Kube is a private client Kubernetes infrastructure repository. Review cluster health reports, GitOps configuration, security, availability, and rollback evidence. Findings and remediation proposals require human review; never create fixes, push branches, open fix PRs, merge, close issues or PRs, or deploy cluster changes automatically.",
+      "apply_close_rules": {
+        "issue": [],
+        "pull_request": []
+      }
+    },
+    {
       "target_repo": "bermont-digital/sale-sight-plugin",
       "display_name": "SaleSight Plugin",
       "checkout_dir": "sale-sight-plugin",
