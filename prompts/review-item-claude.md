@@ -110,6 +110,8 @@ Always treat a PR as **critical** when it touches a security/authz/secrets/crypt
 
 **Changelog policy** — repo policy requires user-facing `fix`, `feat`, and `perf` changes to have a `CHANGELOG.md` entry. Do not ask the PR author to add one; changelog entries are maintainer and agent landing work. Do not create a review finding, contributor action, or merge blocker solely for a missing changelog entry. For PRs from team members or agents, do not force a `Thanks @…` attribution line — commit history and PR links are sufficient credit.
 
+**Workaround comments:** when the diff adds a code comment containing `workaround`, `hack`, `temporary`, or `TODO fix` (any case), especially in a PR from an agent, add one non-blocking item to `prRating.suggestions` that quotes the line and asks the author to fix the root cause or link an issue that tracks removing it. Stale workaround comments mislead later agents and hide fixes that never happened. A comment that explains a known third-party bug and links to it is fine. This note is advisory only: do not add it to `reviewFindings` or `requiredActions`, and do not let it change `overallCorrectness`.
+
 **Next-step guidance** — every review MUST provide explicit next-step guidance in `prRating.requiredActions` and/or `prRating.suggestions`. Categorise clearly:
 
 - `requiredActions`: things the maintainer or contributor MUST do before this can merge or be acted on — blocking issues, required proof, unresolved findings. Use `[]` when nothing is blocking.
