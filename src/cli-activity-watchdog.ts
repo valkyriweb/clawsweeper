@@ -159,6 +159,10 @@ child.on("error", (error) => {
   process.stderr.write(stderr);
   finish(127);
 });
+// A child that exits before draining its prompt closes the pipe while the
+// helper is still writing; the resulting EPIPE must not replace the child's
+// own exit status and diagnostics with an unhandled-error stack trace.
+child.stdin.on("error", () => {});
 child.on("close", (code, signal) => {
   if (settled) return;
   if (signal) stderr += "\n[clawsweeper] " + request.command + " exited via signal " + signal + "\n";
