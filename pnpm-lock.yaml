@@ -21,6 +21,9 @@ importers:
       '@oxlint/plugins':
         specifier: 1.62.0
         version: 1.62.0
+      '@pierre/words':
+        specifier: 0.2.2
+        version: 0.2.2
       '@types/markdown-it':
         specifier: ^14.2.0
         version: 14.2.0
@@ -479,6 +482,17 @@ packages:
     resolution: {integrity: sha512-BgKRw631mImmxuGuRoWaRT8AvNSJCfJvR7lDzP1jR3sBAa7q8P/Ii+lcEOEFZsfcfpkXLyUKGEQLYXWqb60wvw==}
     engines: {node: ^12.22.0 || ^14.17.0 || >=16.0.0}
 
+  '@pierre/words@0.2.2':
+    resolution: {integrity: sha512-gOMolXeQzPK9IVNDimh8pronqzpFISFxp+rhobKT8NYQsTOpDLQKgr0rjwZn3I/kHLF+Sqoe2aIO/R7H71IzwQ==}
+    peerDependencies:
+      '@pierre/highlights': '>=0.5.1'
+      react: ^18.3.1 || ^19.0.0
+    peerDependenciesMeta:
+      '@pierre/highlights':
+        optional: true
+      react:
+        optional: true
+
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
 
@@ -596,6 +610,7 @@ packages:
 
   mdurl@2.1.0:
     resolution: {integrity: sha512-1+HBaOx0zi/dQWht8rNv9MYf9qqpqL/kxI0hXImU6Y547zM6Sni8BQibt7ifgMcYtQg41ao3Ivd6cnSM86inpg==}
+
   oxfmt@0.47.0:
     resolution: {integrity: sha512-OFbkbzxKCpooQEnRmpTDnuwTX8KHXzZTQ4Df/hz85fpS67Pl+lxPEFvUtin56HIIS0B1k4X8oIzTXRZPufA2CA==}
     engines: {node: ^20.19.0 || >=22.12.0}
@@ -871,6 +886,8 @@ snapshots:
 
   '@oxlint/plugins@1.62.0': {}
 
+  '@pierre/words@0.2.2': {}
+
   '@standard-schema/spec@1.1.0': {}
 
   '@types/linkify-it@5.0.0': {}
@@ -990,6 +1007,7 @@ snapshots:
       uc.micro: 3.0.0
 
   mdurl@2.1.0: {}
+
   oxfmt@0.47.0:
     dependencies:
       tinypool: 2.1.0
