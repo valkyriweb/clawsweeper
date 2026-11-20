@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import path from "node:path";
+import { createHtmlRenderer } from "@pierre/words/html";
 import { socialCardPng } from "./social-card.mjs";
 
 const root = process.cwd();
@@ -190,160 +191,33 @@ function titleize(input) {
 }
 
 function markdownToHtml(markdown, currentRel) {
-  const lines = markdown.replace(/\r\n/g, "\n").split("\n");
-  const html = [];
-  let paragraph = [];
-  let list = null;
-  let fence = null;
-
-  const flushParagraph = () => {
-    if (!paragraph.length) return;
-    html.push(`<p>${inline(paragraph.join(" "), currentRel)}</p>`);
-    paragraph = [];
-  };
-  const closeList = () => {
-    if (!list) return;
-    html.push(`</${list}>`);
-    list = null;
-  };
-  const splitRow = (line) =>
-    line
-      .replace(/^\s*\|/, "")
-      .replace(/\|\s*$/, "")
-      .split("|")
-      .map((s) => s.trim());
-  const isDivider = (line) => /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?\s*$/.test(line);
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (line.trim().startsWith("<img ")) {
-      flushParagraph();
-      closeList();
-      continue;
-    }
-    const fenceMatch = line.match(/^```(\w+)?\s*$/);
-    if (fenceMatch) {
-      flushParagraph();
-      closeList();
-      if (fence) {
-        html.push(
-          `<pre><code class="language-${fence.lang}">${escapeHtml(fence.lines.join("\n"))}</code></pre>`,
-        );
-        fence = null;
-      } else {
-        fence = { lang: fenceMatch[1] || "text", lines: [] };
-      }
-      continue;
-    }
-    if (fence) {
-      fence.lines.push(line);
-      continue;
-    }
-    if (!line.trim()) {
-      flushParagraph();
-      closeList();
-      continue;
-    }
-    const heading = line.match(/^(#{1,4})\s+(.+)$/);
-    if (heading) {
-      flushParagraph();
-      closeList();
-      const level = heading[1].length;
-      const text = heading[2].trim().replace(/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]\s+/u, "");
-      const id = slug(text);
-      const inner = inline(text, currentRel);
-      if (level === 1) {
-        html.push(`<h1 id="${id}">${inner}</h1>`);
-      } else {
-        html.push(
-          `<h${level} id="${id}"><a class="anchor" href="#${id}" aria-label="Anchor link">#</a>${inner}</h${level}>`,
-        );
-      }
-      continue;
-    }
-    if (
-      line.trimStart().startsWith("|") &&
-      line.includes("|", line.indexOf("|") + 1) &&
-      isDivider(lines[i + 1] || "")
-    ) {
-      flushParagraph();
-      closeList();
-      const header = splitRow(line);
-      const aligns = splitRow(lines[i + 1]).map((cell) => {
-        const left = cell.startsWith(":");
-        const right = cell.endsWith(":");
-        return right && left ? "center" : right ? "right" : left ? "left" : "";
-      });
-      i += 1;
-      const rows = [];
-      while (i + 1 < lines.length && lines[i + 1].trimStart().startsWith("|")) {
-        i += 1;
-        rows.push(splitRow(lines[i]));
-      }
-      const th = header
-        .map(
-          (c, idx) =>
-            `<th${aligns[idx] ? ` style="text-align:${aligns[idx]}"` : ""}>${inline(c, currentRel)}</th>`,
-        )
-        .join("");
-      const tb = rows
-        .map(
-          (r) =>
-            `<tr>${r.map((c, idx) => `<td${aligns[idx] ? ` style="text-align:${aligns[idx]}"` : ""}>${inline(c, currentRel)}</td>`).join("")}</tr>`,
-        )
-        .join("");
-      html.push(`<table><thead><tr>${th}</tr></thead><tbody>${tb}</tbody></table>`);
-      continue;
-    }
-    const blockquote = line.match(/^>\s?(.*)$/);
-    if (blockquote) {
-      flushParagraph();
-      closeList();
-      const buf = [blockquote[1]];
-      while (i + 1 < lines.length && /^>\s?/.test(lines[i + 1])) {
-        i += 1;
-        buf.push(lines[i].replace(/^>\s?/, ""));
-      }
-      html.push(`<blockquote><p>${inline(buf.join(" "), currentRel)}</p></blockquote>`);
-      continue;
-    }
-    const bullet = line.match(/^\s*-\s+(.+)$/);
-    const numbered = line.match(/^\s*\d+\.\s+(.+)$/);
-    if (bullet || numbered) {
-      flushParagraph();
-      const tag = bullet ? "ul" : "ol";
-      if (list && list !== tag) closeList();
-      if (!list) {
-        list = tag;
-        html.push(`<${tag}>`);
-      }
-      html.push(`<li>${inline((bullet || numbered)[1], currentRel)}</li>`);
-      continue;
-    }
-    paragraph.push(line.trim());
+  const renderer = createHtmlRenderer({
+    controls: false,
+    lineNumbers: false,
+    disallowedElements: ["img"],
+    urlTransform: (href, key) => (key === "href" ? rewriteHref(href, currentRel) : null),
+    components: { h1: addAnchor, h2: addAnchor, h3: addAnchor, h4: addAnchor },
+  });
+  try {
+    return renderer.render(markdown, false).html;
+  } finally {
+    renderer.dispose();
   }
-  flushParagraph();
-  closeList();
-  return html.join("\n");
 }
 
-function inline(text, currentRel) {
-  const stash = [];
-  let out = text.replace(/`([^`]+)`/g, (_, code) => {
-    stash.push(`<code>${escapeHtml(code)}</code>`);
-    return `@@CODE${stash.length - 1}@@`;
+function addAnchor(html) {
+  return html.replace(/^<h([1-4])[^>]*>([\s\S]*)<\/h\1>$/, (_, level, contents) => {
+    const text = contents.replace(/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]\s+/u, "");
+    const id = slug(text.replace(/<[^>]*>|&(?:#[0-9]+|#x[0-9a-f]+|[a-z]+);/gi, ""));
+    const anchor =
+      level === "1" ? "" : '<a class="anchor" href="#' + id + '" aria-label="Anchor link">#</a>';
+    return "<h" + level + ' id="' + id + '">' + anchor + text + "</h" + level + ">";
   });
-  out = escapeHtml(out)
-    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-    .replace(
-      /\[([^\]]+)\]\(([^)]+)\)/g,
-      (_, label, href) => `<a href="${escapeAttr(rewriteHref(href, currentRel))}">${label}</a>`,
-    );
-  return out.replace(/@@CODE(\d+)@@/g, (_, i) => stash[Number(i)]);
 }
 
 function rewriteHref(href, currentRel) {
-  if (/^(https?:|mailto:|#)/.test(href)) return href;
+  if (/^(https?:|mailto:|#)/i.test(href)) return href;
+  if (/^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(href)) return null;
   const [raw, hash = ""] = href.split("#");
   if (!raw) return `#${hash}`;
   if (!raw.endsWith(".md")) return href;
@@ -368,7 +242,7 @@ function tocFromHtml(html) {
   }
   if (items.length < 2) return "";
   return `<nav class="toc" aria-label="On this page"><h2>On this page</h2>${items
-    .map((i) => `<a class="toc-l${i.level}" href="#${i.id}">${escapeHtml(i.text)}</a>`)
+    .map((i) => `<a class="toc-l${i.level}" href="#${i.id}">${i.text}</a>`)
     .join("")}</nav>`;
 }
 
@@ -784,6 +658,7 @@ main{min-width:0;padding:28px clamp(20px,4.5vw,60px) 36px;max-width:1240px;margi
 .doc strong{font-weight:600}
 .doc code{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:.86em;background:#f0e0bf;border:1px solid #e2cf9f;border-radius:5px;padding:.08em .34em}
 .doc pre{position:relative;overflow:auto;background:var(--code-bg);color:var(--code-fg);border-radius:11px;padding:16px 20px;border:1px solid #06141660;box-shadow:inset 0 0 0 1px rgba(255,255,255,.03);margin:1.35em 0;font-size:.88em;scrollbar-width:thin;scrollbar-color:#3a4a47 transparent}
+.doc [data-markdown="code-header"]{display:none}
 .doc pre::-webkit-scrollbar{height:8px}
 .doc pre::-webkit-scrollbar-thumb{background:#3a4a47;border-radius:8px}
 .doc pre code{background:transparent;border:0;color:inherit;padding:0;font-size:1em}
