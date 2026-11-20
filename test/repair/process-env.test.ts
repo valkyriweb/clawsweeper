@@ -15,8 +15,13 @@ test("codexSubprocessEnv forces ClawSweeper git identity and strips tokens", () 
       CLAWSWEEPER_GIT_USER_NAME: "clawsweeper-repair",
       CLAWSWEEPER_GIT_USER_EMAIL: "bot@example.invalid",
       CLAWSWEEPER_TARGET_GH_TOKEN: "secret",
+      CLAWSWEEPER_REVIEW_TOKEN: "secret",
+      CLAWSWEEPER_APP_PRIVATE_KEY: "secret",
+      NODE_AUTH_TOKEN: "secret",
       GH_TOKEN: "secret",
       GITHUB_TOKEN: "secret",
+      GH_ENTERPRISE_TOKEN: "secret",
+      GITHUB_ENTERPRISE_TOKEN: "secret",
       GITHUB_ACTIONS: "true",
       OPENAI_API_KEY: "secret",
       CODEX_API_KEY: "secret",
@@ -31,6 +36,11 @@ test("codexSubprocessEnv forces ClawSweeper git identity and strips tokens", () 
       assert.equal(env.GH_TOKEN, undefined);
       assert.equal(env.GITHUB_TOKEN, undefined);
       assert.equal(env.CLAWSWEEPER_TARGET_GH_TOKEN, undefined);
+      assert.equal(env.CLAWSWEEPER_REVIEW_TOKEN, undefined);
+      assert.equal(env.CLAWSWEEPER_APP_PRIVATE_KEY, undefined);
+      assert.equal(env.NODE_AUTH_TOKEN, undefined);
+      assert.equal(env.GH_ENTERPRISE_TOKEN, undefined);
+      assert.equal(env.GITHUB_ENTERPRISE_TOKEN, undefined);
       assert.equal(env.OPENAI_API_KEY, undefined);
       assert.equal(env.CODEX_API_KEY, undefined);
     },

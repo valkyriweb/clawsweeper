@@ -69,10 +69,18 @@ import {
 } from "./constants.js";
 import {
   buildFixPrompt,
+  buildRepairReviewPrompt,
   buildRepositoryContext,
   renderFixArtifactForPrompt,
 } from "./fix-prompt-builder.js";
 import { ghPagedLimit } from "./github-cli.js";
+import {
+  assertRepairFeedbackHead,
+  RepairFeedbackError,
+  renderRepairFeedback,
+  selectRepairFeedback,
+  type RepairFeedback,
+} from "./repair-feedback.js";
 import {
   detectStuckFindings,
   stuckFindingsToTelemetry,
@@ -573,6 +581,23 @@ if (scopeBlock) {
   process.exit(0);
 }
 
+let repairFeedback: RepairFeedback | null;
+try {
+  repairFeedback = loadRepairFeedback(fixArtifact);
+} catch (error) {
+  if (!(error instanceof RepairFeedbackError)) throw error;
+  report.status = "blocked";
+  report.reason = error.message;
+  report.actions.push({
+    action: "execute_fix",
+    status: "blocked",
+    repair_strategy: fixArtifact.repair_strategy,
+    reason: error.message,
+  });
+  writeReport(report, resultPath);
+  process.exit(0);
+}
+
 const sourceBranchPreflight = preflightRepairSourceBranchWrite(fixArtifact);
 if (sourceBranchPreflight.status === "replace_uneditable_branch") {
   report.source_branch_preflight = sourceBranchPreflight;
@@ -766,6 +791,7 @@ updateAutomergeProgressStatus({
 });
 
 function isBlockedFixError(error: JsonValue) {
+  if (error instanceof RepairFeedbackError) return true;
   if (isRepairBranchPushRace(error)) return true;
   if (isRepairBranchPushBlocked(error)) return true;
   if (isRetryableCodexTransportError(String(error?.message ?? error))) return true;
@@ -776,6 +802,7 @@ function isBlockedFixError(error: JsonValue) {
 }
 
 function shouldFallbackToReplacementAfterRepairError(error: JsonValue) {
+  if (error instanceof RepairFeedbackError) return false;
   if (isRepairBranchPushRace(error)) return false;
   if (isRepairBranchPushBlocked(error)) return false;
   const message = String(error?.message ?? error);
@@ -783,6 +810,42 @@ function shouldFallbackToReplacementAfterRepairError(error: JsonValue) {
   return /maintainer_can_modify=false|missing head repo\/ref|source PR #\d+ is (?:closed|merged)|permission denied|permission to [^\s]+ denied|remote rejected|could not push|repository not found|not found/i.test(
     message,
   );
+}
+
+function loadRepairFeedback(fixArtifact: LooseRecord): RepairFeedback | null {
+  if (fixArtifact.repair_strategy === "new_fix_pr") return null;
+  const sourcePr = firstTargetSourcePullRequest(fixArtifact.source_prs, result.repo);
+  if (!sourcePr) throw new RepairFeedbackError("repair feedback requires a target-repo source PR");
+  let clusterPlan;
+  try {
+    clusterPlan = JSON.parse(
+      fs.readFileSync(path.join(path.dirname(resultPath), "cluster-plan.json"), "utf8"),
+    );
+  } catch {
+    throw new RepairFeedbackError(`PR #${sourcePr.number} feedback plan is unavailable`);
+  }
+  return selectRepairFeedback({
+    clusterPlan,
+    clusterId: result.cluster_id,
+    sourcePr,
+    sourceHead: liveFeedbackHead(sourcePr.number),
+  });
+}
+
+function liveFeedbackHead(number: number): unknown {
+  try {
+    const pull = fetchPullRequest(result.repo, number);
+    return pull.state === "open" ? pull.head?.sha : null;
+  } catch {
+    throw new RepairFeedbackError(`PR #${number} feedback source could not be verified`);
+  }
+}
+
+function currentRepairFeedback() {
+  if (repairFeedback) {
+    assertRepairFeedbackHead(repairFeedback, liveFeedbackHead(repairFeedback.pr_number));
+  }
+  return repairFeedback;
 }
 
 function isExecutableFixAction(action: LooseRecord, promotedReplacement: JsonValue) {
@@ -942,6 +1005,7 @@ function executeRepairBranch({ fixArtifact, targetDir }: LooseRecord) {
   });
   ensureMergeBaseAvailable({ targetDir, baseBranch });
   const sourceHead = currentHead(targetDir);
+  if (repairFeedback) assertRepairFeedbackHead(repairFeedback, sourceHead);
   logProgress("preparing target toolchain", { source_head: sourceHead });
   prepareTargetToolchain(targetDir, currentTargetValidationOptions());
   const codexOwnsInitialRebase =
@@ -1065,6 +1129,9 @@ function pushRepairBranchAndUpdateStatus({
     assertRepairBranchWritable({ targetDir, pull, rewritten: branchUpdate.rewritten });
   }
   const livePull = fetchPullRequest(result.repo, sourcePr.number);
+  if (repairFeedback) {
+    assertRepairFeedbackHead(repairFeedback, livePull.state === "open" ? livePull.head?.sha : null);
+  }
   const livePauseBlock = liveRepairPauseBlock({
     pull: livePull,
     number: sourcePr.number,
@@ -1453,6 +1520,9 @@ function tryAutomergeFastRebaseRepair({
   sourceHead,
   rebaseResult,
 }: LooseRecord) {
+  if (repairFeedback?.entries.length) {
+    return { status: "disabled", reason: "source PR feedback requires edit and review" };
+  }
   if (
     !canUseAutomergeFastRebase({
       isAutomergeRepair: isAutomergeRepairJob(),
@@ -1641,6 +1711,7 @@ function executeReplacementBranch({
     baseBranch,
     fixArtifact,
   });
+  if (repairFeedback) assertRepairFeedbackHead(repairFeedback, branchState.source_head_sha);
   prepareTargetToolchain(targetDir, currentTargetValidationOptions());
   const rebaseResult = rebaseOntoBase({ targetDir, baseBranch });
   const mechanicalConflictResolution = tryResolveMechanicalRebaseConflicts({
@@ -2086,10 +2157,12 @@ function editValidatePrepareMerge({
   rebaseResult = null,
   stuckFindings = [] as readonly StuckFinding[],
 }: LooseRecord) {
+  const hasFeedback = Boolean(repairFeedback?.entries.length);
   let producedChanges = allowExistingChanges;
   let previousSummary = "";
   const checkpointCommits: JsonValue[] = [];
   if (
+    !hasFeedback &&
     !producedChanges &&
     canTreatRebaseAsCompleteRepair({
       fixArtifact,
@@ -2104,6 +2177,7 @@ function editValidatePrepareMerge({
   }
   const rebaseUnmergedPaths = !producedChanges ? unmergedPaths(targetDir) : [];
   if (
+    !hasFeedback &&
     !producedChanges &&
     canTreatRebaseAsCompleteRepair({
       fixArtifact,
@@ -2120,7 +2194,7 @@ function editValidatePrepareMerge({
       });
     }
   }
-  if (!producedChanges && !reconcileWithBase) {
+  if (!hasFeedback && !producedChanges && !reconcileWithBase) {
     const mechanicalFix = applyMechanicalChangelogFix({ fixArtifact, targetDir });
     producedChanges = mechanicalFix?.status === "applied";
     if (producedChanges) logProgress("applied mechanical changelog fix");
@@ -2147,6 +2221,7 @@ function editValidatePrepareMerge({
         maxEditAttempts,
         validationCommands: validationPreflight.resolved_commands ?? [],
         isAutomergeRepair: isAutomergeRepairJob(),
+        repairFeedback: currentRepairFeedback(),
         stuckFindings,
       });
       const summaryPath = path.join(workRoot, `${mode}-codex-summary-${attempt}.md`);
@@ -2305,7 +2380,7 @@ function editValidatePrepareMerge({
 
   let codexReview = null;
   const maxFinalBaseSyncAttempts = Math.max(
-    1,
+    hasFeedback ? 2 : 1,
     Number(process.env.CLAWSWEEPER_FINAL_BASE_SYNC_ATTEMPTS ?? 1),
   );
   for (let attempt = 1; attempt <= maxFinalBaseSyncAttempts; attempt += 1) {
@@ -2355,6 +2430,9 @@ function editValidatePrepareMerge({
       headSha: currentHead(targetDir),
     });
     if (sync.status === "already-current") break;
+    if (hasFeedback && attempt === maxFinalBaseSyncAttempts) {
+      throw new RepairFeedbackError("source PR feedback was not reviewed on the final base");
+    }
     const checkpoint = commitCheckpointIfNeeded({
       targetDir,
       message: `fix(clawsweeper): reconcile ${result.cluster_id} with main (${attempt})`,
@@ -2515,6 +2593,7 @@ function runCodexBaseReconcile({
       maxEditAttempts,
       validationCommands: validationPreflight.resolved_commands ?? [],
       isAutomergeRepair: isAutomergeRepairJob(),
+      repairFeedback: currentRepairFeedback(),
     });
     const summaryPath = path.join(
       workRoot,
@@ -2824,7 +2903,10 @@ function validateAndReviewLoop({
         baseBranch,
       );
       runDiffCheck({ targetDir, baseBranch });
-      if (canSkipInternalCodexReviewForRepairDelta(validationPlan)) {
+      if (
+        !repairFeedback?.entries.length &&
+        canSkipInternalCodexReviewForRepairDelta(validationPlan)
+      ) {
         return {
           status: "passed_repair_delta_validation",
           summary:
@@ -2924,6 +3006,9 @@ function validateAndReviewLoop({
     if (isCleanCodexReview(lastReview)) return lastReview;
     if (attempt === maxReviewAttempts) {
       const finalSummary = codexReviewFailureSummary(lastReview);
+      if (repairFeedback?.entries.length) {
+        throw new Error(`Codex /review did not pass after ${attempt} attempt(s): ${finalSummary}`);
+      }
       runCodexReviewFix({
         fixArtifact,
         targetDir,
@@ -3006,37 +3091,13 @@ function runCodexReview({
 }: LooseRecord) {
   const outputPath = path.join(workRoot, `${mode}-codex-review-${attempt}.json`);
   const schemaPath = codexReviewSchemaPath();
-  const prompt = [
-    "/review",
-    "",
-    `Review the current ClawSweeper Repair fix branch diff against origin/${baseBranch} before it can be merged.`,
-    "",
-    "Required checks:",
-    "- security-sensitive issues are resolved or absent;",
-    "- human PR/review comments from the artifact are addressed;",
-    "- review-bot comments from Greptile, Codex, Asile, CodeRabbit, Copilot, and similar bots are addressed;",
-    "- code is narrow, safe, and merge-ready;",
-    "- validation commands are sufficient for the changed surface.",
-    "",
-    "Validation policy:",
-    "- `pnpm check:changed` plus git diff checks is sufficient local proof for OpenClaw changed-surface fixes;",
-    "- do not require full CI, full test suites, e2e/live/docker lanes, or unrelated flaky main checks to pass;",
-    "- block only when the changed-lane proof fails or the current diff plausibly caused the failure.",
-    "- repository policy overrides fix artifact credit wording: for openclaw/openclaw changelog entries, do not require or re-add forbidden `Thanks @codex`, `Thanks @openclaw`, or `Thanks @steipete` attribution; PR body/history/source links are acceptable credit for those source authors.",
-    "",
-    `Validation commands actually run: ${validationCommands.join("; ") || "none"}`,
-    validationPlan
-      ? `Validation scope: ${validationPlan.scope}; ${validationPlan.reason}; changed files: ${(validationPlan.changed_files ?? []).join(", ") || "none"}`
-      : "",
-    `Original artifact validation commands: ${(fixArtifact.validation_commands ?? []).join("; ")}`,
-    "",
-    "Return JSON only. If anything blocks merge, include actionable findings.",
-    "",
-    "Fix artifact:",
-    "```json",
-    renderFixArtifactForPrompt(fixArtifact),
-    "```",
-  ].join("\n");
+  const prompt = buildRepairReviewPrompt({
+    fixArtifact,
+    repairFeedback: currentRepairFeedback(),
+    baseBranch,
+    validationCommands,
+    validationPlan,
+  });
   const reviewTimeoutMs = currentCodexTimeoutMs();
   const transcriptPath = path.join(workRoot, `${mode}-codex-review-${attempt}.jsonl`);
   const stderrPath = path.join(workRoot, `${mode}-codex-review-${attempt}.stderr.log`);
@@ -3164,6 +3225,7 @@ function runCodexReviewFix({ fixArtifact, targetDir, mode, review, attempt }: Lo
     "```json",
     renderFixArtifactForPrompt(fixArtifact),
     "```",
+    renderRepairFeedback(currentRepairFeedback()),
   ].join("\n");
   const reviewFixTimeoutMs = currentCodexTimeoutMs();
   const outputPath = path.join(workRoot, `${mode}-codex-review-fix-${attempt}.md`);
@@ -3257,6 +3319,7 @@ function runCodexValidationFix({
     "```json",
     renderFixArtifactForPrompt(fixArtifact),
     "```",
+    renderRepairFeedback(currentRepairFeedback()),
   ].join("\n");
   const validationFixTimeoutMs = currentCodexTimeoutMs();
   const outputPath = path.join(workRoot, `${mode}-codex-validation-fix-${attempt}.md`);
@@ -3526,6 +3589,7 @@ function checkoutRecoverableReplacementBranch({
           source_head_sha: checkout.sourceHeadSha,
         };
       }
+      return { resumed: true, branch, source_head_sha: sourceHeadSha };
     }
     return { resumed: true, branch };
   }
@@ -3560,6 +3624,7 @@ function commitCheckpointIfNeeded({ targetDir, message, trailers = [] }: LooseRe
 }
 
 function pushRecoverableBranch({ targetDir, branch }: LooseRecord) {
+  currentRepairFeedback();
   const remoteSha = remoteBranchSha({ targetDir, branch });
   const targetRef = `refs/heads/${branch}`;
   const args = remoteSha

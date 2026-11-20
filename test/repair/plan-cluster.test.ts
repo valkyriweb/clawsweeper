@@ -222,6 +222,54 @@ test("plan-cluster treats same-repo PR branches as writable despite raw maintain
   assert.match(pull.branch_write_reason, /same-repo head branch/);
 });
 
+test("plan-cluster records review and inline commit IDs for the feedback snapshot", (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "clawsweeper-plan-feedback-"));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const fakeGh = path.join(tmp, "gh");
+  const jobPath = path.join(tmp, "job.md");
+  const runDir = path.join(tmp, "run");
+  fs.writeFileSync(fakeGh, fakeGhScript(), { mode: 0o755 });
+  fs.writeFileSync(
+    jobPath,
+    [
+      "---",
+      "repo: openclaw/openclaw",
+      "cluster_id: automerge-openclaw-openclaw-74134",
+      "mode: autonomous",
+      "allowed_actions:",
+      "  - fix",
+      "  - raise_pr",
+      "source: pr_automerge",
+      "canonical:",
+      "  - #74134",
+      "candidates:",
+      "  - #74134",
+      "allow_fix_pr: true",
+      "allow_merge: false",
+      "---",
+      "Repair ordinary docs feedback.",
+      "",
+    ].join("\n"),
+  );
+  execFileSync(process.execPath, ["dist/repair/plan-cluster.js", jobPath, "--run-dir", runDir], {
+    env: {
+      ...process.env,
+      PATH: `${tmp}${path.delimiter}${process.env.PATH}`,
+      GH_BIN: fakeGh,
+      CLAWSWEEPER_HYDRATE_COMMENTS: "1",
+      FAKE_GH_DOCS_FEEDBACK: "1",
+    },
+    stdio: "pipe",
+  });
+  const plan = JSON.parse(fs.readFileSync(path.join(runDir, "cluster-plan.json"), "utf8"));
+  const item = plan.items.find(({ number }) => number === 74134);
+  assert.equal(item.pull_request.feedback_hydrated, true);
+  assert.equal(item.comments[0].body_excerpt, "The setup page moved.");
+  assert.equal(item.pull_request.reviews[0].commit_id, item.pull_request.head_sha);
+  assert.equal(item.pull_request.review_comments[0].commit_id, item.pull_request.head_sha);
+  assert.equal(item.pull_request.review_comments[0].current_line, 4);
+});
+
 test("plan-cluster bounds PR file and commit hydration", () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "clawsweeper-plan-bounded-pr-"));
   const binDir = path.join(tmp, "bin");
@@ -356,6 +404,8 @@ function fakeGhScript() {
   return `#!/usr/bin/env node
 const fs = require("node:fs");
 const args = process.argv.slice(2);
+const docsFeedback = process.env.FAKE_GH_DOCS_FEEDBACK === "1";
+const docsHead = "a".repeat(40);
 if (process.env.FAKE_GH_LOG) fs.appendFileSync(process.env.FAKE_GH_LOG, args.join(" ") + "\\n");
 function write(value) {
   process.stdout.write(JSON.stringify(value));
@@ -393,7 +443,7 @@ if (endpoint === "repos/openclaw/openclaw/issues/74742") {
   process.exit(0);
 }
 if (endpoint === "repos/openclaw/openclaw/pulls/74134") {
-  write(pull(74134, "cca706a"));
+  write(pull(74134, docsFeedback ? docsHead : "cca706a"));
   process.exit(0);
 }
 if (endpoint === "repos/openclaw/openclaw/pulls/74742") {
@@ -412,7 +462,7 @@ function issue(number, labels, body) {
     labels: labels.map((name) => ({ name })),
     created_at: "2026-04-30T00:00:00Z",
     updated_at: "2026-04-30T00:00:00Z",
-    comments: 0,
+    comments: docsFeedback && number === 74134 ? 1 : 0,
     body,
     pull_request: {},
   };
@@ -440,11 +490,20 @@ function pull(number, sha) {
     deletions: 0,
     changed_files: large ? largeCount : 1,
     commits: large ? largeCount : 1,
-    review_comments: 0,
+    review_comments: docsFeedback && number === 74134 ? 1 : 0,
   };
 }
 function pagedResponse(endpoint) {
   const [endpointPath, query = ""] = endpoint.split("?");
+  if (docsFeedback && endpointPath.endsWith("/issues/74134/comments")) {
+    return [{ user: { login: "developer" }, body: "The setup page moved." }];
+  }
+  if (docsFeedback && endpointPath.endsWith("/pulls/74134/reviews")) {
+    return [{ state: "CHANGES_REQUESTED", commit_id: docsHead, body: "Fix the quickstart link." }];
+  }
+  if (docsFeedback && endpointPath.endsWith("/pulls/74134/comments")) {
+    return [{ commit_id: docsHead, path: "docs/start.md", line: 4, body: "Link to setup.md." }];
+  }
   const params = new URLSearchParams(query);
   const limit = Math.max(1, Number(params.get("per_page") || 1));
   const page = Math.max(1, Number(params.get("page") || 1));

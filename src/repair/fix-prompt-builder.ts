@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { runCommand as run } from "./command-runner.js";
 import type { JsonValue, LooseRecord } from "./json-types.js";
+import { renderRepairFeedback } from "./repair-feedback.js";
 import { renderStuckFindingsConstraint, type StuckFinding } from "./stuck-findings.js";
 import { compactText } from "./text-utils.js";
 
@@ -27,6 +28,7 @@ export function buildFixPrompt({
   maxEditAttempts,
   validationCommands,
   isAutomergeRepair = false,
+  repairFeedback = null,
   stuckFindings = [] as readonly StuckFinding[],
 }: LooseRecord) {
   return [
@@ -44,13 +46,13 @@ export function buildFixPrompt({
     "- use one repair loop: rebase to latest main, inspect review comments and failing checks, make the narrowest fix, run validation, and repeat until the branch is merge-ready or a concrete external blocker is proven;",
     "- preserve contributor credit in changelog/docs when the fix is user-facing;",
     "- address review-bot concerns named in the artifact;",
-    "- resolve actionable human review comments, bot comments, and requested changes named in the artifact;",
+    "- address actionable human review comments, bot comments, and requested changes in the supplied evidence;",
     "- fix relevant failing CI/check output named in the artifact; do not leave known changed-surface CI failures for a later pass;",
-    isAutomergeRepair ? renderAutomergeRepairGuidance() : "",
+    isAutomergeRepair ? renderAutomergeRepairGuidance(Boolean(repairFeedback)) : "",
     renderChangelogRule(fixArtifact),
     renderMergePolishGuidance(),
     "- prepare the PR so it can pass the ClawSweeper Repair merge_preflight gate;",
-    renderGitHubToolRule(isAutomergeRepair),
+    renderGitHubToolRule(isAutomergeRepair && !repairFeedback),
     "- do not create a final commit unless git rebase/merge conflict resolution requires it; ClawSweeper Repair checkpoints ordinary edits after you return;",
     "- ClawSweeper Repair will checkpoint and push your edits to the recovery branch after you return;",
     "- do not inspect or print environment variables, credentials, tokens, or secrets;",
@@ -84,9 +86,53 @@ export function buildFixPrompt({
     "```json",
     renderFixArtifactForPrompt(fixArtifact),
     "```",
+    renderRepairFeedback(repairFeedback),
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+export function buildRepairReviewPrompt({
+  fixArtifact,
+  repairFeedback = null,
+  baseBranch,
+  validationCommands,
+  validationPlan,
+}: LooseRecord) {
+  return [
+    "/review",
+    "",
+    `Review the current ClawSweeper Repair fix branch diff against origin/${baseBranch} before it can be merged.`,
+    "",
+    "Required checks:",
+    "- security-sensitive issues are resolved or absent;",
+    "- actionable human PR/review comments and review-bot feedback in the supplied evidence are addressed;",
+    "- code is narrow, safe, and merge-ready;",
+    "- validation commands are sufficient for the changed surface.",
+    repairFeedback
+      ? "- review the supplied feedback locally; do not call gh or fetch PR data;"
+      : "",
+    "",
+    "Validation policy:",
+    "- `pnpm check:changed` plus git diff checks is sufficient local proof for OpenClaw changed-surface fixes;",
+    "- do not require full CI, full test suites, e2e/live/docker lanes, or unrelated flaky main checks to pass;",
+    "- block only when the changed-lane proof fails or the current diff plausibly caused the failure.",
+    "- repository policy overrides fix artifact credit wording: for openclaw/openclaw changelog entries, do not require or re-add forbidden `Thanks @codex`, `Thanks @openclaw`, or `Thanks @steipete` attribution; PR body/history/source links are acceptable credit for those source authors.",
+    "",
+    `Validation commands actually run: ${validationCommands.join("; ") || "none"}`,
+    validationPlan
+      ? `Validation scope: ${validationPlan.scope}; ${validationPlan.reason}; changed files: ${(validationPlan.changed_files ?? []).join(", ") || "none"}`
+      : "",
+    `Original artifact validation commands: ${(fixArtifact.validation_commands ?? []).join("; ")}`,
+    "",
+    "Return JSON only. If anything blocks merge, include actionable findings.",
+    "",
+    "Fix artifact:",
+    "```json",
+    renderFixArtifactForPrompt(fixArtifact),
+    "```",
+    renderRepairFeedback(repairFeedback),
+  ].join("\n");
 }
 
 export function renderFixArtifactForPrompt(fixArtifact: JsonValue) {
@@ -97,7 +143,7 @@ export function renderFixArtifactForPrompt(fixArtifact: JsonValue) {
   const annotated =
     compacted && typeof compacted === "object" && !Array.isArray(compacted)
       ? {
-          _prompt_compaction: `Original fix artifact was ${raw.length} characters; long strings, arrays, and nested objects were truncated for Codex context. Use local repository discovery and read-only GitHub inspection if more detail is needed.`,
+          _prompt_compaction: `Original fix artifact was ${raw.length} characters; long strings, arrays, and nested objects were truncated for Codex context. Use local repository discovery and the supplied evidence if more detail is needed.`,
           ...compacted,
         }
       : {
@@ -216,10 +262,12 @@ function renderMergePolishGuidance() {
   ].join("\n");
 }
 
-function renderAutomergeRepairGuidance() {
+function renderAutomergeRepairGuidance(hasRepairFeedback: boolean) {
   return [
     "- automerge repair loop: treat this as direct PR repair work, not a planning exercise;",
-    "- inspect the PR comments, review threads, ClawSweeper verdict, and failing check evidence already provided; if read-only `gh` is available, use it to inspect missing PR comments, reviews, checks, and logs;",
+    hasRepairFeedback
+      ? "- inspect the supplied source PR feedback, ClawSweeper verdict, and failing check evidence; do not fetch PR data as a fallback;"
+      : "- inspect the PR comments, review threads, ClawSweeper verdict, and failing check evidence already provided; if read-only `gh` is available, use it to inspect missing PR comments, reviews, checks, and logs;",
     "- rebase this branch onto latest origin/main yourself and resolve conflicts;",
     "- address actionable PR comments and review findings;",
     "- fix failing CI/checks for this PR;",
