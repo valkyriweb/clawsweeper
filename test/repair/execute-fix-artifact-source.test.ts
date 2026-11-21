@@ -51,6 +51,17 @@ test("repair source branch writability preflight runs before expensive repair pr
   );
 });
 
+test("fix execution checks source feedback before model preflight and passes it to both prompts", () => {
+  const source = fs.readFileSync("src/repair/execute-fix-artifact.ts", "utf8");
+  const load = source.indexOf("repairFeedback = loadRepairFeedback(fixArtifact);");
+  const preflight = source.indexOf("const writePreflight = runCodexWritePreflight();");
+  assert.ok(load >= 0 && load < preflight);
+  for (const builder of ["buildFixPrompt", "buildRepairReviewPrompt"]) {
+    const call = source.match(new RegExp(`const prompt = ${builder}\\(\\{([\\s\\S]*?)\\}\\);`));
+    assert.match(call?.[1] ?? "", /repairFeedback: currentRepairFeedback\(\)/);
+  }
+});
+
 test("successful contributor branch pushes hand configured targets back to review", () => {
   const sourcePath = path.join(process.cwd(), "src/repair/execute-fix-artifact.ts");
   const source = fs.readFileSync(sourcePath, "utf8");

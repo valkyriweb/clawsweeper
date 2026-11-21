@@ -32,6 +32,10 @@ inputs:
     description: Git fetch depth for the generated state repository. Keep 0 for publish jobs that may rebase.
     required: false
     default: "0"
+  persist-credentials:
+    description: Leave state checkout credentials available for later git commands.
+    required: false
+    default: "true"
 runs:
   using: composite
   steps:
@@ -43,6 +47,7 @@ runs:
         token: ${{ inputs.token }}
         filter: ${{ inputs.filter }}
         fetch-depth: ${{ inputs.fetch-depth }}
+        persist-credentials: ${{ inputs.persist-credentials }}
 
     - name: Export state root
       shell: bash

@@ -308,6 +308,7 @@ jobs:
         with:
           filter: blob:none
           # Keep the same full-tree contract as the planning job above.
+          persist-credentials: false
           sparse-checkout: |
             /*
           sparse-checkout-cone-mode: false
@@ -327,6 +328,7 @@ jobs:
         with:
           token: ${{ steps.state-token.outputs.token }}
           state-repository: valkyriweb/clawsweeper-state
+          persist-credentials: "false"
 
       - name: Resolve target repository
         id: target

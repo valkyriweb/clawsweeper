@@ -11,7 +11,7 @@ import {
   repoRoot,
   validateJob,
 } from "./lib.js";
-import { ghJson, ghPaged, ghPagedLimit, ghText } from "./github-cli.js";
+import { ghJson, ghPagedLimit, ghText, githubPaginatedPath } from "./github-cli.js";
 import { hasSecurityRepairOptInLabel } from "./security-boundary.js";
 
 function readNonNegativeIntegerEnv(name: string, fallback: number): number {
@@ -200,16 +200,20 @@ function hydrateItem(repo: string, number: JsonValue) {
   } catch (error) {
     return unavailableItem(repo, number, error);
   }
-  const comments = HYDRATE_COMMENTS ? ghPaged(`repos/${repo}/issues/${number}/comments`) : [];
   const pullRequest = issue.pull_request ? ghJson(["api", `repos/${repo}/pulls/${number}`]) : null;
+  const comments = HYDRATE_COMMENTS
+    ? fetchCommentPages(`repos/${repo}/issues/${number}/comments`)
+    : [];
   const files = pullRequest
     ? ghPagedLimit(`repos/${repo}/pulls/${number}/files`, MAX_FILES_PER_PR)
     : [];
   const commits = pullRequest
     ? ghPagedLimit(`repos/${repo}/pulls/${number}/commits`, MAX_COMMITS_PER_PR)
     : [];
-  const reviews = pullRequest ? ghPaged(`repos/${repo}/pulls/${number}/reviews`) : [];
-  const reviewComments = pullRequest ? ghPaged(`repos/${repo}/pulls/${number}/comments`) : [];
+  const reviews = pullRequest ? fetchCommentPages(`repos/${repo}/pulls/${number}/reviews`) : [];
+  const reviewComments = pullRequest
+    ? fetchCommentPages(`repos/${repo}/pulls/${number}/comments`)
+    : [];
   const changedFilesCount = countValue(pullRequest?.changed_files, files.length);
   const commitsCount = countValue(pullRequest?.commits, commits.length);
   const checks = pullRequest ? ghPrChecks(repo, number) : [];
@@ -252,6 +256,10 @@ function hydrateItem(repo: string, number: JsonValue) {
           head_repo: pullRequest.head?.repo?.full_name,
           head_repo_owner: pullRequest.head?.repo?.owner?.login,
           head_sha: pullRequest.head?.sha,
+          feedback_hydrated:
+            HYDRATE_COMMENTS &&
+            issue.comments === comments.length &&
+            pullRequest.review_comments === reviewComments.length,
           maintainer_can_modify: pullRequest.maintainer_can_modify,
           same_repo_head: pullRequest.head?.repo?.full_name === repo,
           branch_writable: branchWritableByAutomation(repo, pullRequest),
@@ -285,6 +293,7 @@ function hydrateItem(repo: string, number: JsonValue) {
             author: review.user?.login,
             author_association: review.author_association,
             state: review.state,
+            commit_id: review.commit_id,
             submitted_at: review.submitted_at,
             body_excerpt: excerpt(review.body),
           })),
@@ -293,6 +302,8 @@ function hydrateItem(repo: string, number: JsonValue) {
             author_association: comment.author_association,
             path: comment.path,
             line: comment.line ?? comment.original_line,
+            current_line: comment.line ?? null,
+            commit_id: comment.commit_id,
             side: comment.side,
             created_at: comment.created_at,
             updated_at: comment.updated_at,
@@ -304,6 +315,14 @@ function hydrateItem(repo: string, number: JsonValue) {
         }
       : null,
   };
+}
+
+function fetchCommentPages(apiPath: string): JsonValue[] {
+  const pages = ghJson(["api", githubPaginatedPath(apiPath), "--paginate", "--slurp"]);
+  if (!Array.isArray(pages) || !pages.length || !pages.every(Array.isArray)) {
+    throw new Error(`invalid comment pagination for ${apiPath}`);
+  }
+  return pages.flat();
 }
 
 function unavailableItem(repo: string, number: JsonValue, error: JsonValue) {
@@ -383,6 +402,7 @@ function summarizeItem(item: LooseRecord, job: LooseRecord) {
           head_repo: item.pull_request.head_repo,
           head_repo_owner: item.pull_request.head_repo_owner,
           head_sha: item.pull_request.head_sha,
+          feedback_hydrated: item.pull_request.feedback_hydrated,
           maintainer_can_modify: item.pull_request.maintainer_can_modify,
           same_repo_head: item.pull_request.same_repo_head,
           branch_writable: item.pull_request.branch_writable,
@@ -638,6 +658,8 @@ function summarizeReviewComment(comment: LooseRecord) {
     author_association: comment.author_association,
     path: comment.path,
     line: comment.line,
+    current_line: comment.current_line,
+    commit_id: comment.commit_id,
     side: comment.side,
     created_at: comment.created_at,
     updated_at: comment.updated_at,
