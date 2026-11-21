@@ -56,3 +56,36 @@ test("jobs install dependencies before running dist code", () => {
     );
   }
 });
+
+test("sweep review shards skip start comments and leave final comments to publish", () => {
+  const jobs = workflowJobs().filter(({ workflow }) => workflow === "sweep.yml");
+  const review = jobs.find(({ job }) => job === "review");
+  const publish = jobs.find(({ job }) => job === "publish");
+  assert.ok(review && publish);
+
+  const inspectionToken = review.steps.find((step) => step.includes("id: target-read-token\n"));
+  const shard = review.steps.find((step) => step.includes("id: review-shard\n"));
+  assert.ok(inspectionToken && shard);
+  assert.match(inspectionToken, /^\s+access-mode: read$/m);
+  assert.match(shard, /^ +GH_TOKEN: \$\{\{ steps\.target-read-token\.outputs\.token \}\}$/m);
+  assert.match(
+    shard,
+    /^ +CLAWSWEEPER_PROOF_INSPECTION_TOKEN: \$\{\{ steps\.target-read-token\.outputs\.token \}\}$/m,
+  );
+  const reviewArgs = shard
+    .replace(/\\\n/g, "")
+    .match(/^ +timeout .* node dist\/clawsweeper\.js review (.+)$/m)?.[1];
+  assert.ok(reviewArgs, "expected the shard review command");
+  assert.match(reviewArgs, /(?:^|\s)--skip-start-comment\s+(?=--)/);
+
+  const publishToken = publish.steps.find((step) => step.includes("id: target-write-token\n"));
+  const sync = publish.steps.find((step) => step.includes("name: Sync selected review comments\n"));
+  assert.ok(publishToken && sync);
+  assert.match(
+    publishToken,
+    /target_automation_policy == 'review_only' && 'comment' \|\| 'mutate'/,
+  );
+  assert.match(sync, /^ +GH_TOKEN: \$\{\{ steps\.target-write-token\.outputs\.token \}\}$/m);
+  const syncCommand = sync.replace(/\\\n/g, "").match(/^ +pnpm run apply-decisions (.+)$/m);
+  assert.match(syncCommand?.[1] ?? "", /(?:^|\s)--sync-comments-only\s+(?=--)/);
+});
