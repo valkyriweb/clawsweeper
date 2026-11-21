@@ -1121,6 +1121,7 @@ jobs:
           fi
           echo "::notice::Review shard timeout is ${review_timeout_seconds}s for batch size ${NEEDS_PLAN_BATCH_SIZE} and per-item Codex timeout ${codex_timeout_seconds}s."
           timeout --kill-after=30s "${review_timeout_seconds}s" node dist/clawsweeper.js review \
+            --skip-start-comment \
             --target-repo "${NEEDS_PLAN_TARGET_REPO}" \
             --target-dir "../${NEEDS_PLAN_TARGET_CHECKOUT_DIR}" \
             --artifact-dir ../review-artifacts/shard-${{ matrix.shard }} \
