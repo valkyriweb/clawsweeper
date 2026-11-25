@@ -1,0 +1,4 @@
+# Invariants that break on the code at the sync commit (known findings).
+# check.sh fails when the set of broken invariants differs from this list.
+# Remove a line only after the finding is fixed and the check shows it holds.
+NoMergeOverFailVerdict

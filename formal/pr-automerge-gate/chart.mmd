@@ -1,0 +1,77 @@
+---
+title: "ClawSweeper automerge gate: one PR"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: open
+    lg1: router
+    lg2: merged
+    lg3: bad
+    lg4: Breaks NoMergeOverFailVerdict
+    lg5: Path to the NoMergeOverFailVerdict bug
+  }
+  class lg0 blue
+  class lg1 yellow
+  class lg2 teal
+  class lg3 pink
+  class lg4 breaks
+  class lg5 bugPath
+  s0: Open, no review of this commit
+  s1: Open, review says fail
+  s2: Open, review says pass
+  s3: Router holds a pass, review says pass
+  s4: Router holds a pass, review says fail
+  s5: Router holds a pass for an old commit
+  s6: Router about to merge, review says pass
+  s7: Merged after a pass
+  s8: Router about to merge, review says fail
+  s9: Router about to merge an old commit
+  s10: Merged while the review says fail
+  [*] --> s0
+  s0 --> s0: checks finish green
+  s0 --> s1: review posts fail
+  s0 --> s2: review posts pass
+  s1 --> s2: review posts pass
+  s1 --> s0: someone pushes a new commit
+  s2 --> s1: review posts fail
+  s2 --> s3: router picks up the pass
+  s2 --> s0: someone pushes a new commit
+  s3 --> s2: router drops this pass (commit moved, checks red, or wait ran out)
+  s3 --> s4: review posts fail
+  s3 --> s5: someone pushes a new commit
+  s3 --> s6: router sees green checks on the reviewed commit
+  s4 --> s1: router drops this pass (commit moved, checks red, or wait ran out)
+  s4 --> s3: review posts pass
+  s4 --> s5: someone pushes a new commit
+  s5 --> s0: router drops this pass (commit moved, checks red, or wait ran out)
+  s6 --> s7: router merges
+  s6 --> s8: review posts fail
+  s6 --> s9: someone pushes a new commit
+  s4 --> s8: router sees green checks on the reviewed commit
+  s5 --> s1: router drops this pass (commit moved, checks red, or wait ran out)
+  s5 --> s2: router drops this pass (commit moved, checks red, or wait ran out)
+  s8 --> s6: review posts pass
+  s8 --> s10: router merges
+  s8 --> s9: someone pushes a new commit
+  s9 --> s0: GitHub refuses the merge (commit moved)
+  s9 --> s1: GitHub refuses the merge (commit moved)
+  s9 --> s2: GitHub refuses the merge (commit moved)
+  classDef breaks fill:#ffecee,stroke:#e72e3b,stroke-width:2.5px,color:#cd2834
+  class s0 blue
+  class s0 bugPath
+  class s1 blue
+  class s2 blue
+  class s2 bugPath
+  class s3 yellow
+  class s3 bugPath
+  class s4 yellow
+  class s4 bugPath
+  class s5 yellow
+  class s6 yellow
+  class s7 teal
+  class s8 yellow
+  class s8 bugPath
+  class s9 yellow
+  class s10 pink
+  class s10 breaks
+  class s10 bugPath
