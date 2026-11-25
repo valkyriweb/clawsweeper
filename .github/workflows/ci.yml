@@ -61,6 +61,19 @@ jobs:
       - name: Run check
         run: pnpm run check
 
+  dashboard-build:
+    name: dashboard build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/setup-pnpm
+        with:
+          working-directory: dashboard/app
+      - name: Build dashboard
+        working-directory: dashboard/app
+        run: pnpm run build
+
   revert-rehearsal:
     name: revert-rehearsal
     if: github.event_name == 'pull_request'
