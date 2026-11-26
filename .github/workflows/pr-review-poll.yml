@@ -5,18 +5,21 @@ name: ClawSweeper PR Review Poll
 # the valkyriweb App route are polled. The App key stays in this repository:
 # target repositories need no workflow and no secret.
 #
+# Primary trigger is the GitHub App webhook (dashboard/pr-webhook), which starts
+# pr-review-check.yml per PR event. This hourly poll is the fallback for missed
+# deliveries.
+#
 # Cost: GitHub API calls only. A model runs only when pr-review-check.yml
 # starts, which happens once per new head SHA (or after a cancelled or stale
-# review).
+# review, at most MAX_ATTEMPTS times per head).
 
 on:
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "17 * * * *"
   workflow_dispatch:
 
 permissions:
   contents: read
-  actions: write
 
 concurrency:
   group: pr-review-poll
@@ -28,6 +31,8 @@ env:
   CHECK_NAME: agent-review
   # A queued or running check older than this is treated as lost.
   STALE_MINUTES: "60"
+  # Each start posts a new queued check run, so the run count is the attempt count.
+  MAX_ATTEMPTS: "3"
 
 jobs:
   targets:
@@ -56,6 +61,9 @@ jobs:
     if: ${{ needs.targets.outputs.matrix != '[]' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: write
     strategy:
       fail-fast: false
       matrix:
@@ -92,6 +100,9 @@ jobs:
               "repos/$TARGET_REPO/commits/$sha/check-runs?check_name=$CHECK_NAME&app_id=$CLAWSWEEPER_APP_ID&filter=latest" \
               --jq '.check_runs | sort_by(.started_at) | last // {} | "\(.status // "none") \(.conclusion // "none") \(.started_at // "")"')"
             read -r status conclusion started_at <<< "$latest"
+            attempts="$(GH_TOKEN="$TARGET_TOKEN" gh api \
+              "repos/$TARGET_REPO/commits/$sha/check-runs?check_name=$CHECK_NAME&app_id=$CLAWSWEEPER_APP_ID&filter=all" \
+              --jq '.total_count')"
             need=false
             if [ "$status" = "none" ]; then
               need=true
@@ -100,6 +111,10 @@ jobs:
             elif [ "$status" != "completed" ] && [ -n "$started_at" ]; then
               age=$(( (now - $(date -u -d "$started_at" +%s)) / 60 ))
               [ "$age" -ge "$STALE_MINUTES" ] && need=true
+            fi
+            if [ "$need" = "true" ] && [ "$attempts" -ge "$MAX_ATTEMPTS" ]; then
+              echo "#$number ${sha:0:12}: $status/$conclusion after $attempts attempts, giving up (push or re-run by hand)"
+              need=false
             fi
             if [ "$need" != "true" ]; then
               echo "#$number ${sha:0:12}: $status/$conclusion, skip"; continue

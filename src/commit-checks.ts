@@ -133,10 +133,13 @@ function reportSummary(markdown: string, frontMatter: CommitReviewFrontMatter): 
 
 function checkRunsForCommit(targetRepo: string, sha: string, name: string): { id?: number }[] {
   const encodedName = encodeURIComponent(name);
+  // Only this App's runs can be PATCHed; another app's same-named check is not ours.
+  const appId = process.env.CLAWSWEEPER_CHECK_APP_ID?.trim();
+  const appFilter = appId && /^\d+$/.test(appId) ? `&app_id=${appId}` : "";
   try {
     const raw = run("gh", [
       "api",
-      `repos/${targetRepo}/commits/${sha}/check-runs?check_name=${encodedName}`,
+      `repos/${targetRepo}/commits/${sha}/check-runs?check_name=${encodedName}${appFilter}`,
       "--jq",
       ".check_runs",
     ]);

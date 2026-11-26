@@ -1,0 +1,13 @@
+name = "clawsweeper-pr-webhook"
+main = "worker.ts"
+account_id = "f6a544e0beaf9e2de3f959d1e5a11611"
+compatibility_date = "2026-05-11"
+workers_dev = true
+preview_urls = false
+
+# Secrets (set with `wrangler secret put`, never in this file):
+#   GITHUB_WEBHOOK_SECRET   1Password "ClawSweeper PR webhook secret" (Personal Agent Secrets)
+#   GITHUB_APP_PRIVATE_KEY  1Password document nkputrdq5tqzvhpzaxcyjf35d4
+
+[observability]
+enabled = true
