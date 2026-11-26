@@ -461,6 +461,7 @@
       "issue_close_dry_run": true,
       "include_maintainer_authored": true,
       "pr_review_check": true,
+      "skip_comment_router_schedule": true,
       "prompt_note": "D90 Hive is the private coordination platform of D-90, an Open Intelligence South Africa (OISA) working group: `site/` (member directory and project tracking web app), `agents/` (OpenClaw team configuration templates and agent personas, no secrets or deployment-specific ids), `deploy/` (generic Kubernetes manifests) and `docs/`. It is not a government system. Review only: never close, merge, push or deploy. Each PR gets one diff-only review published as the `agent-review` check. Flag secrets, tokens, deployment-specific ids or member personal data in the diff; changes that widen an agent's tools, channels or who may reach it; and claims that something is live without evidence. Member data must stay in South Africa. Validation: `scripts/verify` (the one check that must pass before a merge).",
       "apply_close_rules": {
         "issue": [],
