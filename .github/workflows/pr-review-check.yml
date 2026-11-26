@@ -11,7 +11,9 @@ name: ClawSweeper PR Review Check
 # Errors conclude `failure` with a re-run hint; a newer push cancels this run
 # (concurrency below) and marks the old head `cancelled`. Neither passes a gate.
 #
-# Started by pr-review-poll.yml (every 5 minutes) or by hand. Nothing in the
+# Started by the GitHub App webhook Worker (dashboard/pr-webhook, inputs
+# target_repo + pr_number only), by pr-review-poll.yml (hourly fallback) or by
+# hand. The run re-reads the head SHA and opt-in itself. Nothing in the
 # target repository holds a secret or triggers this workflow.
 
 run-name: PR review check ${{ inputs.target_repo }}#${{ inputs.pr_number }}
@@ -39,6 +41,7 @@ env:
   # See commit-review.yml: the self-hosted ghx shim drops scoped GH_TOKEN.
   GH_BIN: ${{ vars.CLAWSWEEPER_GH_BIN || '/usr/local/bin/gh-native' }}
   CHECK_NAME: agent-review
+  CLAWSWEEPER_CHECK_APP_ID: "3711554"
   TARGET_REPO: ${{ inputs.target_repo }}
   PR_NUMBER: ${{ inputs.pr_number }}
   PAYLOAD_HEAD_SHA: ${{ inputs.head_sha }}
