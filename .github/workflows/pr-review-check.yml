@@ -173,6 +173,9 @@ jobs:
           git -C "$TARGET_NAME" fetch --no-tags origin "+refs/pull/$PR_NUMBER/head:refs/clawsweeper/pr-head" --depth=500
           test "$(git -C "$TARGET_NAME" rev-parse refs/clawsweeper/pr-head)" = "$HEAD_SHA"
           merge_base="$(git -C "$TARGET_NAME" merge-base HEAD "$HEAD_SHA")"
+          # The clone is blob-less and the token leaves the remote URL below, so
+          # private targets cannot lazy-fetch later. Pull the PR's blobs now.
+          git -C "$TARGET_NAME" log -p --format=%H "$merge_base..$HEAD_SHA" >/dev/null
           git -C "$TARGET_NAME" remote set-url origin "https://github.com/${TARGET_REPO}.git"
           echo "merge_base=$merge_base" >> "$GITHUB_OUTPUT"
           echo "Reviewing ${merge_base:0:12}..${HEAD_SHA:0:12} on base $BASE_REF"
