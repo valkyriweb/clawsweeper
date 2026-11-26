@@ -413,6 +413,7 @@
       "display_name": "Centaur (Detoil agent-run companies app)",
       "checkout_dir": "centaur",
       "github_app_credential_route": "valkyriweb",
+      "webhook_dispatch": true,
       "automation_policy": "review_only",
       "issue_close_dry_run": true,
       "include_maintainer_authored": true,
