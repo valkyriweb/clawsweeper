@@ -32,8 +32,10 @@ const TRUSTED_COMMENT_ASSOCIATIONS = new Set(["OWNER", "MEMBER", "COLLABORATOR"]
 const SUPERSEDING_ACTIONS = new Set(["edited", "synchronize", "ready_for_review"]);
 const LABEL_ACTIONS = new Set(["labeled", "unlabeled"]);
 const COMMIT_REVIEW_REF = "refs/heads/main";
+// Like the workflow's grep, but a mention must end the username, so
+// `@clawsweeper-helper` does not match.
 const COMMAND_PATTERN =
-  /(^|\s)@(clawsweeper|valkyriweb-clawsweeper|openclaw-clawsweeper)\b(\[bot\])?|(^|\s)\/(clawsweeper|review|automerge|autoclose)\b/im;
+  /(^|\s)@(clawsweeper|valkyriweb-clawsweeper|openclaw-clawsweeper)(\[bot\])?(?![\w-])|(^|\s)\/(clawsweeper|review|automerge|autoclose)\b/im;
 export const DEBOUNCE_MS = 20_000;
 
 export type EngineDispatch = {

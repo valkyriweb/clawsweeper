@@ -36,6 +36,11 @@ const pullRequest = {
   head: { sha: SHA },
 };
 
+// SAFETY: test-only view of payloads whose exact shape each test asserts.
+function payloadOf(dispatch: { client_payload: unknown }): any {
+  return dispatch.client_payload;
+}
+
 function plan(event: string, payload: unknown, delivery: string | null = "delivery-1") {
   return planRouterDispatch(event, payload, delivery, OPTED);
 }
@@ -106,7 +111,7 @@ test("issues events send github_activity and clawsweeper_item like the target wo
     },
   ]);
   const edited = routed("issues", { action: "edited", issue, repository, sender: human });
-  assert.equal(edited.dispatches[1].client_payload.supersedes_in_progress, true);
+  assert.equal(payloadOf(edited.dispatches[1]).supersedes_in_progress, true);
   assert.equal(skipped("issues", { action: "closed", issue, repository }), "action ignored");
 });
 
@@ -118,16 +123,16 @@ test("pull_request is forwarded as pull_request_target with supersede flags", ()
     sender: human,
   });
   const [activity, item] = decision.dispatches;
-  assert.equal(activity.client_payload.activity.type, "pull_request_target");
-  assert.deepEqual(activity.client_payload.activity.subject, {
+  assert.equal(payloadOf(activity).activity.type, "pull_request_target");
+  assert.deepEqual(payloadOf(activity).activity.subject, {
     kind: "pull_request",
     number: 34,
     title: "Feature",
     url: pullRequest.html_url,
     state: "open",
   });
-  assert.equal(activity.client_payload.activity.delivery_id, SHA);
-  assert.deepEqual(item.client_payload, {
+  assert.equal(payloadOf(activity).activity.delivery_id, SHA);
+  assert.deepEqual(payloadOf(item), {
     target_repo: CENTAUR,
     item_number: 34,
     item_kind: "pull_request",
@@ -141,7 +146,7 @@ test("pull_request is forwarded as pull_request_target with supersede flags", ()
     repository,
     sender: human,
   });
-  assert.equal(merged.dispatches[0].client_payload.activity.subject.state, "merged");
+  assert.equal(payloadOf(merged.dispatches[0]).activity.subject.state, "merged");
   assert.equal(
     skipped("pull_request", { action: "closed", pull_request: pullRequest, repository }),
     "action ignored",
@@ -188,7 +193,7 @@ test("pull_request_review and review comments send github_activity only", () => 
     sender: human,
   });
   assert.equal(review.dispatches.length, 1);
-  const activity = review.dispatches[0].client_payload.activity;
+  const activity = payloadOf(review.dispatches[0]).activity;
   assert.equal(activity.type, "pull_request_review");
   assert.deepEqual(activity.review, {
     id: 501,
@@ -213,7 +218,7 @@ test("pull_request_review and review comments send github_activity only", () => 
     sender: human,
   });
   assert.equal(reviewComment.dispatches.length, 1);
-  const rc = reviewComment.dispatches[0].client_payload.activity;
+  const rc = payloadOf(reviewComment.dispatches[0]).activity;
   assert.deepEqual(rc.review_comment, {
     id: 601,
     path: "src/a.ts",
@@ -247,7 +252,7 @@ test("issue_comment requires a trusted author and a command to start the comment
   });
   const command = routed("issue_comment", comment("please @clawsweeper review"));
   assert.equal(command.dispatches.length, 1);
-  assert.equal(command.dispatches[0].client_payload.activity.subject.kind, "pull_request");
+  assert.equal(payloadOf(command.dispatches[0]).activity.subject.kind, "pull_request");
   assert.deepEqual(command.comment, {
     itemNumber: 12,
     commentId: 701,
@@ -256,6 +261,8 @@ test("issue_comment requires a trusted author and a command to start the comment
   });
   assert.ok(routed("issue_comment", comment("text\n/review now")).comment);
   assert.ok(routed("issue_comment", comment("@Valkyriweb-ClawSweeper[bot] go")).comment);
+  assert.ok(routed("issue_comment", comment("@clawsweeper, please")).comment);
+  assert.equal(routed("issue_comment", comment("@clawsweeper-helper go")).comment, undefined);
   const chatter = routed("issue_comment", comment("thanks, looks fine"));
   assert.equal(chatter.comment, undefined);
   assert.equal(chatter.dispatches.length, 1);
