@@ -123,6 +123,13 @@ export interface RepositoryProfile {
    * deliberately separate from `automationPolicy`, which gates mutations.
    */
   issueTriageIntake?: boolean;
+  /**
+   * Stage-specific opt-in: PR opened/synchronize/reopened/ready_for_review events
+   * may start a diff-only review that publishes the `agent-review` check run on
+   * the PR head. Off unless the configured profile sets it, so the 2026-05-18
+   * per-item cost cutback stays in force for every other target.
+   */
+  prReviewCheck?: boolean;
 }
 
 interface TargetRepositoryConfig {
@@ -157,6 +164,7 @@ interface ConfiguredRepositoryProfile {
   repairAllowedPaths?: readonly string[];
   piReviewLifecycle?: boolean;
   issueTriageIntake?: boolean;
+  prReviewCheck?: boolean;
 }
 
 // Branch whose pushes commit-review accepts when a target sets no explicit
@@ -384,6 +392,30 @@ export function issueTriageIntakeBlockReason(targetRepo: string): string | null 
   return null;
 }
 
+/**
+ * Return a denial unless the explicitly configured profile opted in to the
+ * per-PR `agent-review` check. Unknown repositories never qualify, and a
+ * dispatch payload can never grant this capability.
+ */
+export function prReviewCheckBlockReason(targetRepo: string): string | null {
+  const requested = targetRepo.trim();
+  if (!TARGET_REPO_PATTERN.test(requested)) {
+    return "pr review check denied: target repository is missing or invalid";
+  }
+  const normalized = normalizeRepo(requested);
+  const profile = REPOSITORY_PROFILES.find(
+    (candidate) => normalizeRepo(candidate.targetRepo) === normalized,
+  );
+  if (!profile) return `pr review check denied: no configured profile for ${requested}`;
+  if (profile.prReviewCheck !== true) {
+    return `${profile.targetRepo} pr_review_check is not enabled`;
+  }
+  if (profile.githubAppCredentialRoute !== "valkyriweb") {
+    return `${profile.targetRepo} pr_review_check requires github_app_credential_route=valkyriweb`;
+  }
+  return null;
+}
+
 export const ISSUE_CLOSE_DRY_RUN_REASONS: ReadonlySet<RepositoryCloseReason> = new Set([
   "stale_insufficient_info",
   "cannot_reproduce",
@@ -445,6 +477,7 @@ function configuredRepositoryProfile(profile: ConfiguredRepositoryProfile): Repo
   if (profile.repairAllowedPaths) result.repairAllowedPaths = profile.repairAllowedPaths;
   if (profile.piReviewLifecycle !== undefined) result.piReviewLifecycle = profile.piReviewLifecycle;
   if (profile.issueTriageIntake !== undefined) result.issueTriageIntake = profile.issueTriageIntake;
+  if (profile.prReviewCheck !== undefined) result.prReviewCheck = profile.prReviewCheck;
   return result;
 }
 
@@ -644,6 +677,13 @@ function validateConfiguredRepositoryProfile(
       );
     } catch (cause) {
       throw new Error(`${label}.issue_triage_intake must be a boolean`, { cause });
+    }
+  }
+  if (profile.pr_review_check !== undefined) {
+    try {
+      result.prReviewCheck = Schema.decodeUnknownSync(Schema.Boolean)(profile.pr_review_check);
+    } catch (cause) {
+      throw new Error(`${label}.pr_review_check must be a boolean`, { cause });
     }
   }
   if (profile.repair_allowed_paths !== undefined) {

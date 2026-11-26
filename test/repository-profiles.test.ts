@@ -6,6 +6,7 @@ import {
   REPOSITORY_PROFILES,
   automationPolicyBlockReason,
   issueTriageIntakeBlockReason,
+  prReviewCheckBlockReason,
   repositoryProfileFor,
   resolveAutomationCapabilities,
   validateTargetRepositoryConfig,
@@ -193,6 +194,27 @@ test("issue triage intake is an explicit boolean opt-in enabled only for leo-lab
   assert.match(issueTriageIntakeBlockReason("valkyriweb/horizon") ?? "", /not enabled/);
   assert.match(issueTriageIntakeBlockReason("unknown/repo") ?? "", /no configured profile/);
   assert.match(issueTriageIntakeBlockReason("") ?? "", /missing or invalid/);
+});
+
+test("pr review check is an explicit boolean opt-in enabled only for OISA d90-hive", () => {
+  const config = JSON.parse(readFileSync("config/target-repositories.json", "utf8"));
+  const enabledRepos = config.repositories
+    .filter((entry: { pr_review_check?: unknown }) => entry.pr_review_check === true)
+    .map((entry: { target_repo: string }) => entry.target_repo);
+  assert.deepEqual(enabledRepos, ["open-intelligence-south-africa/d90-hive"]);
+  for (const invalid of ["true", 1, null]) {
+    const candidate = structuredClone(config);
+    candidate.repositories[0].pr_review_check = invalid;
+    assert.throws(
+      () => validateTargetRepositoryConfig(candidate),
+      /pr_review_check must be a boolean/,
+    );
+  }
+  assert.equal(prReviewCheckBlockReason("open-intelligence-south-africa/d90-hive"), null);
+  assert.equal(prReviewCheckBlockReason("Open-Intelligence-South-Africa/D90-Hive"), null);
+  assert.match(prReviewCheckBlockReason("Detoil/centaur") ?? "", /not enabled/);
+  assert.match(prReviewCheckBlockReason("unknown/repo") ?? "", /no configured profile/);
+  assert.match(prReviewCheckBlockReason("") ?? "", /missing or invalid/);
 });
 
 test("repositoryProfileFor matches mixed-case input against private target profiles", () => {

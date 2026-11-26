@@ -1,0 +1,117 @@
+name: ClawSweeper PR Review Poll
+
+# Finds open PRs that need an `agent-review` check and starts
+# pr-review-check.yml for each. Only targets with `pr_review_check: true` and
+# the valkyriweb App route are polled. The App key stays in this repository:
+# target repositories need no workflow and no secret.
+#
+# Cost: GitHub API calls only. A model runs only when pr-review-check.yml
+# starts, which happens once per new head SHA (or after a cancelled or stale
+# review).
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: pr-review-poll
+  cancel-in-progress: false
+
+env:
+  CLAWSWEEPER_APP_CLIENT_ID: Iv23lirdjmVqYd1gwY26
+  CLAWSWEEPER_APP_ID: "3711554"
+  CHECK_NAME: agent-review
+  # A queued or running check older than this is treated as lost.
+  STALE_MINUTES: "60"
+
+jobs:
+  targets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.list.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          sparse-checkout: config/target-repositories.json
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - id: list
+        run: |
+          set -euo pipefail
+          matrix="$(jq -c '[.repositories[]
+            | select(.pr_review_check == true and .github_app_credential_route == "valkyriweb")
+            | {target_repo, owner: (.target_repo | split("/")[0]), name: (.target_repo | split("/")[1])}]' \
+            config/target-repositories.json)"
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          echo "Targets: $matrix"
+
+  poll:
+    needs: targets
+    if: ${{ needs.targets.outputs.matrix != '[]' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJson(needs.targets.outputs.matrix) }}
+    steps:
+      - name: Create target token
+        id: token
+        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+        with:
+          client-id: ${{ env.CLAWSWEEPER_APP_CLIENT_ID }}
+          private-key: ${{ secrets.CLAWSWEEPER_APP_PRIVATE_KEY }}
+          owner: ${{ matrix.target.owner }}
+          repositories: ${{ matrix.target.name }}
+          permission-pull-requests: read
+          permission-checks: write
+
+      - name: Start reviews for unreviewed heads
+        env:
+          TARGET_TOKEN: ${{ steps.token.outputs.token }}
+          DISPATCH_TOKEN: ${{ github.token }}
+          TARGET_REPO: ${{ matrix.target.target_repo }}
+          ENGINE_REPO: ${{ github.repository }}
+          POLL_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          now="$(date -u +%s)"
+          GH_TOKEN="$TARGET_TOKEN" gh api --paginate "repos/$TARGET_REPO/pulls?state=open&per_page=100" \
+            --jq '.[] | select(.draft == false) | "\(.number) \(.head.sha)"' > prs.txt
+          echo "$(wc -l < prs.txt) open non-draft PRs in $TARGET_REPO"
+          started=0
+          while read -r number sha; do
+            [ -n "$number" ] || continue
+            latest="$(GH_TOKEN="$TARGET_TOKEN" gh api \
+              "repos/$TARGET_REPO/commits/$sha/check-runs?check_name=$CHECK_NAME&app_id=$CLAWSWEEPER_APP_ID&filter=latest" \
+              --jq '.check_runs | sort_by(.started_at) | last // {} | "\(.status // "none") \(.conclusion // "none") \(.started_at // "")"')"
+            read -r status conclusion started_at <<< "$latest"
+            need=false
+            if [ "$status" = "none" ]; then
+              need=true
+            elif [ "$status" = "completed" ] && [ "$conclusion" = "cancelled" ]; then
+              need=true
+            elif [ "$status" != "completed" ] && [ -n "$started_at" ]; then
+              age=$(( (now - $(date -u -d "$started_at" +%s)) / 60 ))
+              [ "$age" -ge "$STALE_MINUTES" ] && need=true
+            fi
+            if [ "$need" != "true" ]; then
+              echo "#$number ${sha:0:12}: $status/$conclusion, skip"; continue
+            fi
+            echo "#$number ${sha:0:12}: $status/$conclusion, starting review"
+            # Mark the head queued first so the next poll does not start it twice.
+            jq -nc --arg name "$CHECK_NAME" --arg sha "$sha" --arg url "$POLL_URL" \
+              '{name:$name, head_sha:$sha, status:"queued", details_url:$url,
+                output:{title:"Review queued", summary:"ClawSweeper will review this PR diff shortly."}}' \
+              | GH_TOKEN="$TARGET_TOKEN" gh api "repos/$TARGET_REPO/check-runs" --method POST --input - > /dev/null
+            GH_TOKEN="$DISPATCH_TOKEN" gh workflow run pr-review-check.yml -R "$ENGINE_REPO" \
+              -f target_repo="$TARGET_REPO" -f pr_number="$number" -f head_sha="$sha"
+            started=$((started + 1))
+          done < prs.txt
+          echo "Started $started review(s) for $TARGET_REPO."

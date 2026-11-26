@@ -34,6 +34,37 @@ replacement PR; the autofix label is retained whenever the review handoff could
 not be verified. The field is optional; targets without it retain the normal
 ClawSweeper review loop.
 
+A target may set `pr_review_check` to `true` (boolean, default off) to get a
+per-PR `agent-review` check run. Only `open-intelligence-south-africa/d90-hive`
+enables it today; every other target keeps the 2026-05-18 per-item cost cutback.
+The target needs no workflow and no secret: the App private key never leaves this
+repository. `pr-review-poll.yml` runs every 5 minutes (and on demand). For each
+target with `pr_review_check: true` and route `valkyriweb` it lists open,
+non-draft PRs with the App installation token. A head SHA needs review when it
+has no `agent-review` check from app 3711554, when its latest one is `cancelled`,
+or when a queued or running one is older than 60 minutes. The poller marks that
+head `queued` and starts `pr-review-check.yml` for the PR. Polling is API calls
+only; a model runs only for a head that needs review.
+
+`pr-review-check.yml` fails closed unless the profile opts in, re-reads the PR
+head from the API, checks out only the trusted base branch, fetches the PR commits
+as git objects, and reviews `merge-base..head` in a read-only sandbox. It
+publishes `agent-review` on the head SHA through the valkyriweb-clawsweeper App,
+from the report's severity only (the model's own `check_conclusion` is ignored):
+`success` for nothing found, `neutral` when the highest finding is low or info,
+`failure` for medium, high or critical. A failed, inconclusive or errored review
+concludes `failure` with a re-run hint. A newer push cancels the unfinished run
+(per-PR concurrency) and marks the old head `cancelled`. To re-run, push a new
+commit or have a maintainer re-run the engine job. Review text is kept on the
+target's check run, not in this public repository's artifacts. Expected cost: one
+model review per push, under USD 1.
+
+To add a repository (for example `Detoil/d-90` after it moves to OISA), add its
+profile here with `"pr_review_check": true` and `github_app_credential_route:
+"valkyriweb"`; the App must be installed on it with `checks: write`. Nothing is
+added to the target. The test in `test/repository-profiles.test.ts` lists the
+enabled repositories and must be updated in the same change.
+
 A target may set `issue_triage_intake` to `true` (boolean, default off) so new or
 reopened issues start the existing exact-item review. Only `leo-labs-ai/my-pi` enables it
 today, as a low-blast-radius pilot (issue close stays dry-run there). Each
@@ -154,12 +185,12 @@ precedence:
 2. `vars.CLAWSWEEPER_REVIEW_PROVIDER` (repo variable, fleet-wide default)
 3. compiled fallback (`codex`)
 
-| id | how it talks to the model | runner prereqs |
-|---|---|---|
-| `codex` | spawns the OpenAI Codex CLI (`codex exec --output-schema ...`) | `setup-codex` action; ChatGPT subscription JWT at `~/.codex/auth.json` |
-| `claude-bridge` | curl POST to `pi-claude-bridge` (`127.0.0.1:9100`) | bridge running on the runner |
-| `claude-code` | spawns Anthropic's Claude Code CLI (`claude -p --output-format json --json-schema ...`) | `setup-claude-code` action; `~/.claude/credentials.json` or macOS keychain entry on self-hosted |
-| `pi` | spawns the pi-mono-fork coding-agent CLI (`pi -p --mode json --no-session`) | `setup-pi` action; pi binary on PATH; `~/.pi/` initialised |
+| id              | how it talks to the model                                                               | runner prereqs                                                                                  |
+| --------------- | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `codex`         | spawns the OpenAI Codex CLI (`codex exec --output-schema ...`)                          | `setup-codex` action; ChatGPT subscription JWT at `~/.codex/auth.json`                          |
+| `claude-bridge` | curl POST to `pi-claude-bridge` (`127.0.0.1:9100`)                                      | bridge running on the runner                                                                    |
+| `claude-code`   | spawns Anthropic's Claude Code CLI (`claude -p --output-format json --json-schema ...`) | `setup-claude-code` action; `~/.claude/credentials.json` or macOS keychain entry on self-hosted |
+| `pi`            | spawns the pi-mono-fork coding-agent CLI (`pi -p --mode json --no-session`)             | `setup-pi` action; pi binary on PATH; `~/.pi/` initialised                                      |
 
 The `claude-code` and `pi` providers were added alongside the existing two to
 enable per-item provider routing (latency / cost). All providers share the

@@ -113,7 +113,11 @@ import {
   telegramVisibleProofLabelsForTest,
   validateCloseDecision,
 } from "../dist/clawsweeper.js";
-import { checkConclusionForFrontMatter, commitReportUrl } from "../dist/commit-checks.js";
+import {
+  checkConclusionForFrontMatter,
+  commitReportUrl,
+  failClosedConclusion,
+} from "../dist/commit-checks.js";
 import { skippedNonCodeReport } from "../dist/commit-classifier.js";
 import {
   commitReportRelativePath,
@@ -7190,4 +7194,33 @@ Full review comments:
   assert.match(comment, new RegExp(`reviewed PR head \\[${head.slice(0, 12)}\\]`));
   assert.match(comment, new RegExp(`base checkout \\[${base.slice(0, 12)}\\]`));
   assert.doesNotMatch(comment, new RegExp(`reviewed against \\[${base.slice(0, 12)}`));
+});
+
+test("fail-closed PR check conclusion never passes an errored review", () => {
+  assert.equal(failClosedConclusion({ result: "nothing_found" }), "success");
+  assert.equal(failClosedConclusion({ result: "skipped_non_code" }), "success");
+  assert.equal(failClosedConclusion({ result: "findings", highest_severity: "high" }), "failure");
+  assert.equal(failClosedConclusion({ result: "findings", highest_severity: "low" }), "neutral");
+  assert.equal(failClosedConclusion({ result: "findings", highest_severity: "info" }), "neutral");
+  assert.equal(failClosedConclusion({ result: "findings", highest_severity: "medium" }), "failure");
+  assert.equal(failClosedConclusion({ result: "findings" }), "failure");
+  assert.equal(
+    failClosedConclusion({
+      result: "findings",
+      highest_severity: "high",
+      check_conclusion: "success",
+    }),
+    "failure",
+  );
+  assert.equal(
+    failClosedConclusion({
+      result: "findings",
+      highest_severity: "low",
+      check_conclusion: "success",
+    }),
+    "neutral",
+  );
+  assert.equal(failClosedConclusion({ result: "failed", check_conclusion: "neutral" }), "failure");
+  assert.equal(failClosedConclusion({ result: "inconclusive" }), "failure");
+  assert.equal(failClosedConclusion({}), "failure");
 });

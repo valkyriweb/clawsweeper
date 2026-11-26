@@ -8,6 +8,7 @@ import { parseArgs } from "./lib.js";
 import { isJsonObject } from "./json-types.js";
 import {
   DEFAULT_COMMIT_REVIEW_REF,
+  prReviewCheckBlockReason,
   repositoryProfileFor,
   resolveRepositoryReviewProvider,
   reviewModelForProvider,
@@ -136,6 +137,13 @@ function runCli(): void {
         }),
       );
       break;
+    case "pr-review-check-auth": {
+      const targetRepo = requiredString("target-repo");
+      const blocked = prReviewCheckBlockReason(targetRepo);
+      if (blocked) throw new Error(blocked);
+      process.stdout.write(legacyTargetAuthFor(targetRepo));
+      break;
+    }
     case "legacy-target-auth":
       process.stdout.write(legacyTargetAuthFor(requiredString("target-repo")));
       break;

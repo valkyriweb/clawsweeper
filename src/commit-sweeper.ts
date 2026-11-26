@@ -8,7 +8,7 @@ import {
   isReviewableCommitPath,
   skippedNonCodeReport,
 } from "./commit-classifier.js";
-import { publishCheckFromReport, splitFrontMatter } from "./commit-checks.js";
+import { publishCheckFromReport, splitFrontMatter, upsertCheckRun } from "./commit-checks.js";
 import { argBool, argNumber, argString, parseArgs, type Args } from "./clawsweeper-args.js";
 import { safeOutputTail } from "./clawsweeper-text.js";
 import {
@@ -479,6 +479,45 @@ function publishCheckCommand(args: Args): void {
     reportRelativePath,
     sha,
     checkName: argString(args, "check_name", COMMIT_REVIEW_CHECK_NAME),
+    failClosed: argBool(args, "fail_closed"),
+    rerunHint: argString(args, "rerun_hint", ""),
+    ...(argString(args, "details_url", "")
+      ? { detailsUrl: argString(args, "details_url", "") }
+      : {}),
+  });
+}
+
+const CHECK_CONCLUSIONS = new Set(["success", "failure", "neutral", "timed_out", "cancelled"]);
+
+// Sets a check run without a review report: `in_progress` when a PR review
+// starts, `failure` when it errors, `cancelled` when a newer push supersedes it.
+function setCheckCommand(args: Args): void {
+  const targetRepo = requireTargetRepo(argString(args, "target_repo", ""));
+  const sha = assertSha(argString(args, "commit_sha", ""));
+  const status = argString(args, "status", "completed");
+  if (status !== "in_progress" && status !== "completed") {
+    throw new Error(`Invalid check status: ${status}`);
+  }
+  const conclusion = argString(args, "conclusion", "failure");
+  if (status === "completed" && !CHECK_CONCLUSIONS.has(conclusion)) {
+    throw new Error(`Invalid check conclusion: ${conclusion}`);
+  }
+  const workDir = resolve(argString(args, "work_dir", "."));
+  ensureDir(workDir);
+  upsertCheckRun({
+    targetRepo,
+    sha,
+    checkName: argString(args, "check_name", COMMIT_REVIEW_CHECK_NAME),
+    status,
+    ...(status === "completed"
+      ? { conclusion: conclusion as "success" | "failure" | "neutral" | "timed_out" | "cancelled" }
+      : {}),
+    title: argString(args, "title", status === "in_progress" ? "Review running" : "Review failed"),
+    summary: argString(args, "summary", ""),
+    ...(argString(args, "details_url", "")
+      ? { detailsUrl: argString(args, "details_url", "") }
+      : {}),
+    payloadPath: join(workDir, `${sha}.set-check.json`),
   });
 }
 
@@ -835,6 +874,7 @@ export function main(argv = process.argv.slice(2)): void {
   else if (command === "classify") classifyCommand(args);
   else if (command === "filter-sync-merges") filterSyncMergesCommand(args);
   else if (command === "publish-check") publishCheckCommand(args);
+  else if (command === "set-check") setCheckCommand(args);
   else if (command === "reports") reportsCommand(args);
   else if (command === "copy-artifacts") copyArtifactsCommand(args);
   else if (command === "dispatch-findings") dispatchFindingsCommand(args);
