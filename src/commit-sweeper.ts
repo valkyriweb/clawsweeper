@@ -21,6 +21,7 @@ import {
   type CommitReviewRunResult,
 } from "./commit-review-providers.js";
 import { runText } from "./command.js";
+import { buildInlinePatch, DEFAULT_INLINE_PATCH_MAX_BYTES } from "./pr-inline-patch.js";
 import { filterUpstreamSyncMerges, gitRunnerFor } from "./commit-review-selection.js";
 import { ghRetryKind, ghRetryWaitMs } from "./github-retry.js";
 import { repositoryProfileFor, requireTargetRepo } from "./repository-profiles.js";
@@ -182,6 +183,7 @@ function promptForCommit(options: {
   baseSha: string;
   metadata: CommitMetadata;
   additionalPrompt: string;
+  inlinePatch?: string;
 }): string {
   const prompt = readFileSync(join(ROOT, "prompts", "review-commit.md"), "utf8");
   const coAuthors = options.metadata.coAuthors.length
@@ -209,7 +211,7 @@ function promptForCommit(options: {
 ${coAuthors}
 
 ${commitDiffSummary(options.targetDir, options.baseSha, options.sha)}
-${additionalPrompt}`;
+${options.inlinePatch ? `\n${options.inlinePatch}\n` : ""}${additionalPrompt}`;
 }
 
 function stripMarkdownFence(markdown: string): string {
@@ -337,6 +339,29 @@ function reviewCommand(args: Args): void {
   const timeoutMs = argNumber(args, "timeout_ms", argNumber(args, "codex_timeout_ms", 1_800_000));
   const workDir = resolve(argString(args, "work_dir", join(reportDir, ".codex")));
 
+  let inlinePatch: string | undefined;
+  if (argBool(args, "inline_patch")) {
+    const built = buildInlinePatch({
+      targetDir,
+      baseSha,
+      sha,
+      maxBytes: argNumber(args, "inline_patch_max_bytes", DEFAULT_INLINE_PATCH_MAX_BYTES),
+    });
+    if (!built.ok) {
+      const markdown = stampReviewProvenance(
+        failureReport({ targetRepo, sha, baseSha, metadata, detail: built.detail, timeout: false }),
+        provider,
+        model,
+      );
+      ensureDir(dirname(outputPath));
+      writeFileSync(outputPath, markdown, "utf8");
+      console.error(built.detail);
+      console.log(outputPath);
+      return;
+    }
+    inlinePatch = built.markdown;
+  }
+
   const prompt = promptForCommit({
     targetDir,
     targetRepo,
@@ -344,6 +369,7 @@ function reviewCommand(args: Args): void {
     baseSha,
     metadata,
     additionalPrompt,
+    ...(inlinePatch ? { inlinePatch } : {}),
   });
   const transport = {
     prompt,
