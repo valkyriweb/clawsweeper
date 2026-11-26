@@ -10,12 +10,13 @@ name: ClawSweeper PR Review Check
 # read-only sandbox and is told to read `git diff`, not execute PR files.
 # Errors conclude `failure` with a re-run hint; a newer push cancels this run
 # (concurrency below) and marks the old head `cancelled`. Neither passes a gate.
+#
+# Started by pr-review-poll.yml (every 5 minutes) or by hand. Nothing in the
+# target repository holds a secret or triggers this workflow.
 
-run-name: PR review check ${{ github.event.inputs.target_repo || github.event.client_payload.target_repo }}#${{ github.event.inputs.pr_number || github.event.client_payload.pr_number }}
+run-name: PR review check ${{ inputs.target_repo }}#${{ inputs.pr_number }}
 
 on:
-  repository_dispatch:
-    types: [clawsweeper_pr_check]
   workflow_dispatch:
     inputs:
       target_repo:
@@ -24,6 +25,10 @@ on:
       pr_number:
         description: "Pull request number"
         required: true
+      head_sha:
+        description: "Head SHA the poller saw (optional; marked cancelled if superseded)"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -34,13 +39,14 @@ env:
   # See commit-review.yml: the self-hosted ghx shim drops scoped GH_TOKEN.
   GH_BIN: ${{ vars.CLAWSWEEPER_GH_BIN || '/usr/local/bin/gh-native' }}
   CHECK_NAME: agent-review
-  TARGET_REPO: ${{ github.event.inputs.target_repo || github.event.client_payload.target_repo }}
-  PR_NUMBER: ${{ github.event.inputs.pr_number || github.event.client_payload.pr_number }}
-  PAYLOAD_HEAD_SHA: ${{ github.event.client_payload.head_sha || '' }}
+  TARGET_REPO: ${{ inputs.target_repo }}
+  PR_NUMBER: ${{ inputs.pr_number }}
+  PAYLOAD_HEAD_SHA: ${{ inputs.head_sha }}
   RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
 concurrency:
-  group: pr-review-check-${{ github.event.inputs.target_repo || github.event.client_payload.target_repo }}-${{ github.event.inputs.pr_number || github.event.client_payload.pr_number }}
+  # Keyed on the exact config spelling; "Validate request" rejects any other case.
+  group: pr-review-check-${{ inputs.target_repo }}-${{ inputs.pr_number }}
   cancel-in-progress: true
 
 jobs:
@@ -71,6 +77,10 @@ jobs:
           fi
           if [ -n "$PAYLOAD_HEAD_SHA" ] && ! printf '%s' "$PAYLOAD_HEAD_SHA" | grep -Eq '^[0-9a-fA-F]{40}$'; then
             echo "Invalid head_sha: $PAYLOAD_HEAD_SHA" >&2; exit 1
+          fi
+          canonical="$(jq -r --arg r "$TARGET_REPO" '.repositories[] | select((.target_repo | ascii_downcase) == ($r | ascii_downcase)) | .target_repo' clawsweeper/config/target-repositories.json | head -n1)"
+          if [ "$canonical" != "$TARGET_REPO" ]; then
+            echo "target_repo must match config/target-repositories.json exactly (got '$TARGET_REPO', config '$canonical')." >&2; exit 1
           fi
           {
             echo "owner=${TARGET_REPO%%/*}"
@@ -252,7 +262,7 @@ jobs:
             --report-relative-path "pr-check" \
             --details-url "$RUN_URL" \
             --fail-closed \
-            --rerun-hint "Re-run: push a new commit, re-run the target's ClawSweeper PR Review workflow, or run \`gh workflow run pr-review-check.yml -R valkyriweb/clawsweeper -f target_repo=$TARGET_REPO -f pr_number=$PR_NUMBER\`."
+            --rerun-hint "Re-run: push a new commit, re-run this engine job, or run \`gh workflow run pr-review-check.yml -R valkyriweb/clawsweeper -f target_repo=$TARGET_REPO -f pr_number=$PR_NUMBER\`."
 
       - name: Mark review failed
         if: ${{ failure() && steps.pr.outputs.head_sha != '' }}
@@ -263,7 +273,7 @@ jobs:
           node clawsweeper/dist/commit-sweeper.js set-check \
             --target-repo "$TARGET_REPO" --commit-sha "$HEAD_SHA" --check-name "$CHECK_NAME" \
             --status completed --conclusion failure --title "Review errored" \
-            --summary "The review run failed before a verdict, so this check fails closed. Re-run: push a new commit, re-run the target's ClawSweeper PR Review workflow, or run \`gh workflow run pr-review-check.yml -R valkyriweb/clawsweeper -f target_repo=$TARGET_REPO -f pr_number=$PR_NUMBER\`." \
+            --summary "The review run failed before a verdict, so this check fails closed. Re-run: push a new commit, re-run this engine job, or run \`gh workflow run pr-review-check.yml -R valkyriweb/clawsweeper -f target_repo=$TARGET_REPO -f pr_number=$PR_NUMBER\`." \
             --details-url "$RUN_URL" --work-dir pr-check-work
 
       - name: Mark review superseded
@@ -272,6 +282,12 @@ jobs:
           GH_TOKEN: ${{ steps.checks-token.outputs.token }}
           HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
         run: |
+          set -euo pipefail
+          # A same-SHA re-run may already own the check; only close our own.
+          owner_url="$("$GH_BIN" api "repos/$TARGET_REPO/commits/$HEAD_SHA/check-runs?check_name=$CHECK_NAME&app_id=3711554&filter=latest" --jq '.check_runs[0].details_url // ""')"
+          if [ -n "$owner_url" ] && [ "$owner_url" != "$RUN_URL" ]; then
+            echo "Check is owned by $owner_url; leaving it."; exit 0
+          fi
           node clawsweeper/dist/commit-sweeper.js set-check \
             --target-repo "$TARGET_REPO" --commit-sha "$HEAD_SHA" --check-name "$CHECK_NAME" \
             --status completed --conclusion cancelled --title "Review cancelled" \
@@ -282,8 +298,8 @@ jobs:
         if: always()
         with:
           name: pr-review-check-${{ github.run_id }}
-          path: |
-            pr-check-artifacts
-            pr-check-work-review/**/usage-events.jsonl
+          # This repo is public and targets may be private: upload usage only.
+          # The review text lives on the target's check run.
+          path: pr-check-work-review/**/usage-events.jsonl
           if-no-files-found: ignore
           retention-days: 14

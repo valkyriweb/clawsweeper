@@ -106,7 +106,11 @@ export function failClosedConclusion(frontMatter: CommitReviewFrontMatter): Chec
   if (frontMatter.result === "nothing_found" || frontMatter.result === "skipped_non_code") {
     return "success";
   }
-  if (frontMatter.result === "findings") return checkConclusionForFrontMatter(frontMatter);
+  // Severity only: the model writes check_conclusion while reading untrusted PR text.
+  if (frontMatter.result === "findings") {
+    const severity = frontMatter.highest_severity;
+    return severity === "low" || severity === "info" ? "neutral" : "failure";
+  }
   return "failure";
 }
 

@@ -7201,6 +7201,25 @@ test("fail-closed PR check conclusion never passes an errored review", () => {
   assert.equal(failClosedConclusion({ result: "skipped_non_code" }), "success");
   assert.equal(failClosedConclusion({ result: "findings", highest_severity: "high" }), "failure");
   assert.equal(failClosedConclusion({ result: "findings", highest_severity: "low" }), "neutral");
+  assert.equal(failClosedConclusion({ result: "findings", highest_severity: "info" }), "neutral");
+  assert.equal(failClosedConclusion({ result: "findings", highest_severity: "medium" }), "failure");
+  assert.equal(failClosedConclusion({ result: "findings" }), "failure");
+  assert.equal(
+    failClosedConclusion({
+      result: "findings",
+      highest_severity: "high",
+      check_conclusion: "success",
+    }),
+    "failure",
+  );
+  assert.equal(
+    failClosedConclusion({
+      result: "findings",
+      highest_severity: "low",
+      check_conclusion: "success",
+    }),
+    "neutral",
+  );
   assert.equal(failClosedConclusion({ result: "failed", check_conclusion: "neutral" }), "failure");
   assert.equal(failClosedConclusion({ result: "inconclusive" }), "failure");
   assert.equal(failClosedConclusion({}), "failure");
