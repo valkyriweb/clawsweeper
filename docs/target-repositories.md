@@ -34,6 +34,28 @@ replacement PR; the autofix label is retained whenever the review handoff could
 not be verified. The field is optional; targets without it retain the normal
 ClawSweeper review loop.
 
+A target may set `pr_review_check` to `true` (boolean, default off) to get a
+per-PR `agent-review` check run. Only `open-intelligence-south-africa/d90-hive`
+enables it today; every other target keeps the 2026-05-18 per-item cost cutback.
+The target's `clawsweeper-pr-review.yml` (pull_request_target `opened`,
+`synchronize`, `reopened`, `ready_for_review`; no checkout) sends
+`clawsweeper_pr_check` with the PR number and head SHA. `pr-review-check.yml`
+fails closed unless the profile opts in, re-reads the PR head from the API,
+checks out only the trusted base branch, fetches the PR commits as git objects,
+and reviews `merge-base..head` in a read-only sandbox. It publishes `agent-review`
+on the head SHA through the valkyriweb-clawsweeper App: `success` for nothing
+found, `failure` for high or critical findings, `neutral` for lower findings.
+A failed, inconclusive or errored review concludes `failure` with a re-run hint.
+A newer push cancels the unfinished run (per-PR concurrency) and marks the old
+head `cancelled`. Expected cost: one model review per push, under USD 1.
+
+To add a repository (for example `Detoil/d-90` after it moves to OISA): add its
+profile here with `"pr_review_check": true` and `github_app_credential_route:
+"valkyriweb"`, copy `clawsweeper-pr-review.yml` into it, and give it the
+`VALKYRIWEB_CLAWSWEEPER_APP_PRIVATE_KEY` secret (OISA: add the repo to the org
+secret's selected repositories). The test in `test/repository-profiles.test.ts`
+lists the enabled repositories and must be updated in the same change.
+
 A target may set `issue_triage_intake` to `true` (boolean, default off) so new or
 reopened issues start the existing exact-item review. Only `leo-labs-ai/my-pi` enables it
 today, as a low-blast-radius pilot (issue close stays dry-run there). Each
