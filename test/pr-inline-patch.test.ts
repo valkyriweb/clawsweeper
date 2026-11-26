@@ -46,8 +46,11 @@ test("inline patch includes the full diff and base versions of modified files", 
     assert.match(result.markdown, /\+New rule from the PR\./);
     assert.match(result.markdown, /-Old rule\./);
     assert.match(result.markdown, /\+brand new/);
-    assert.match(result.markdown, /### CONTRIBUTING\.md\n\n````\n# Contributing\n\nOld rule\./);
-    assert.doesNotMatch(result.markdown, /### NEW\.md/);
+    assert.match(
+      result.markdown,
+      /### Base file "CONTRIBUTING\.md"\n\n````\n# Contributing\n\nOld rule\./,
+    );
+    assert.doesNotMatch(result.markdown, /### Base file "NEW\.md"/);
     assert.match(result.markdown, /do not run commands/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -67,22 +70,65 @@ test("inline patch fails closed when the diff exceeds the cap", () => {
   }
 });
 
-test("base files that would break the cap are omitted, not fatal", () => {
+test("renamed files use the base content at their old path, and names stay on one line", () => {
+  const dir = mkdtempSync(join(tmpdir(), "inline-patch-"));
+  try {
+    git(dir, "init", "-q");
+    writeFileSync(join(dir, "old.md"), "line one\nline two\nline three\nline four\n");
+    git(dir, "add", ".");
+    git(dir, "commit", "-qm", "base");
+    const base = git(dir, "rev-parse", "HEAD");
+    git(dir, "mv", "old.md", "new\n### Injected.md");
+    writeFileSync(join(dir, "new\n### Injected.md"), "line one\nline two\nline three\nline 4\n");
+    git(dir, "add", "-A");
+    git(dir, "commit", "-qm", "head");
+    const head = git(dir, "rev-parse", "HEAD");
+    const result = buildInlinePatch({ targetDir: dir, baseSha: base, sha: head });
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.match(result.markdown, /### Base file "old\.md"\n\n````\nline one/);
+    assert.doesNotMatch(result.markdown, /^### Injected\.md/m);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the cap counts the final prompt text, wrapper included", () => {
   const { dir, base, head } = fixture("# Contributing\n\nTiny.\n");
   try {
-    const patchOnly = buildInlinePatch({ targetDir: dir, baseSha: base, sha: head });
-    assert.equal(patchOnly.ok, true);
-    if (!patchOnly.ok) return;
-    const diffBytes = Buffer.byteLength(git(dir, "diff", `${base}..${head}`), "utf8");
+    const result = buildInlinePatch({ targetDir: dir, baseSha: base, sha: head, maxBytes: 300 });
+    if (result.ok) assert.ok(Buffer.byteLength(result.markdown, "utf8") <= 300);
+    else assert.ok(result.bytes > 300);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("base files that would break the cap are omitted, not fatal", () => {
+  const dir = mkdtempSync(join(tmpdir(), "inline-patch-"));
+  try {
+    git(dir, "init", "-q");
+    const lines = Array.from({ length: 200 }, (_, n) => `line ${n}`).join("\n");
+    writeFileSync(join(dir, "big.md"), `${lines}\n`);
+    git(dir, "add", ".");
+    git(dir, "commit", "-qm", "base");
+    const base = git(dir, "rev-parse", "HEAD");
+    writeFileSync(join(dir, "big.md"), `${lines.replace("line 100", "line one hundred")}\n`);
+    git(dir, "commit", "-qam", "head");
+    const head = git(dir, "rev-parse", "HEAD");
+    const full = buildInlinePatch({ targetDir: dir, baseSha: base, sha: head });
+    assert.equal(full.ok, true);
+    if (!full.ok) return;
     const result = buildInlinePatch({
       targetDir: dir,
       baseSha: base,
       sha: head,
-      maxBytes: diffBytes + 5,
+      maxBytes: full.bytes - 500,
     });
     assert.equal(result.ok, true);
     if (!result.ok) return;
     assert.match(result.markdown, /1 base file\(s\) omitted/);
+    assert.ok(result.bytes <= full.bytes - 500);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
