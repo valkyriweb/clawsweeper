@@ -130,6 +130,13 @@ export interface RepositoryProfile {
    * per-item cost cutback stays in force for every other target.
    */
   prReviewCheck?: boolean;
+  /**
+   * The App webhook Worker (dashboard/pr-webhook) forwards this target's
+   * issue, comment, PR, review and main-push events as the same
+   * repository_dispatch events its clawsweeper-dispatch.yml sends, so the
+   * target needs no workflow and no App key. Off unless set.
+   */
+  webhookDispatch?: boolean;
 }
 
 interface TargetRepositoryConfig {
@@ -165,6 +172,7 @@ interface ConfiguredRepositoryProfile {
   piReviewLifecycle?: boolean;
   issueTriageIntake?: boolean;
   prReviewCheck?: boolean;
+  webhookDispatch?: boolean;
 }
 
 // Branch whose pushes commit-review accepts when a target sets no explicit
@@ -478,6 +486,7 @@ function configuredRepositoryProfile(profile: ConfiguredRepositoryProfile): Repo
   if (profile.piReviewLifecycle !== undefined) result.piReviewLifecycle = profile.piReviewLifecycle;
   if (profile.issueTriageIntake !== undefined) result.issueTriageIntake = profile.issueTriageIntake;
   if (profile.prReviewCheck !== undefined) result.prReviewCheck = profile.prReviewCheck;
+  if (profile.webhookDispatch !== undefined) result.webhookDispatch = profile.webhookDispatch;
   return result;
 }
 
@@ -684,6 +693,13 @@ function validateConfiguredRepositoryProfile(
       result.prReviewCheck = Schema.decodeUnknownSync(Schema.Boolean)(profile.pr_review_check);
     } catch (cause) {
       throw new Error(`${label}.pr_review_check must be a boolean`, { cause });
+    }
+  }
+  if (profile.webhook_dispatch !== undefined) {
+    try {
+      result.webhookDispatch = Schema.decodeUnknownSync(Schema.Boolean)(profile.webhook_dispatch);
+    } catch (cause) {
+      throw new Error(`${label}.webhook_dispatch must be a boolean`, { cause });
     }
   }
   if (profile.repair_allowed_paths !== undefined) {

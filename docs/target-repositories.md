@@ -65,6 +65,20 @@ profile here with `"pr_review_check": true` and `github_app_credential_route:
 added to the target. The test in `test/repository-profiles.test.ts` lists the
 enabled repositories and must be updated in the same change.
 
+A target may set `webhook_dispatch` to `true` (boolean, default off) so the
+valkyriweb-clawsweeper App webhook (`dashboard/pr-webhook`, route `valkyriweb`
+only) forwards its events instead of a `clawsweeper-dispatch.yml` in the target.
+The Worker sends the same `repository_dispatch` events with the same payloads
+and filters as that workflow: `github_activity` for every accepted event,
+`clawsweeper_item` for issues and PRs (sent as `pull_request_target`),
+`clawsweeper_comment` for trusted (`OWNER`, `MEMBER`, `COLLABORATOR`) command
+comments after an eyes reaction and a queued status comment, and
+`clawsweeper_commit_review` for pushes to `main`. Bot label events are dropped
+and label events wait 20 s. Only `Detoil/centaur` enables it today. Once its
+deliveries are proven, the target's workflow and its App-key secret can be
+removed. The test in `test/repository-profiles.test.ts` lists the enabled
+repositories, and the Worker must be redeployed after a change.
+
 A target may set `issue_triage_intake` to `true` (boolean, default off) so new or
 reopened issues start the existing exact-item review. Only `leo-labs-ai/my-pi` enables it
 today, as a low-blast-radius pilot (issue close stays dry-run there). Each

@@ -217,6 +217,22 @@ test("pr review check is an explicit boolean opt-in enabled only for OISA d90-hi
   assert.match(prReviewCheckBlockReason("") ?? "", /missing or invalid/);
 });
 
+test("webhook dispatch is an explicit boolean opt-in enabled only for Detoil/centaur", () => {
+  const config = JSON.parse(readFileSync("config/target-repositories.json", "utf8"));
+  const enabledRepos = config.repositories
+    .filter((entry: { webhook_dispatch?: unknown }) => entry.webhook_dispatch === true)
+    .map((entry: { target_repo: string }) => entry.target_repo);
+  assert.deepEqual(enabledRepos, ["Detoil/centaur"]);
+  for (const invalid of ["true", 1, null]) {
+    const candidate = structuredClone(config);
+    candidate.repositories[0].webhook_dispatch = invalid;
+    assert.throws(
+      () => validateTargetRepositoryConfig(candidate),
+      /webhook_dispatch must be a boolean/,
+    );
+  }
+});
+
 test("repositoryProfileFor matches mixed-case input against private target profiles", () => {
   const profile = repositoryProfileFor("CLIP-SA/Core-Wholesale");
 

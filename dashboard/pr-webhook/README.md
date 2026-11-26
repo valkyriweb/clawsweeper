@@ -16,10 +16,29 @@ Receives `pull_request` webhooks for the `valkyriweb-clawsweeper` GitHub App
 - Returns `502` if GitHub refuses, so the delivery shows as failed and can be
   redelivered. Payloads, tokens and secrets are never logged.
 
+## Event router (`webhook_dispatch`)
+
+For a target with `webhook_dispatch: true` and route `valkyriweb`, `router.ts`
+replaces the target's `clawsweeper-dispatch.yml`. It accepts `issues`,
+`issue_comment`, `push` (to `main`), `pull_request`, `pull_request_review` and
+`pull_request_review_comment` with the workflow's action lists and filters, and
+sends the same `repository_dispatch` events and payloads to
+`valkyriweb/clawsweeper`. Tokens, each for one repository:
+
+- `valkyriweb/clawsweeper` with `{ contents: write }`: required by
+  `POST /repos/{owner}/{repo}/dispatches`, nothing more.
+- The target with `{ issues: write, pull_requests: read }`, only for a
+  ClawSweeper command comment: the eyes reaction and the queued status comment,
+  as the workflow does.
+
+Label events are sent 20 s after the `202` (`waitUntil`), as the workflow's
+debounce. A refused dispatch returns `502`; a redelivery resends every event of
+that delivery.
+
 ## Opt-in list
 
 `config/target-repositories.json` is the only source. The Worker bundles it at
-deploy time, so after changing `pr_review_check` on a target, redeploy:
+deploy time, so after changing `pr_review_check` or `webhook_dispatch` on a target, redeploy:
 
 ```sh
 pnpm dlx wrangler@4.90.0 deploy --config dashboard/pr-webhook/wrangler.toml
